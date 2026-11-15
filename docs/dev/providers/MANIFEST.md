@@ -1,7 +1,7 @@
 # Manifest 与分发
 
 > 安装包结构、`manifest.json` 字段、安装更新事务、商店仓库规范。
-> 契约版本 `kmp-sdk-v1` · 更新 2026-11-14 · 事实源 `ModuleManifest`、`ProviderFactory`、`ModuleManager`、`verifyRepositoryPackage`
+> 契约版本 `kmp-sdk-v1` · 更新 2026-11-15 · 事实源 `ModuleManifest`、`ProviderFactory`、`ModuleManager`、`verifyRepositoryPackage`
 
 独立歌词插件不使用此 schema，见 [歌词源插件](../lyrics/LYRICS_PLUGIN.md)。
 
@@ -99,6 +99,43 @@ manifest 标签以 `ProviderCapability.sdkLabels` 为准。
 | 清单自校验 | 不做「清单内自身 ZIP sha256」校验，它不可能自洽 |
 | 活跃音源更新 | 可暂存至重启，避免在途调用持有旧描述符；不为 DLL 锁实现换 ID 删除链 |
 | 路径接口 | `getModuleDir`、删除、导出也验证 ID，禁止路径穿越 |
+
+### 4.1 更新清单与最低可用版本
+
+`manifest.json` 的 `updateUrl` 指向标准 JSON 更新清单。清单可声明
+`minUsableVersion`：**低于该版本的音源已经无法使用**，而不是仍可降级运行。
+
+```json
+{
+  "version": "1.4.0",
+  "downloadUrl": "https://example.com/provider-1.4.0.zip",
+  "changelog": "上游接口已升级，旧版解析与登录流程失效",
+  "minUsableVersion": "1.2.0",
+  "sha256": "…",
+  "publishedAt": "2026-11-15T10:00:00Z"
+}
+```
+
+| 字段 / 规则 | 内容 |
+|---|---|
+| `minUsableVersion` | 可选 SemVer；等于该版本仍可用，严格低于视为停用。支持 `v1.2.0` 写法；无 `v` 前缀写入清单亦可 |
+| 缺省 / 空串 | 未声明停用线；宿主按普通版本更新处理，不弹强提醒 |
+| 清单自洽 | `minUsableVersion` 不高于 `version`；下载目标本身也需达到该版本 |
+| 版本比较 | 宿主按常规版本规则比较；`1.2` 与 `1.2.0` 等价，预发布后缀按版本规则处理 |
+| 非法值 | 非合法 SemVer 按未声明处理 |
+| 自定义更新源 | 用户覆盖的更新源同样适用；停用线由该源返回的清单决定 |
+| GitHub Releases API | 该 API 无自定义字段；需声明停用线时建议使用标准 JSON 清单 |
+
+命中停用线时（当前安装版本 < `minUsableVersion`），宿主行为：
+
+| 场景 | 行为 |
+|---|---|
+| 自动 / 手动检查完成 | 进入 `UpdateRequired` 状态并弹出强提醒；需选择「立即更新」或「仍要继续使用」 |
+| 音源列表 | 显示「必须更新」角标，点击打开更新详情 |
+| 插件中心「更新」页 | 列入更新项并标注最低可用版本说明 |
+| 检查结果汇总 | 计入可更新数量 |
+
+强提醒不会自动删除模块、登录态或本地配置，也不会在未确认时下载安装包。声明停用线时，下载目标版本需不低于该版本。
 
 ## 5. 原生 SDK 包
 

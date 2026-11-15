@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalIconButton
@@ -142,6 +143,19 @@ class PluginHubScreen(
         var updateTarget by remember { mutableStateOf<BackendProvider?>(null) }
         var updateDetailTarget by remember { mutableStateOf<Pair<BackendProvider, ProviderUpdateInfo>?>(null) }
         var configSourceTarget by remember { mutableStateOf<BackendProvider?>(null) }
+        val shownCriticalUpdates = remember { mutableSetOf<String>() }
+
+        LaunchedEffect(updateStates, providers) {
+            if (updateDetailTarget != null || configSourceTarget != null) return@LaunchedEffect
+            val target = providers.firstNotNullOfOrNull { provider ->
+                (updateStates[provider.id] as? ProviderUpdateState.UpdateRequired)
+                    ?.let { provider to it.info }
+            } ?: return@LaunchedEffect
+            val key = "${target.first.id}@${target.second.version}"
+            if (shownCriticalUpdates.add(key)) {
+                updateDetailTarget = target
+            }
+        }
 
         val pickProviderZip = rememberZipPicker(onPicked = { zipPath ->
             val target = updateTarget
@@ -241,7 +255,8 @@ class PluginHubScreen(
                                 0
                             }
                             val providerUpdates = providerModel.updateStates.value.values.count {
-                                it is ProviderUpdateState.UpdateAvailable
+                                it is ProviderUpdateState.UpdateAvailable ||
+                                    it is ProviderUpdateState.UpdateRequired
                             }
                             val failures = (if (catalogChecked) repoModel.repository.state.value.sourceErrors.size else 0) +
                                 providerModel.updateStates.value.values.count { it is ProviderUpdateState.Error }
@@ -418,7 +433,10 @@ internal fun PluginHubContent(
 
     val updateCount = remember(state) {
         state.repository.entries.count { it.updateAvailable } +
-            state.providers.count { state.providerUpdates[it.id] is ProviderUpdateState.UpdateAvailable }
+            state.providers.count {
+                val update = state.providerUpdates[it.id]
+                update is ProviderUpdateState.UpdateAvailable || update is ProviderUpdateState.UpdateRequired
+            }
     }
     val installBusy = state.busy != null || state.repository.task?.phase in setOf(
         PluginInstallPhase.DOWNLOADING,
@@ -863,8 +881,11 @@ private fun LazyListScope.updatesItems(
 
     val pluginUpdates = state.repository.entries.filter { it.updateAvailable }
     val providerUpdates = state.providers.mapNotNull { provider ->
-        val update = state.providerUpdates[provider.id] as? ProviderUpdateState.UpdateAvailable
-        update?.let { provider to it.info }
+        when (val update = state.providerUpdates[provider.id]) {
+            is ProviderUpdateState.UpdateAvailable -> Triple(provider, update.info, false)
+            is ProviderUpdateState.UpdateRequired -> Triple(provider, update.info, true)
+            else -> null
+        }
     }
 
     if (pluginUpdates.isEmpty() && providerUpdates.isEmpty()) {
@@ -913,11 +934,17 @@ private fun LazyListScope.updatesItems(
         item { SettingsSection(t.updateSectionProviders) {} }
         item { SettingsNote(t.updateSectionProvidersHint) }
         itemsIndexed(providerUpdates, key = { _, item -> "provider-update:${item.first.id}" }) { index, item ->
-            val (provider, info) = item
+            val (provider, info, critical) = item
             SettingsClickItem(
                 title = provider.name,
-                subtitle = t.providerUpdateSummary(provider.name, provider.version, info.version),
-                icon = Icons.Filled.Download,
+                subtitle = buildString {
+                    append(t.providerUpdateSummary(provider.name, provider.version, info.version))
+                    if (critical) {
+                        append("\n")
+                        append(t.providerUpdateUnusable(info.minUsableVersion.orEmpty()))
+                    }
+                },
+                icon = if (critical) Icons.Filled.Warning else Icons.Filled.Download,
                 index = index,
                 total = providerUpdates.size,
                 mergeSemantics = false,

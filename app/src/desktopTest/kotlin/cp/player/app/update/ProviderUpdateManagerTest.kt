@@ -100,6 +100,93 @@ class ProviderUpdateManagerTest {
     }
 
     @Test
+    fun `parseUpdateResponse parses minimum usable version`() {
+        val manager = ProviderUpdateManager(settings = MockSettings())
+        val json = """
+            {
+                "version": "1.4.0",
+                "downloadUrl": "https://example.com/provider-v1.4.0.zip",
+                "minUsableVersion": "v1.2.0",
+                "changelog": "上游接口升级"
+            }
+        """.trimIndent()
+
+        val info = manager.parseUpdateResponse(json, "test-provider")
+        assertNotNull(info)
+        assertEquals("1.2.0", info.minUsableVersion)
+        assertTrue(info.requiresUpdate("1.1.9"))
+        assertTrue(!info.requiresUpdate("1.2.0"))
+    }
+
+    @Test
+    fun `parseUpdateResponse accepts snake case and unusable-before aliases`() {
+        val manager = ProviderUpdateManager(settings = MockSettings())
+        val snake = manager.parseUpdateResponse(
+            """
+                {
+                    "version": "2.0.0",
+                    "downloadUrl": "https://example.com/dl.zip",
+                    "min_usable_version": "1.8.0"
+                }
+            """.trimIndent(),
+            "test-provider",
+        )
+        val alias = manager.parseUpdateResponse(
+            """
+                {
+                    "version": "2.0.0",
+                    "downloadUrl": "https://example.com/dl.zip",
+                    "unusableBeforeVersion": "1.9.0"
+                }
+            """.trimIndent(),
+            "test-provider",
+        )
+
+        assertEquals("1.8.0", snake?.minUsableVersion)
+        assertEquals("1.9.0", alias?.minUsableVersion)
+    }
+
+    @Test
+    fun `invalid minimum usable version is ignored`() {
+        val manager = ProviderUpdateManager(settings = MockSettings())
+        val info = manager.parseUpdateResponse(
+            """
+                {
+                    "version": "2.0.0",
+                    "downloadUrl": "https://example.com/dl.zip",
+                    "minUsableVersion": "soon"
+                }
+            """.trimIndent(),
+            "test-provider",
+        )
+
+        assertNotNull(info)
+        assertNull(info.minUsableVersion)
+        assertTrue(!info.requiresUpdate("1.0.0"))
+        assertTrue(
+            !ProviderUpdateInfo(
+                version = "2.0.0",
+                downloadUrl = "https://example.com/dl.zip",
+                minUsableVersion = "soon",
+            ).requiresUpdate("1.0.0"),
+        )
+    }
+
+    @Test
+    fun `update required takes precedence over normal update state`() {
+        val manager = ProviderUpdateManager(settings = MockSettings())
+        val info = ProviderUpdateInfo(
+            version = "1.4.0",
+            downloadUrl = "https://example.com/dl.zip",
+            minUsableVersion = "1.2.0",
+        )
+
+        assertTrue(manager.evaluateUpdateState("1.1.0", info) is ProviderUpdateState.UpdateRequired)
+        assertTrue(manager.evaluateUpdateState("1.2.0", info) is ProviderUpdateState.UpdateAvailable)
+        assertTrue(manager.evaluateUpdateState("1.4.0", info) is ProviderUpdateState.UpToDate)
+    }
+
+    @Test
     fun `custom update url overrides manifest url`() {
         val settings = MockSettings()
         val manager = ProviderUpdateManager(settings = settings)

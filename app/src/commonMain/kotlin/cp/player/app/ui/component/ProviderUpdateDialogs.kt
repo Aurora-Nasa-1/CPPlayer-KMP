@@ -21,8 +21,10 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -62,6 +64,8 @@ fun ProviderUpdateDetailsDialog(
 ) {
     val p = cpStrings().providerManagement
     val isDark = LocalIsDarkTheme.current
+    val critical = info.requiresUpdate(provider.version)
+    val minimumVersion = info.minUsableVersion?.trim().orEmpty()
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
 
@@ -78,20 +82,28 @@ fun ProviderUpdateDetailsDialog(
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!critical) onDismiss() },
         shape = MaterialTheme.shapes.extraLarge,
         containerColor = containerColor,
         icon = {
             Surface(
                 shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.primaryContainer,
+                color = if (critical) {
+                    MaterialTheme.colorScheme.errorContainer
+                } else {
+                    MaterialTheme.colorScheme.primaryContainer
+                },
                 modifier = Modifier.size(48.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = Icons.Filled.RocketLaunch,
+                        imageVector = if (critical) Icons.Filled.Warning else Icons.Filled.RocketLaunch,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        tint = if (critical) {
+                            MaterialTheme.colorScheme.onErrorContainer
+                        } else {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        },
                         modifier = Modifier.size(24.dp),
                     )
                 }
@@ -100,7 +112,7 @@ fun ProviderUpdateDetailsDialog(
         title = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 CpText(
-                    text = p.updateDialogTitle,
+                    text = if (critical) p.updateRequiredTitle else p.updateDialogTitle,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
@@ -162,6 +174,36 @@ fun ProviderUpdateDetailsDialog(
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
+
+                if (critical) {
+                    Spacer(Modifier.height(12.dp))
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            CpText(
+                                text = p.updateRequiredMessage(provider.version, minimumVersion),
+                                style = MaterialTheme.typography.bodySmall,
+                                lineHeight = 18.sp,
+                                maxLines = Int.MAX_VALUE,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
                             )
                         }
                     }
@@ -281,6 +323,14 @@ fun ProviderUpdateDetailsDialog(
             Button(
                 onClick = onDownloadAndUpdate,
                 shape = MaterialTheme.shapes.medium,
+                colors = if (critical) {
+                    ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    )
+                } else {
+                    ButtonDefaults.buttonColors()
+                },
             ) {
                 Icon(
                     imageVector = Icons.Filled.Download,
@@ -296,7 +346,7 @@ fun ProviderUpdateDetailsDialog(
                 onClick = onDismiss,
                 shape = MaterialTheme.shapes.medium,
             ) {
-                CpText(p.later)
+                CpText(if (critical) p.updateRequiredContinue else p.later)
             }
         },
     )

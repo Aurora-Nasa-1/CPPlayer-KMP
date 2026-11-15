@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -127,6 +128,7 @@ class ProviderManagementScreen(
         var updateTarget by remember { mutableStateOf<BackendProvider?>(null) }
         var updateDetailTarget by remember { mutableStateOf<Pair<BackendProvider, ProviderUpdateInfo>?>(null) }
         var configSourceTarget by remember { mutableStateOf<BackendProvider?>(null) }
+        val shownCriticalUpdates = remember { mutableSetOf<String>() }
         val confirm = rememberConfirmState()
 
         // 音源 zip 选择器
@@ -152,6 +154,18 @@ class ProviderManagementScreen(
             refreshLyrics()
             if (model.isAutoCheckEnabled()) {
                 model.checkAllUpdates(p, silent = true)
+            }
+        }
+
+        LaunchedEffect(updateStates, providers) {
+            if (updateDetailTarget != null || configSourceTarget != null) return@LaunchedEffect
+            val target = providers.firstNotNullOfOrNull { provider ->
+                (updateStates[provider.id] as? ProviderUpdateState.UpdateRequired)
+                    ?.let { provider to it.info }
+            } ?: return@LaunchedEffect
+            val key = "${target.first.id}@${target.second.version}"
+            if (shownCriticalUpdates.add(key)) {
+                updateDetailTarget = target
             }
         }
 
@@ -502,6 +516,9 @@ class ProviderManagementModel : ScreenModel {
         screenModelScope.launch {
             val state = updateManager.checkUpdate(provider)
             when (state) {
+                is ProviderUpdateState.UpdateRequired -> {
+                    message.value = strings.updateRequired(provider.name, state.info.version)
+                }
                 is ProviderUpdateState.UpdateAvailable -> {
                     message.value = strings.updateAvailable(provider.name, state.info.version)
                 }
@@ -533,7 +550,7 @@ class ProviderManagementModel : ScreenModel {
             updateManager.checkAllUpdates(providers.value)
             if (!silent) {
                 val availableCount = updateManager.updateStates.value.values.count {
-                    it is ProviderUpdateState.UpdateAvailable
+                    it is ProviderUpdateState.UpdateAvailable || it is ProviderUpdateState.UpdateRequired
                 }
                 message.value = if (availableCount > 0) {
                     strings.checkAllDoneAvailable(availableCount)
@@ -692,7 +709,9 @@ internal fun ProviderRow(
     val hasConfig = !provider.settingsSchema.isNullOrEmpty()
     val pendingText = if (hasPendingUpdate) " · ${p.pendingRestartTag}" else ""
 
+    val requiredUpdate = updateState as? ProviderUpdateState.UpdateRequired
     val availableUpdate = updateState as? ProviderUpdateState.UpdateAvailable
+    val updateInfo = requiredUpdate?.info ?: availableUpdate?.info
     val isChecking = updateState is ProviderUpdateState.Checking
 
     val subtitle = buildString {
@@ -715,11 +734,14 @@ internal fun ProviderRow(
                     Icon(Icons.Filled.CheckCircle, p.activeProviderContentDesc, tint = trailingTint)
                     Spacer(Modifier.width(8.dp))
                 }
-                if (availableUpdate != null) {
-                    val updateInfo = availableUpdate.info
+                if (updateInfo != null) {
                     Surface(
                         shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.primaryContainer,
+                        color = if (requiredUpdate != null) {
+                            MaterialTheme.colorScheme.errorContainer
+                        } else {
+                            MaterialTheme.colorScheme.primaryContainer
+                        },
                         modifier = Modifier
                             .clip(MaterialTheme.shapes.small)
                             .clickable { onShowUpdateDetails(updateInfo) }
@@ -727,16 +749,32 @@ internal fun ProviderRow(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = Icons.Filled.Download,
+                                imageVector = if (requiredUpdate != null) {
+                                    Icons.Filled.Warning
+                                } else {
+                                    Icons.Filled.Download
+                                },
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                tint = if (requiredUpdate != null) {
+                                    MaterialTheme.colorScheme.onErrorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                },
                                 modifier = Modifier.size(14.dp),
                             )
                             Spacer(Modifier.width(4.dp))
                             CpText(
-                                text = p.updateAvailableBadge(updateInfo.version),
+                                text = if (requiredUpdate != null) {
+                                    p.updateRequiredBadge(updateInfo.version)
+                                } else {
+                                    p.updateAvailableBadge(updateInfo.version)
+                                },
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                color = if (requiredUpdate != null) {
+                                    MaterialTheme.colorScheme.onErrorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                },
                                 fontWeight = FontWeight.Bold,
                             )
                         }
@@ -759,10 +797,17 @@ internal fun ProviderRow(
                         expanded = menuOpen,
                         onDismissRequest = { menuOpen = false },
                     ) {
-                        if (availableUpdate != null) {
-                            val updateInfo = availableUpdate.info
+                        if (updateInfo != null) {
                             DropdownMenuItem(
-                                text = { CpText(p.updateDetails(updateInfo.version)) },
+                                text = {
+                                    CpText(
+                                        if (requiredUpdate != null) {
+                                            p.updateRequiredDetails(updateInfo.version)
+                                        } else {
+                                            p.updateDetails(updateInfo.version)
+                                        },
+                                    )
+                                },
                                 leadingIcon = { Icon(Icons.Filled.Download, null, tint = MaterialTheme.colorScheme.primary) },
                                 onClick = {
                                     menuOpen = false

@@ -104,6 +104,7 @@ interface PluginRepositoryStrings {
     fun statLyrics(enabled: Int, total: Int): String
     fun statRepositories(enabled: Int, total: Int): String
     fun providerUpdateSummary(name: String, from: String, to: String): String
+    fun providerUpdateUnusable(minimumVersion: String): String
     fun updateFromTo(from: String, to: String): String
 }
 
@@ -225,6 +226,8 @@ object PluginRepositoryStringsZh : PluginRepositoryStrings {
     override fun statRepositories(enabled: Int, total: Int) = "$enabled/$total 仓库启用"
     override fun providerUpdateSummary(name: String, from: String, to: String) =
         "$name · v$from → v$to"
+    override fun providerUpdateUnusable(minimumVersion: String) =
+        "低于 v$minimumVersion 的版本已停止服务，当前音源可能无法使用"
     override fun updateFromTo(from: String, to: String) = "v$from → v$to"
 }
 
@@ -346,5 +349,7 @@ object PluginRepositoryStringsEn : PluginRepositoryStrings {
     override fun statRepositories(enabled: Int, total: Int) = "$enabled/$total catalogs on"
     override fun providerUpdateSummary(name: String, from: String, to: String) =
         "$name · v$from → v$to"
+    override fun providerUpdateUnusable(minimumVersion: String) =
+        "Versions below v$minimumVersion are no longer supported; this provider may not work"
     override fun updateFromTo(from: String, to: String) = "v$from → v$to"
 }

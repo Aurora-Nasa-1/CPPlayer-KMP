@@ -1,7 +1,7 @@
 # Provider 契约
 
 > 实现哪些方法、返回什么、宿主替你做了什么。适用读者：全部 Provider 作者。
-> 契约版本 `kmp-sdk-v1` · 更新 2026-11-14 · 事实源 `provider-sdk-kmp/src/commonMain/kotlin/cp/player/sdk/`
+> 契约版本 `kmp-sdk-v1` · 更新 2026-11-15 · 事实源 `provider-sdk-kmp/src/commonMain/kotlin/cp/player/sdk/`
 
 `v1` 是 SDK 契约主版本，不是已退役的 Legacy Provider v1 或 Standard v3。
 
@@ -181,12 +181,19 @@ ZIP 安装支持 SDK JavaScript 与 JNI / Native 包。原生库走宿主统一 
 
 手动导入与仓库安装都按精确 ID 校验；同名不同 ID 不覆盖。入口缺失、越界、超限、未知契约在替换文件前拒绝；更新失败保留旧安装。
 
+更新清单可声明 `minUsableVersion`，表示低于该版本的音源已经停用、可能无法搜索或播放。宿主检查到当前版本低于停用线时会进入 `UpdateRequired` 状态并弹出强提醒，而不是只显示普通更新角标；字段格式、自洽要求与各端表现为 [MANIFEST 4.1](MANIFEST.md#41-更新清单与最低可用版本)。未声明该字段时维持普通更新流程。
+
 ```powershell
+# SDK 契约与静态类型校验
 node provider-contract/generate.mjs --check
 node --test provider-sdk-kmp/js/test.mjs provider-contract/documentation.test.mjs
 npm ci --prefix provider-sdk-kmp/js --ignore-scripts
 npm run --prefix provider-sdk-kmp/js check:types
 pwsh -File scripts/verify-provider-chain.ps1
+
+# 音源包打包校验与宿主链路一致性冒烟
+node provider-contract/pack.mjs <音源目录> -o dist/<产物.zip>
+.\gradlew.bat :core:providerConformance -PproviderPackage=dist/<产物.zip> -PproviderArgs="--json"
 ```
 
 | 命令 | 检查内容 |
@@ -195,6 +202,8 @@ pwsh -File scripts/verify-provider-chain.ps1
 | `node --test` | JS 契约测试与文档一致性 |
 | `check:types` | 生成类型可被 `tsc` 接受 |
 | `verify-provider-chain.ps1` | 独立构建目录，XML 的失败 / 错误 / 跳过全为 0 |
+| `pack.mjs` | 打包前复核 manifest、入口 UTF-8、体积上限与原生动态库格式 |
+| `:core:providerConformance` | 走真实 `ModuleManager` 与 `ProviderHost` 链路冒烟核心能力与异常路径 |
 
 最后一条仅 Windows（调用 `gradlew.bat`）。TS 命令使用 SDK 锁定的开发依赖；独立音源项目用自己的 `tsc` 与包导出类型即可。
 

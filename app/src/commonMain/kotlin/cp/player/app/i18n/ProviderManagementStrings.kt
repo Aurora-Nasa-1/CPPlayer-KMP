@@ -27,8 +27,10 @@ interface ProviderManagementStrings {
     val pendingRestartTag: String
     val activeProviderContentDesc: String
     fun updateAvailableBadge(version: String): String
+    fun updateRequiredBadge(version: String): String
     fun moreActions(name: String): String
     fun updateDetails(version: String): String
+    fun updateRequiredDetails(version: String): String
     val checkingUpdate: String
     val checkUpdate: String
     val configureUpdateSource: String
@@ -38,6 +40,7 @@ interface ProviderManagementStrings {
     val deleteModule: String
 
     fun updateAvailable(name: String, version: String): String
+    fun updateRequired(name: String, version: String): String
     fun upToDate(name: String): String
     fun checkFailed(name: String, error: String): String
     val checkingAll: String
@@ -72,6 +75,9 @@ interface ProviderManagementStrings {
 
     // —— 音源更新详情 / 更新源设置弹窗 ——
     val updateDialogTitle: String
+    val updateRequiredTitle: String
+    fun updateRequiredMessage(currentVersion: String, minimumVersion: String): String
+    val updateRequiredContinue: String
     val currentVersion: String
     val latestVersion: String
     fun publishedAt(date: String): String
@@ -128,8 +134,10 @@ object ProviderManagementStringsZh : ProviderManagementStrings {
     override val pendingRestartTag = "待重启生效"
     override val activeProviderContentDesc = "当前音源"
     override fun updateAvailableBadge(version: String) = "可更新 v$version"
+    override fun updateRequiredBadge(version: String) = "必须更新 v$version"
     override fun moreActions(name: String) = "更多操作 $name"
     override fun updateDetails(version: String) = "更新详情 (v$version)"
+    override fun updateRequiredDetails(version: String) = "必须更新 (v$version)"
     override val checkingUpdate = "正在检查更新…"
     override val checkUpdate = "检查更新"
     override val configureUpdateSource = "设置更新源"
@@ -139,6 +147,8 @@ object ProviderManagementStringsZh : ProviderManagementStrings {
     override val deleteModule = "删除模块"
 
     override fun updateAvailable(name: String, version: String) = "$name 发现新版本 v$version"
+    override fun updateRequired(name: String, version: String) =
+        "$name 当前版本可能已无法使用，请更新到 v$version"
     override fun upToDate(name: String) = "$name 已是最新版本"
     override fun checkFailed(name: String, error: String) = "$name 检查更新失败: $error"
     override val checkingAll = "正在检查音源更新…"
@@ -172,6 +182,11 @@ object ProviderManagementStringsZh : ProviderManagementStrings {
     override fun editSetting(label: String) = "编辑 $label"
 
     override val updateDialogTitle = "音源更新"
+    override val updateRequiredTitle = "音源可能已无法使用"
+    override fun updateRequiredMessage(currentVersion: String, minimumVersion: String) =
+        "该音源声明低于 v$minimumVersion 的版本已停止服务。当前 v$currentVersion " +
+            "可能无法搜索、播放或登录，请立即更新。"
+    override val updateRequiredContinue = "仍要继续使用"
     override val currentVersion = "当前版本"
     override val latestVersion = "最新版本"
     override fun publishedAt(date: String) = "发布日期: $date"
@@ -232,8 +247,10 @@ object ProviderManagementStringsEn : ProviderManagementStrings {
     override val pendingRestartTag = "Restart required"
     override val activeProviderContentDesc = "Active provider"
     override fun updateAvailableBadge(version: String) = "Update v$version"
+    override fun updateRequiredBadge(version: String) = "Update required: v$version"
     override fun moreActions(name: String) = "More actions for $name"
     override fun updateDetails(version: String) = "Update details (v$version)"
+    override fun updateRequiredDetails(version: String) = "Update required (v$version)"
     override val checkingUpdate = "Checking for updates…"
     override val checkUpdate = "Check for updates"
     override val configureUpdateSource = "Configure update source"
@@ -243,6 +260,8 @@ object ProviderManagementStringsEn : ProviderManagementStrings {
     override val deleteModule = "Delete module"
 
     override fun updateAvailable(name: String, version: String) = "$name has a new version: v$version"
+    override fun updateRequired(name: String, version: String) =
+        "$name may no longer work; update to v$version"
     override fun upToDate(name: String) = "$name is up to date"
     override fun checkFailed(name: String, error: String) = "Couldn't check updates for $name: $error"
     override val checkingAll = "Checking provider updates…"
@@ -276,6 +295,11 @@ object ProviderManagementStringsEn : ProviderManagementStrings {
     override fun editSetting(label: String) = "Edit $label"
 
     override val updateDialogTitle = "Provider update"
+    override val updateRequiredTitle = "Provider may no longer work"
+    override fun updateRequiredMessage(currentVersion: String, minimumVersion: String) =
+        "This provider declares that versions below v$minimumVersion are no longer supported. " +
+            "The installed v$currentVersion may fail to search, play or sign in. Update now."
+    override val updateRequiredContinue = "Continue anyway"
     override val currentVersion = "Current version"
     override val latestVersion = "Latest version"
     override fun publishedAt(date: String) = "Published: $date"
