@@ -202,6 +202,13 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { it.appearance.sectionLook },
             ),
             SettingsSubItem(
+                id = "appearance_palette_style",
+                titleOf = { it.appearance.paletteStyle },
+                subtitleOf = { it.appearance.paletteStyleNote },
+                keywords = listOf("配色风格", "调色风格", "高表现力", "Expressive", "TonalSpot", "Vibrant", "撞色", "调色板", "palette"),
+                sectionOf = { it.appearance.sectionLook },
+            ),
+            SettingsSubItem(
                 id = "appearance_pure_black",
                 titleOf = { it.appearance.pureBlack },
                 subtitleOf = { it.appearance.pureBlackNote },

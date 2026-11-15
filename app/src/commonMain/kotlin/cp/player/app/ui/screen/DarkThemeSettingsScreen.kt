@@ -28,6 +28,7 @@ import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSwitchItem
+import cp.player.app.ui.theme.AvailablePaletteStyles
 import cp.player.app.ui.theme.ColorSource
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.theme.ThemeMode
@@ -126,6 +127,24 @@ class DarkThemeSettingsScreen : Screen {
                     )
                 }
                 SettingsNote(colorSource.description(s, platformAvailable))
+
+                // 5. 配色风格 / 动态调色风格
+                val paletteStyle by AppModel.paletteStyleFlow.collectAsState()
+                SettingsSection(s.appearance.paletteStyle) {
+                    SettingsSegmentedItem(
+                        title = s.appearance.paletteStyle,
+                        subtitle = paletteStyle.displayName(s),
+                        icon = Icons.Filled.Palette,
+                        options = AvailablePaletteStyles.map { it.displayName(s) },
+                        selectedIndex = AvailablePaletteStyles.indexOf(paletteStyle).coerceAtLeast(0),
+                        onSelect = { index ->
+                            AvailablePaletteStyles.getOrNull(index)?.let(AppModel::setPaletteStyle)
+                        },
+                        index = 0,
+                        total = 1,
+                    )
+                }
+                SettingsNote(s.appearance.paletteStyleNote)
             }
         }
     }

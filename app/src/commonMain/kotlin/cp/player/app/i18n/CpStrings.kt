@@ -357,6 +357,12 @@ interface AppearanceStrings {
     val colorSourceCoverNote: String
     val colorSourceFixedNote: String
 
+    val paletteStyle: String
+    val paletteStyleTonalSpot: String
+    val paletteStyleExpressive: String
+    val paletteStyleVibrant: String
+    val paletteStyleNote: String
+
     val pureBlack: String
     val pureBlackNote: String
     val autoHideBottomBar: String

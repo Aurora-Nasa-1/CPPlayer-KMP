@@ -56,6 +56,7 @@ import cp.player.app.ui.model.StorageSettingsModel
 import cp.player.app.ui.model.isCustomSongCacheCapacity
 import cp.player.app.ui.model.songCacheCapacityIndex
 import cp.player.app.ui.util.formatBytes
+import cp.player.app.ui.theme.AvailablePaletteStyles
 import cp.player.app.ui.theme.ColorSource
 import cp.player.app.ui.theme.ThemeMode
 import cp.player.app.ui.theme.description
@@ -115,7 +116,7 @@ class AppearanceSettingsScreen(
                         },
                         modifier = Modifier.settingsSearchTarget("appearance_theme_mode", targetSettingId),
                         index = 0,
-                        total = 3,
+                        total = 4,
                     )
                     SettingsSegmentedItem(
                         title = s.appearance.colorSource,
@@ -127,7 +128,20 @@ class AppearanceSettingsScreen(
                         },
                         modifier = Modifier.settingsSearchTarget("appearance_color_source", targetSettingId),
                         index = 1,
-                        total = 3,
+                        total = 4,
+                    )
+                    val paletteStyle by AppModel.paletteStyleFlow.collectAsState()
+                    SettingsSegmentedItem(
+                        title = s.appearance.paletteStyle,
+                        subtitle = paletteStyle.displayName(s),
+                        options = AvailablePaletteStyles.map { it.displayName(s) },
+                        selectedIndex = AvailablePaletteStyles.indexOf(paletteStyle).coerceAtLeast(0),
+                        onSelect = { index ->
+                            AvailablePaletteStyles.getOrNull(index)?.let(AppModel::setPaletteStyle)
+                        },
+                        modifier = Modifier.settingsSearchTarget("appearance_palette_style", targetSettingId),
+                        index = 2,
+                        total = 4,
                     )
                     SettingsSwitchItem(
                         title = s.appearance.pureBlack,
@@ -135,8 +149,8 @@ class AppearanceSettingsScreen(
                         checked = pureBlack,
                         onCheckedChange = AppModel::setPureBlack,
                         modifier = Modifier.settingsSearchTarget("appearance_pure_black", targetSettingId),
-                        index = 2,
-                        total = 3,
+                        index = 3,
+                        total = 4,
                     )
                 }
 

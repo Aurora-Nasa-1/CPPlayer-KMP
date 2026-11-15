@@ -720,6 +720,7 @@ private fun PlaybackMediaControlsBridge() {
 internal fun AppTheme(content: @Composable () -> Unit) {
     val themeMode by AppModel.themeModeFlow.collectAsState()
     val colorSource by AppModel.colorSourceFlow.collectAsState()
+    val paletteStyle by AppModel.paletteStyleFlow.collectAsState()
     val pureBlack by AppModel.pureBlackFlow.collectAsState()
     val coverSeed by AppModel.coverSeedFlow.collectAsState()
     val wallpaperSeed by AppModel.wallpaperSeedFlow.collectAsState()
@@ -732,6 +733,7 @@ internal fun AppTheme(content: @Composable () -> Unit) {
     cp.player.app.ui.theme.CpTheme(
         themeMode = themeMode,
         colorSource = colorSource,
+        paletteStyle = paletteStyle,
         pureBlack = pureBlack,
         coverSeed = coverSeed,
         wallpaperSeed = wallpaperSeed,

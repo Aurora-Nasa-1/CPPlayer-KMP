@@ -194,6 +194,12 @@ object CpStringsEn : CpStrings {
             "Taken from the current track's artwork; falls back to the system wallpaper when nothing is playing"
         override val colorSourceFixedNote = "Always uses the built-in palette, independent of content and system"
 
+        override val paletteStyle = "Color palette style"
+        override val paletteStyleTonalSpot = "Classic subtle"
+        override val paletteStyleExpressive = "Expressive"
+        override val paletteStyleVibrant = "Vibrant"
+        override val paletteStyleNote = "Controls hue rotation and contrast when expanding seed color into color schemes"
+
         override val pureBlack = "Pure black"
         override val pureBlackNote = "Use a pure black background in the dark theme — easier on OLED screens"
         override val autoHideBottomBar = "Auto-hide bottom bar"

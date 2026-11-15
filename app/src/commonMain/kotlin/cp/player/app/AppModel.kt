@@ -397,6 +397,7 @@ object AppModel {
      */
     private val KEY_DYNAMIC_COLOR_LEGACY = "dynamic_color"
     private val KEY_COLOR_SOURCE = "color_source"
+    private val KEY_PALETTE_STYLE = "palette_style"
     private val KEY_PURE_BLACK = "pure_black"
     private val KEY_FLUID_BACKGROUND = "fluid_background"
     private val KEY_FLUID_BACKGROUND_FPS = "fluid_background_fps"
@@ -438,6 +439,9 @@ object AppModel {
 
     private val _colorSource = MutableStateFlow(colorSource())
     val colorSourceFlow: StateFlow<cp.player.app.ui.theme.ColorSource> = _colorSource.asStateFlow()
+
+    private val _paletteStyle = MutableStateFlow(paletteStyle())
+    val paletteStyleFlow: StateFlow<com.materialkolor.PaletteStyle> = _paletteStyle.asStateFlow()
 
     /**
      * 当前封面的种子色。null = 未取到（无封面 / 取色中 / 取色失败），
@@ -501,6 +505,16 @@ object AppModel {
     fun setColorSource(source: cp.player.app.ui.theme.ColorSource) {
         settings.putString(KEY_COLOR_SOURCE, source.name)
         _colorSource.value = source
+    }
+
+    fun paletteStyle(): com.materialkolor.PaletteStyle {
+        val raw = settings.getString(KEY_PALETTE_STYLE) ?: return com.materialkolor.PaletteStyle.TonalSpot
+        return runCatching { com.materialkolor.PaletteStyle.valueOf(raw) }.getOrDefault(com.materialkolor.PaletteStyle.TonalSpot)
+    }
+
+    fun setPaletteStyle(style: com.materialkolor.PaletteStyle) {
+        settings.putString(KEY_PALETTE_STYLE, style.name)
+        _paletteStyle.value = style
     }
 
     fun pureBlack(): Boolean = settings.getString(KEY_PURE_BLACK)?.toBooleanStrictOrNull() ?: false

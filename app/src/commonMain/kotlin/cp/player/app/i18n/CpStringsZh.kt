@@ -196,6 +196,12 @@ object CpStringsZh : CpStrings {
         override val colorSourceCoverNote = "取自当前曲目封面主色；未播放或无封面时改用系统壁纸配色"
         override val colorSourceFixedNote = "始终使用内置配色，不随内容与系统变化"
 
+        override val paletteStyle = "配色调性"
+        override val paletteStyleTonalSpot = "经典柔和"
+        override val paletteStyleExpressive = "高表现力 (Expressive)"
+        override val paletteStyleVibrant = "鲜艳活力"
+        override val paletteStyleNote = "控制种子色展开为主次色盘时的色相偏移与对比度；高表现力会带来更鲜明跳跃的容器对比"
+
         override val pureBlack = "纯黑模式"
         override val pureBlackNote = "深色下使用纯黑背景，OLED 更省电"
         override val autoHideBottomBar = "自动隐藏底栏"

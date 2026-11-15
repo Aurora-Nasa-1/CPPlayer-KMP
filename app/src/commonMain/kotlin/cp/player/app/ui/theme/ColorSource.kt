@@ -69,3 +69,22 @@ fun ColorSource.description(strings: CpStrings, platformAvailable: Boolean): Str
     ColorSource.COVER -> strings.appearance.colorSourceCoverNote
     ColorSource.FIXED -> strings.appearance.colorSourceFixedNote
 }
+
+/**
+ * 设置页支持切换的调色风格列表。
+ */
+val AvailablePaletteStyles: List<com.materialkolor.PaletteStyle> = listOf(
+    com.materialkolor.PaletteStyle.TonalSpot,
+    com.materialkolor.PaletteStyle.Expressive,
+    com.materialkolor.PaletteStyle.Vibrant,
+)
+
+/**
+ * 调色风格显示文案。
+ */
+fun com.materialkolor.PaletteStyle.displayName(strings: CpStrings): String = when (this) {
+    com.materialkolor.PaletteStyle.TonalSpot -> strings.appearance.paletteStyleTonalSpot
+    com.materialkolor.PaletteStyle.Expressive -> strings.appearance.paletteStyleExpressive
+    com.materialkolor.PaletteStyle.Vibrant -> strings.appearance.paletteStyleVibrant
+    else -> this.name
+}
