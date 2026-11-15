@@ -147,6 +147,8 @@ Windows 不再出 MSI。jpackage 只出 app image（`:app:createDistributable`�
 
 `app/src/desktopMain/kotlin/cp/player/app/VelopackHooks.kt` 的 `exitIfVelopackHook(args)` 处理四种情况，在创建启动画面之前以 0 退出，且由 `main()` 第一行调用。放进 `runDesktopApp` 会让启动画面先出现；`desktopRun` 永远复现不了，因为没有安装器，只有真实 `Setup.exe` 才走这条路径。
 
+Windows 卸载会顺带清除应用数据：`--veloapp-uninstall` 调 `DesktopDataDir.deleteAllData()`，删除 `~/.cpplayer`（设置、账号/插件、默认下载、缓存、本地曲库索引等）与历史目录 `~/.kmp-pro`。清理失败只写日志，钩子仍以 0 退出；否则 Velopack 会把卸载标成失败。用户通过设置页改到数据根目录之外的下载/缓存目录**不会**被递归删除 —— 那里可能是 `D:\Music` 一类共享目录，不能把用户选择的根当成应用独占目录。卸载钩子不允许弹 UI，因此没有“保留数据”选项；这是 Velopack FastCallback 的硬限制。
+
 ### 5.3 内置运行时 JBR
 
 桌面包内置 JBR 而不是 temurin，`WindowDraggableArea` 才能走原生 `WindowMove`（边缘吸附、拖出还原、1:1 跟手），而不是 AWT 软件移动。

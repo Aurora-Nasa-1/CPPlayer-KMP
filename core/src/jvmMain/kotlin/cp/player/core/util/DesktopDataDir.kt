@@ -43,8 +43,11 @@ object DesktopDataDir {
     /** 旧目录（可能不存在；迁移成功后即消失）。 */
     val legacyRoot: File get() = File(home, LEGACY_NAME)
 
+    /** 当前数据根目录（纯路径，不触发迁移，也不会创建目录）。 */
+    val currentRoot: File get() = File(home, CURRENT_NAME)
+
     /** 数据根目录。返回前确保迁移已尝试、目录已创建。 */
-    fun root(): File = File(home, CURRENT_NAME).also {
+    fun root(): File = currentRoot.also {
         migrateIfNeeded(legacyRoot, it)
         if (!it.exists()) it.mkdirs()
     }
@@ -54,6 +57,27 @@ object DesktopDataDir {
 
     /** 根目录下的子目录，返回前确保存在。 */
     fun directory(name: String): File = File(root(), name).also { if (!it.exists()) it.mkdirs() }
+
+    /**
+     * 删除全部应用数据：当前根目录与历史根目录。
+     *
+     * 这是 Windows 卸载钩子使用的入口。**不能先调 [root]**：那会在数据目录不存在时
+     * 把它重新建出来，也会再跑一次历史迁移。这里只按路径删除，不创建、不迁移。
+     *
+     * 删除是尽力而为的：某个文件被占用时继续尝试另一个根目录，并由返回值报告
+     * 是否全部清干净。调用方（卸载钩子）即使拿到 false 也必须正常退出，否则
+     * Velopack 会把卸载标记为失败，反而留下半卸载状态。
+     *
+     * @return 所有原本存在的目标都已删除时返回 true
+     */
+    fun deleteAllData(): Boolean {
+        var deleted = true
+        for (target in listOf(currentRoot, legacyRoot)) {
+            if (!target.exists()) continue
+            if (!runCatching { target.deleteRecursively() }.getOrDefault(false)) deleted = false
+        }
+        return deleted
+    }
 
     /**
      * 一次性迁移，幂等。
