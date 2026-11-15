@@ -159,6 +159,7 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
                 pauseShaderAnimation = shouldPauseFluidShaderDuringNavigation(
                     animatedVisibilityScope.transition.isRunning,
                 ),
+                coverUrl = state.currentTrack?.coverUrl,
             )
             .sharedBounds(rememberSharedContentState("player-container"), animatedVisibilityScope)
             .graphicsLayer { translationY = dragOffset.value },

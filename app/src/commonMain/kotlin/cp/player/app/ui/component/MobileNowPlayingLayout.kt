@@ -2,11 +2,16 @@ package cp.player.app.ui.component
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -63,6 +68,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -76,6 +82,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
@@ -227,6 +234,12 @@ internal fun MobileNowPlayingLayout(
                 }
                 return@Column
             }
+            val enterSlideSpec = CpMotion.spatial<IntOffset>()
+            val exitSlideSpec = CpMotion.spatialFast<IntOffset>()
+            val enterFadeSpec = CpMotion.effects<Float>()
+            val exitFadeSpec = CpMotion.effectsFast<Float>()
+            val enterScaleSpec = CpMotion.spatial<Float>()
+            val exitScaleSpec = CpMotion.spatialFast<Float>()
             AnimatedContent(
                 targetState = lyricsExpanded,
                 modifier = if (lyricsExpanded) {
@@ -234,7 +247,38 @@ internal fun MobileNowPlayingLayout(
                 } else {
                     Modifier.fillMaxWidth()
                 },
-                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                transitionSpec = {
+                    val expanding = targetState
+                    val enter = fadeIn(enterFadeSpec) +
+                        slideInVertically(enterSlideSpec) { height ->
+                            if (expanding) height / 4 else -height / 4
+                        } +
+                        scaleIn(
+                            animationSpec = enterScaleSpec,
+                            initialScale = 0.97f,
+                            transformOrigin = if (expanding) {
+                                TransformOrigin(0.5f, 0.35f)
+                            } else {
+                                TransformOrigin(0.5f, 0.75f)
+                            },
+                        )
+                    val exit = fadeOut(exitFadeSpec) +
+                        slideOutVertically(exitSlideSpec) { height ->
+                            if (expanding) -height / 6 else height / 6
+                        } +
+                        scaleOut(
+                            animationSpec = exitScaleSpec,
+                            targetScale = 1.015f,
+                            transformOrigin = if (expanding) {
+                                TransformOrigin(0.5f, 0.75f)
+                            } else {
+                                TransformOrigin(0.5f, 0.35f)
+                            },
+                        )
+                    (enter togetherWith exit using SizeTransform(clip = false)).apply {
+                        targetContentZIndex = if (expanding) 1f else -1f
+                    }
+                },
                 label = "mobile-player-focus",
             ) { expanded ->
                 if (expanded) {

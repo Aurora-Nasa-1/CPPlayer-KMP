@@ -447,6 +447,14 @@ object AppModel {
     val coverSeedFlow: StateFlow<androidx.compose.ui.graphics.Color?> = _coverSeed.asStateFlow()
 
     /**
+     * 当前播放曲目封面的 Apple Music 风格流体色盘（4 色，底色在末位）。
+     * 无论全局主题是否跟随封面，播放页流体背景均优先采用该色盘。
+     */
+    private val _currentCoverFluidPalette = MutableStateFlow<List<androidx.compose.ui.graphics.Color>?>(null)
+    val currentCoverFluidPalette: StateFlow<List<androidx.compose.ui.graphics.Color>?> =
+        _currentCoverFluidPalette.asStateFlow()
+
+    /**
      * 系统壁纸的种子色，用于「跟随封面」但**当前没有曲目封面**时的回退。
      *
      * 与 [coverSeedFlow] 分开而不是合并成一个流，是因为两者的**生命周期完全不同**：
@@ -1318,6 +1326,18 @@ object AppModel {
                 }
         }
         modelScope.launch {
+            playback.state
+                .map { it.currentTrack?.coverUrl }
+                .distinctUntilChanged()
+                .collectLatest { url ->
+                    if (url.isNullOrBlank()) {
+                        _currentCoverFluidPalette.value = null
+                        return@collectLatest
+                    }
+                    _currentCoverFluidPalette.value = resolveCoverFluidPalette(url)
+                }
+        }
+        modelScope.launch {
             // 一个进程只尝试一次：壁纸在运行中不会变，失败（没有壁纸 / 是动态壁纸）
             // 也不该在用户每次切来源时重试一遍解码。
             var attempted = false
@@ -1328,6 +1348,32 @@ object AppModel {
                     runCatching { cp.player.app.ui.theme.platformWallpaperSeed() }.getOrNull()
             }
         }
+    }
+
+    /** 取封面流体色盘：先查缓存，未命中才解码 + 提取。任何异常都退化为 null。 */
+    private suspend fun resolveCoverFluidPalette(url: String): List<androidx.compose.ui.graphics.Color>? {
+        cp.player.app.ui.theme.CoverFluidPaletteCache.get(url, dark = true)?.let { return it }
+        val bitmap = runCatching {
+            cp.player.app.ui.theme.loadCoverBitmap(
+                url,
+                cp.player.app.ui.theme.CoverSampleSizePx,
+            )
+        }.getOrNull()
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (bitmap == null) return null
+        val darkPalette = runCatching {
+            cp.player.app.ui.theme.extractCoverFluidPalette(bitmap, dark = true)
+        }.getOrNull()
+        val lightPalette = runCatching {
+            cp.player.app.ui.theme.extractCoverFluidPalette(bitmap, dark = false)
+        }.getOrNull()
+        if (darkPalette != null) {
+            cp.player.app.ui.theme.CoverFluidPaletteCache.put(url, dark = true, darkPalette)
+        }
+        if (lightPalette != null) {
+            cp.player.app.ui.theme.CoverFluidPaletteCache.put(url, dark = false, lightPalette)
+        }
+        return darkPalette
     }
 
     /** 取封面种子色：先查缓存，未命中才解码 + 量化。任何异常都退化为 null。 */

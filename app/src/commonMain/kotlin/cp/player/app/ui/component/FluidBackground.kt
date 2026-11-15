@@ -82,6 +82,8 @@ fun Modifier.cpFluidBackground(
     speed: Float = CpFluidBackgroundDefaults.SPEED,
     scale: Float = CpFluidBackgroundDefaults.SCALE,
     pauseShaderAnimation: Boolean = false,
+    palette: List<Color>? = null,
+    coverUrl: String? = null,
 ): Modifier {
     if (!enabled) return this.background(fallback)
 
@@ -92,11 +94,27 @@ fun Modifier.cpFluidBackground(
     // `equals`（见 TOPICS.md 那条），主题过渡期间每帧都是新实例 ⇒ 每帧重建。
     val primary = scheme.primary
     val base = if (dark) scheme.surfaceContainerLowest else scheme.surface
-    val palette = remember(primary, base, dark) { buildFluidPalette(primary, base, dark) }
+
+    val currentCoverPalette by AppModel.currentCoverFluidPalette.collectAsState()
+    val customCoverPalette = remember(coverUrl, dark) {
+        if (!coverUrl.isNullOrBlank()) {
+            cp.player.app.ui.theme.CoverFluidPaletteCache.get(coverUrl, dark)
+        } else null
+    }
+
+    val effectivePalette: List<Color> = remember(palette, customCoverPalette, currentCoverPalette, primary, base, dark) {
+        val current = currentCoverPalette
+        when {
+            !palette.isNullOrEmpty() -> palette
+            customCoverPalette != null -> customCoverPalette
+            current != null -> current
+            else -> buildFluidPalette(primary, base, dark)
+        }
+    }
 
     // ⚠️ 必须自己 remember 着色器实例，**不能**把 `CpFluidMeshGradient(...)` 直接写在
     // 实参位置上：避免逐帧新建实例导致重新编译 SkSL。
-    val settled = rememberSettledPalette(palette)
+    val settled = rememberSettledPalette(effectivePalette)
     val shader = remember(settled, scale) {
         CpFluidMeshGradient(
             colors = settled.toTypedArray(),
@@ -341,23 +359,24 @@ vec4 main( vec2 fragCoord ) {
 
     vColor = uColor[MAX_COLORS - 1];
 
-    // 这两个独立噪声场交替供色团使用：原先每种非底色都单独算一次 Simplex，4 色板即每像素 3 次；
-    // 复用两组缓慢漂移的场仍保留两团交错流动，同时把最重的噪声求值降为每像素 2 次。
-    // 时间项：最终 uTime = 秒 × speed(0.6) × speedModifier(0.5) ⇒ 约 0.3 单位/秒。
-    // 乘上这里的 0.15，漂移约 0.045 噪声单位/秒：3 秒能看到位移、30 秒换一批色团。
-    // ⚠️ 旧值 0.025 实际只有 0.0075 单位/秒 —— 要两分多钟才走完一个胞，
-    // 就算时间轴在走，人眼也会判定成「完全不动」。
-    float noiseA = snoise(vec3(base.x + uTime * 0.13, base.y, uTime * 0.15 + 1.0));
-    float noiseB = snoise(vec3(base.x - uTime * 0.12 + 4.1, base.y + 1.7, uTime * 0.16 + 5.0));
+    // 流体域扰动 (Domain Warping):
+    // 用第 1 组 Simplex 噪声计算大尺度流体速度偏转角，模拟液体表面的涡流与拉伸
+    float warpNoise = snoise(vec3(base.x + uTime * 0.11, base.y + uTime * 0.07, uTime * 0.12 + 1.0));
+    vec2 warpDir = vec2(cos(warpNoise * 6.2831853), sin(warpNoise * 6.2831853));
+    vec2 warpedBase = base + warpDir * 0.32;
 
+    // 第 2 组 Simplex 噪声：在经历流体扭曲的坐标空间中采样色团分布场
+    float fluidNoise = snoise(vec3(warpedBase.x - uTime * 0.10 + 3.8, warpedBase.y + 1.9, uTime * 0.14 + 4.6));
+
+    // 有机流体色团柔光弥散混合 (Luminous Soft Diffusion Blending)
     for(int i = 0; i < MAX_COLORS - 1; i++) {
-        float noiseField = (mod(float(i), 2.0) < 1.0) ? noiseA : noiseB;
-        float noiseFloor = 0.00001;
-        // 阈值不能太高：smoothstep 的上界就是色团中心，0.6 以上时整屏六成以上留在
-        // 接近纯黑的底色里，观感是「黑背景偶尔亮一下」。0.32 起让彩色铺到六七成。
-        float noiseCeil = 0.32 + float(i) * 0.06;
-        float noiseVal = smoothstep(noiseFloor, noiseCeil, noiseField);
-        vColor = mix(vColor, uColor[i], noiseVal);
+        float phase = float(i) * 2.0943951;
+        float field = mix(warpNoise, fluidNoise, 0.5 + 0.5 * sin(phase + uTime * 0.08));
+        vec2 centerOffset = vec2(cos(phase), sin(phase)) * 0.38;
+        float dist = length(warpedBase - centerOffset);
+        float threshold = 0.26 + float(i) * 0.08;
+        float intensity = smoothstep(-0.25, threshold, field - dist * 0.26);
+        vColor = mix(vColor, uColor[i], intensity * 0.88);
     }
 
     // High-frequency Triangular Probability Density Function (TPDF) Dithering
@@ -395,48 +414,41 @@ vec4 main( vec2 fragCoord ) {
 
 /**
  * 三个色团相对主题主色相的偏移（度）。
- *
- * ±58° 是「一眼能看出是不同颜色」与「不要撞成红绿互补那种廉价撞色」的折中；
- * 中间的 +6° 让主色相本身也占一块，画面不会只剩两个边缘色。
+ * 采用谐调三色分布（-42°, +10°, +46°），形成自然有层次的多相流动。
  */
-private val BlobHueOffsets = doubleArrayOf(-58.0, 6.0, 62.0)
+private val BlobHueOffsets = doubleArrayOf(-42.0, 10.0, 46.0)
 
 /**
- * 深色主题：三个色团按「最深 / 最亮 / 最浓」错开 tone 与 chroma。
- *
- * tone 28–42 都留在「看得见颜色」与「白字还压得住」之间：`onSurface` 是 tone 90，
- * 最亮的那个色团（tone 42）与它的对比度仍有约 4.7:1，标题与正文都安全。
+ * 深色主题：提升色团通透鲜活度（Tone 42~54，Chroma 66~82），底色采用幽邃纯黑氛围夜底（Tone 11）。
+ * 摆脱了原本 Monet 体系下极低明度（28~32）加泥灰色 surfaceContainerLowest 造成的死黑灰泥感。
  */
-private val DarkBlobTones = doubleArrayOf(32.0, 42.0, 28.0)
-private val DarkBlobChromas = doubleArrayOf(56.0, 46.0, 62.0)
+private val DarkBlobTones = doubleArrayOf(48.0, 54.0, 42.0)
+private val DarkBlobChromas = doubleArrayOf(74.0, 82.0, 66.0)
 
 /**
- * 浅色主题：色团抬到 tone 66–83、彩度 28–44。
- *
- * 底色是 tone 98 左右的 `surface`，所以 66–83 与 98 之间的明度差就是「水彩晕开」的
- * 全部可见度；再淡就看不见，再浓就压住了 `onSurface`（tone 10）的正文。
- * 最浓的一团（tone 66 / chroma 44）与正文的对比度约 6.6:1，仍高于正文 4.5:1 的可读线。
+ * 浅色主题：水彩柔润透光，高对比可读。
  */
-private val LightBlobTones = doubleArrayOf(74.0, 83.0, 66.0)
-private val LightBlobChromas = doubleArrayOf(38.0, 28.0, 44.0)
+private val LightBlobTones = doubleArrayOf(78.0, 84.0, 74.0)
+private val LightBlobChromas = doubleArrayOf(44.0, 36.0, 48.0)
 
 /**
- * 主题色 → 着色器色板。
+ * 主题色 → 默认 Apple 风格着色器色板（无封面或取色未就绪时的回退）。
  *
- * 色相锚在 `scheme.primary` 上 —— 它就是「跟随封面取色」时由封面种子色推出来的那一支，
- * 所以封面一换，整片流体背景跟着换，与界面上其它强调色同源。
- *
- * ⚠️ 顺序有意义：库把**最后一个**色当作「底」，前面几个按噪声混进去。底色必须排在末位，
- * 否则整屏会变成一块高饱和色、而不是「深底上浮着几团色」。
+ * ⚠️ 顺序有意义：库把**最后一个**色当作「底」，前面几个按噪声混进去。底色必须排在末位。
  *
  * @param primary 主题主色，只取它的**色相**。
- * @param base 底色（深色取最暗的那级 surface，浅色取 `surface`）。
+ * @param base 底色参数保留兼容。
  */
 private fun buildFluidPalette(primary: Color, base: Color, dark: Boolean): List<Color> {
     val hue = Hct.fromInt(primary.toArgb()).hue
     val tones = if (dark) DarkBlobTones else LightBlobTones
     val chromas = if (dark) DarkBlobChromas else LightBlobChromas
-    return List(tones.size) { i -> blobColor(hue + BlobHueOffsets[i], chromas[i], tones[i]) } + base
+    val effectiveBase = if (dark) {
+        blobColor(hue, 18.0, 11.0)
+    } else {
+        blobColor(hue, 4.0, 97.5)
+    }
+    return List(tones.size) { i -> blobColor(hue + BlobHueOffsets[i], chromas[i], tones[i]) } + effectiveBase
 }
 
 /**

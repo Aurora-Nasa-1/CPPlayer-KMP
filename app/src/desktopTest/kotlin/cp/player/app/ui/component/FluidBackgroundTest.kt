@@ -5,12 +5,14 @@ import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.Density
 import com.mikepenz.hypnoticcanvas.NonAndroidRuntimeEffect
 import cp.player.app.AppModel
 import cp.player.app.readPng
 import cp.player.app.ui.theme.CpTheme
 import cp.player.app.ui.theme.ThemeMode
+import cp.player.app.ui.theme.solidImage
 import org.jetbrains.skia.RuntimeEffect
 import java.security.MessageDigest
 import kotlin.test.Test
@@ -164,5 +166,38 @@ class FluidBackgroundTest {
         assertEquals(3, highRefresh.divisor)
         assertEquals(48, highRefresh.targetFps)
         assertTrue(highRefresh.targetFps <= 60)
+    }
+
+    @Test
+    fun `AppleMusic流体色盘提取具备深邃暗底与鲜活多色团`() {
+        val coverArgb = 0xFF3B82F6.toInt()
+        val image = solidImage(coverArgb)
+        // HCT 的 chroma 上限随色相变化：蓝色在 tone 50 附近最多只能到 ~43，
+        // 直接要求 chroma≥60 是几何上不可能的。改为「不比封面原色更灰」。
+        val coverChroma = com.materialkolor.hct.Hct.fromInt(coverArgb).chroma
+        val darkPalette = cp.player.app.ui.theme.extractCoverFluidPalette(image, dark = true)
+        assertNotNull(darkPalette, "彩色封面必须能提取出深色流体色盘")
+        assertEquals(4, darkPalette.size, "流体色盘必须包含 3 个流体光团色与 1 个底色（共 4 色）")
+
+        // 验证末位底色具有深邃氛围（纯正暗夜底 Tone 8~18，彻底告别 Monet 泥灰色）
+        val baseHct = com.materialkolor.hct.Hct.fromInt(darkPalette.last().toArgb())
+        assertTrue(baseHct.tone in 8.0..18.0, "深色流体底色必须为幽邃暗夜调（Tone 8~18），当前 Tone=${baseHct.tone}")
+
+        // 验证前 3 个色团具备鲜活的彩度与通透的明度
+        for (i in 0 until 3) {
+            val hct = com.materialkolor.hct.Hct.fromInt(darkPalette[i].toArgb())
+            assertTrue(hct.tone in 40.0..62.0, "流体高光色团明度需通透且文字可读（Tone 40~62），当前 Tone=${hct.tone}")
+            assertTrue(
+                hct.chroma >= coverChroma * 0.9,
+                "流体高光色团不应比封面原色更灰（封面 Chroma=$coverChroma），当前 Chroma=${hct.chroma}",
+            )
+        }
+
+        // 浅色模式流体色盘验证
+        val lightPalette = cp.player.app.ui.theme.extractCoverFluidPalette(image, dark = false)
+        assertNotNull(lightPalette, "彩色封面必须能提取出浅色流体色盘")
+        assertEquals(4, lightPalette.size)
+        val lightBaseHct = com.materialkolor.hct.Hct.fromInt(lightPalette.last().toArgb())
+        assertTrue(lightBaseHct.tone >= 95.0, "浅色流体底色必须为纯净明底（Tone>=95），当前 Tone=${lightBaseHct.tone}")
     }
 }

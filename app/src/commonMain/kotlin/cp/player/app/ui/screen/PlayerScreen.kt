@@ -594,6 +594,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                 pauseShaderAnimation = shouldPauseFluidShaderDuringNavigation(
                     animatedVisibilityScope.transition.isRunning,
                 ),
+                coverUrl = track.coverUrl,
             )
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {

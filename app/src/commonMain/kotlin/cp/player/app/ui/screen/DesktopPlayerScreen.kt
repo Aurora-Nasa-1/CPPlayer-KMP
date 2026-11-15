@@ -421,7 +421,8 @@ internal fun DesktopPlayerLayout(
     }
     val moreSheets = rememberPlayerMoreSheetState()
     var selectedTab by remember { mutableIntStateOf(0) }
-    var showTranslation by remember { mutableStateOf(true) }
+    val playerConfig by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
+    var showTranslation by remember(playerConfig.showTranslation) { mutableStateOf(playerConfig.showTranslation) }
     val duration = state.durationMs.coerceAtLeast(0L)
     val seekable = SeekAvailability.isSeekable(duration, state.isLocalizing)
 
@@ -449,6 +450,7 @@ internal fun DesktopPlayerLayout(
                 enabled = fluidBackground,
                 fallback = background,
                 pauseShaderAnimation = transitionRunning,
+                coverUrl = track.coverUrl,
             )
     ) {
         val windowMaxWidth = maxWidth
@@ -578,7 +580,11 @@ internal fun DesktopPlayerLayout(
                             label = if (showTranslation) s.player.hideLyricsTranslation else s.player.showLyricsTranslation,
                             icon = Icons.Rounded.Translate,
                             isSelected = showTranslation,
-                            onClick = { showTranslation = !showTranslation },
+                            onClick = {
+                                val next = !showTranslation
+                                showTranslation = next
+                                AppModel.updateMobilePlayerCustomConfig { it.copy(showTranslation = next) }
+                            },
                         )
                     )
                 }
@@ -981,7 +987,11 @@ internal fun DesktopPlayerLayout(
                                         icon = Icons.Rounded.Translate,
                                         label = if (showTranslation) s.player.closeLyricsTranslation else s.player.lyricsTranslation,
                                         active = showTranslation,
-                                        onClick = { showTranslation = !showTranslation },
+                                        onClick = {
+                                            val next = !showTranslation
+                                            showTranslation = next
+                                            AppModel.updateMobilePlayerCustomConfig { it.copy(showTranslation = next) }
+                                        },
                                     )
                                 }
                                 // 「缩成迷你播放器」：**只有桌面端才有**（迷你模式是窗口级能力），
