@@ -16,12 +16,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
@@ -36,13 +32,17 @@ import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
@@ -64,12 +64,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.BentoActionCard
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.BentoCard
 import cp.player.app.ui.component.BentoGap
 import cp.player.app.ui.component.BentoHeroCard
@@ -85,18 +85,35 @@ import cp.player.app.ui.component.LocalIsExpanded
 import cp.player.app.platform.shareText
 import cp.player.app.ui.component.PlaylistCoverCard
 import cp.player.app.ui.component.PlaylistItem
+import cp.player.app.ui.component.PlaylistMenuActions
 import cp.player.app.ui.component.PlaylistOptionsSheet
 import cp.player.app.ui.component.ProviderFeatureGate
 import cp.player.app.ui.component.SectionHeader
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.playlistShareText
 import cp.player.app.ui.component.rememberActiveProviderSupports
+import cp.player.app.ui.component.AddToLocalPlaylistDialog
+import cp.player.app.ui.component.AddToPlaylistSheet
+import cp.player.app.ui.component.CpConfirmDialog
+import cp.player.app.ui.component.SongDetailInfoDialog
+import cp.player.app.ui.component.SongOptionsSheet
+import cp.player.app.ui.component.cpPressScale
+import cp.player.app.ui.component.legacySegmentGridShape
+import cp.player.app.ui.util.UiEvents
+import cp.player.core.local.LocalFolderTree
+import cp.player.core.local.LocalGridSort
+import cp.player.core.local.LocalLibraryAggregator
+import cp.player.core.media.LocalMediaItem
+import cp.player.core.media.LocalMediaOrigin
+import cp.player.core.music.TrackSummary
 import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.DownloadsUiState
 import cp.player.app.ui.model.LibraryScreenModel
 import cp.player.app.ui.model.LibraryUiState
 import cp.player.app.ui.wall.PosterWallIcon
+import cp.player.app.ui.theme.cpCardSurface
 import cp.player.core.music.PlaylistSummary
+import cp.player.core.music.isRemote
 import cp.player.core.provider.ProviderCapability
 import kotlinx.coroutines.launch
 
@@ -157,7 +174,7 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     // 重命名目标（只有 owner 能看到入口）。与「删除 / 取消收藏」共用同一个选项弹层，
     // 但重命名不是破坏性操作，走独立的输入框而不是 CpConfirmHost。
     var renameTarget by remember { mutableStateOf<PlaylistSummary?>(null) }
-    val navigator = LocalNavigator.currentOrThrow
+    val navigator = LocalAppNavigator.current
     val downloadsModel = remember { DownloadsScreenModel() }
     val downloadsState by downloadsModel.state.collectAsState()
     val likedIds by AppModel.playback.likedIds.collectAsState()
@@ -168,12 +185,41 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
 
     LaunchedEffect(state.selectedPlaylistId, state.playlists) {
         val target = state.selectedPlaylistId ?: return@LaunchedEffect
-        state.playlists.firstOrNull { it.resourceId == target }?.let { navigator.push(PlaylistDetailScreen(it)) }
+        state.playlists.firstOrNull { it.resourceId == target }?.let { navigator.push(AppRoute.PlaylistDetail(it)) }
     }
 
     // 页面级刷新入口：桌面 = 空白处右键「刷新」；Android = 下拉刷新。
     // 静默刷新（已有歌单时不置 loading）走模型单独的 refreshing 标记驱动指示器。
     val refreshing by model.refreshing.collectAsState()
+    // 曲库列表 / 栅格共用的歌单动作：桌面右键与「更多」读同一份，
+    // 手机端仍由 onOptionsClick 打开 PlaylistOptionsSheet。
+    val playlistMenuActions: (PlaylistSummary) -> PlaylistMenuActions? = { playlist ->
+        if (!playlist.isRemote) {
+            null
+        } else {
+            val owner = model.isOwner(playlist)
+            PlaylistMenuActions(
+                isOwner = owner,
+                isFavorite = true,
+                onRefresh = { model.refresh() },
+                onPlay = { model.play(playlist) },
+                onAddToQueue = { model.play(playlist, addOnly = true) },
+                onDownload = { model.download(playlist) },
+                onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
+                onToggleFavorite = if (!owner) {
+                    { askDeleteOrUnsubscribe(playlist, model, confirm, s) }
+                } else {
+                    null
+                },
+                onRename = if (owner) {
+                    { renameTarget = playlist }
+                } else {
+                    null
+                },
+                onDelete = { askDeleteOrUnsubscribe(playlist, model, confirm, s) },
+            )
+        }
+    }
     cp.player.app.ui.component.CpRefreshablePage(
         isRefreshing = refreshing,
         onRefresh = { model.refresh() },
@@ -192,25 +238,27 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             actions = DesktopLibraryActions(
                 onSelectTab = model::selectTab,
                 onCreatePlaylist = { showCreateDialog = true },
-                onSearch = { navigator.push(LibrarySearchScreen()) },
-                onImport = { navigator.push(ImportPlaylistScreen()) },
-                onRecentPlays = { navigator.push(InsightsScreen(InsightsScreen.TAB_RECENT)) },
-                onInsights = { navigator.push(InsightsScreen(InsightsScreen.TAB_OVERVIEW)) },
-                onDownloads = { navigator.push(DownloadsScreen()) },
-                onLocal = { navigator.push(LocalLibraryScreen()) },
-                onCloud = { navigator.push(CloudDriveScreen()) },
-                onAlbumWall = { navigator.push(AlbumWallScreen()) },
+                onSearch = { navigator.push(AppRoute.LibrarySearch()) },
+                onImport = { navigator.push(AppRoute.ImportPlaylist) },
+                onRecentPlays = { navigator.push(AppRoute.Insights(recent = true)) },
+                onInsights = { navigator.push(AppRoute.Insights()) },
+                onDownloads = { navigator.push(AppRoute.Downloads()) },
+                onLocal = { navigator.push(AppRoute.LocalLibrary()) },
+                onCloud = { navigator.push(AppRoute.CloudDrive()) },
+                onAlbumWall = { navigator.push(AppRoute.AlbumWall()) },
                 onRetry = model::refresh,
-                onOpenPlaylist = { navigator.push(PlaylistDetailScreen(it)) },
+                onOpenPlaylist = { navigator.push(AppRoute.PlaylistDetail(it)) },
                 onPlaylistOptions = { selectedPlaylist = it },
                 isOwner = model::isOwner,
+                menuActionsOf = playlistMenuActions,
             ),
         ) {
             LocalLibrarySection(
                 s = s,
                 state = downloadsState,
-                onOpenLocal = { navigator.push(LocalLibraryScreen()) },
-                onOpenDownloads = { navigator.push(DownloadsScreen()) },
+                model = downloadsModel,
+                onOpenLocal = { initialTab -> navigator.push(AppRoute.LocalLibrary(initialTab = initialTab)) },
+                onOpenDownloads = { navigator.push(AppRoute.Downloads()) },
             )
         }
     } // CpRefreshablePage
@@ -222,6 +270,8 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             onDismiss = { selectedPlaylist = null },
             onPlay = { model.play(playlist) },
             onAddToQueue = { model.play(playlist, addOnly = true) },
+            onRefresh = { model.refresh() },
+            onDownload = { model.download(playlist) },
             onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
             onDelete = { askDeleteOrUnsubscribe(playlist, model, confirm, s) },
             onRename = if (model.isOwner(playlist)) {
@@ -232,7 +282,11 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             coverUrl = playlist.coverUrl,
             // 媒体库中的歌单均为已收藏/自建；非 owner 时复用同一个确认弹窗（文案按 owner 区分）
             isFavorite = true,
-            onToggleFavorite = { askDeleteOrUnsubscribe(playlist, model, confirm, s) },
+            onToggleFavorite = if (!model.isOwner(playlist)) {
+                { askDeleteOrUnsubscribe(playlist, model, confirm, s) }
+            } else {
+                null
+            },
         )
     }
 
@@ -312,7 +366,7 @@ private fun askDeleteOrUnsubscribe(
  *    问候语里本来就有）；
  * 2. **一排快捷圆形入口**：最近播放 / 云盘 / 下载（三个高频跳转，一排放得下）。
  *
- * 「创建歌单」hero 删除 —— 曲库标题行右侧的 `[+]` 就是这个动作；
+ * 「创建歌单」hero 删除 —— 曲库标题行右侧的 `[+]` / 导入就是这个区段的操作入口；
  * 偏好/存储/关于删除 —— 全部在顶栏设置可达。桌面 expanded 保持 bento 不动。
  */
 @Composable
@@ -460,7 +514,6 @@ private fun LibraryDashboard(
         }
     }
 }
-
 @Composable
 private fun LibraryGreeting(
     title: String,
@@ -537,7 +590,7 @@ private fun LibraryPreferenceCard(
     val s = cpStrings()
     BentoCard(
         modifier = modifier,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = cpCardSurface(),
         contentPadding = PaddingValues(18.dp),
     ) {
         CpText(
@@ -652,7 +705,10 @@ private fun LazyListScope.playlistsSection(
                 }
             }
         }
-        else -> items(state.playlists) { playlist ->
+        else -> items(
+            items = state.playlists,
+            key = { playlist -> "playlist:${playlist.resourceId}:${playlist.id}" },
+        ) { playlist ->
             PlaylistItem(
                 playlist = playlist,
                 isOwner = isOwner(playlist),
@@ -761,125 +817,460 @@ private fun PlaylistQuickGrid(
 }
 
 /**
- * 「本地音乐」分段的内联概览。
+ * 「本地音乐」分段的内联概览（M3 Expressive 风格）。
  *
  * 完整清单在 [LocalLibraryScreen]（歌曲 / 专辑 / 艺术家 / 收藏 / 文件夹）。
- * 这里提供本地曲库的直达入口与统计卡片，并将下载管理作为配套辅助入口保留。
+ * 这里提供本地曲库的直达控制台、分类磁贴导航与最近添加歌曲速览，将下载管理作为配套辅助入口保留。
  */
 @Composable
 private fun LocalLibrarySection(
     s: CpStrings,
     state: DownloadsUiState,
-    onOpenLocal: () -> Unit,
+    model: DownloadsScreenModel,
+    onOpenLocal: (Int) -> Unit,
     onOpenDownloads: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val scope = rememberCoroutineScope()
     val localCount = state.localAudioItems.size
     val completedCount = state.completedTasks.size
     val activeCount = state.activeTasks.size
+    val playbackState by AppModel.playback.state.collectAsState()
+    val currentPlayingTrackId = playbackState.currentTrack?.id
+    val likedIds by AppModel.playback.likedIds.collectAsState()
+    val confirm = cp.player.app.ui.component.rememberConfirmState()
 
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // 主卡片：本地音乐库入口
-        BentoCard(
-            onClick = onOpenLocal,
-            modifier = Modifier.fillMaxWidth(),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentPadding = PaddingValues(20.dp),
-            fillHeight = false,
-        ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.size(52.dp),
-                    ) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Filled.FolderOpen,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(28.dp),
-                            )
+    var optionsTargetSong by remember { mutableStateOf<LocalMediaItem?>(null) }
+    var showInfoTrack by remember { mutableStateOf<TrackSummary?>(null) }
+    var addToCloudPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
+    var addToLocalPlaylistPath by remember { mutableStateOf<String?>(null) }
+    var deleteTargetSong by remember { mutableStateOf<LocalMediaItem?>(null) }
+    var removeTargetSong by remember { mutableStateOf<LocalMediaItem?>(null) }
+
+    val albumsCount = remember(state.localAudioItems) {
+        LocalLibraryAggregator.albums(state.localAudioItems, LocalGridSort.NAME).size
+    }
+    val artistsCount = remember(state.localAudioItems) {
+        LocalLibraryAggregator.artists(state.localAudioItems, LocalGridSort.NAME).size
+    }
+    val foldersCount = remember(state.localAudioItems) {
+        LocalFolderTree.build(state.localAudioItems).size
+    }
+    val favoritesCount = state.favoritePaths.size
+    val playlistsCount = state.localPlaylists.size
+
+    val toggleCloudFav: (String) -> Unit = remember(likedIds) {
+        { cloudId: String ->
+            scope.launch {
+                val cloudFavId = runCatching {
+                    cp.player.core.music.CPMediaId.parse(cloudId).resourceId
+                }.getOrDefault(cloudId)
+                val target = cloudFavId !in likedIds
+                AppModel.playback.toggleFavoriteFor(cloudId)
+                UiEvents.notify(s.downloads.favoriteCloudDone(target))
+            }
+        }
+    }
+    val toggleLocalFav: (String) -> Unit = {
+        val now = AppModel.localMedia.favorites.toggle(it)
+        UiEvents.notify(if (now) s.downloads.addedToFavorites else s.downloads.removedFromFavorites)
+    }
+
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        if (localCount == 0) {
+            CpText(
+                s.downloads.emptyLocalNote,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        LocalCategoryGrid(
+            items = listOf(
+                LocalCategoryItem(s.downloads.tabSongs, localCount, Icons.Filled.MusicNote, 0),
+                LocalCategoryItem(s.downloads.tabAlbums, albumsCount, Icons.Filled.Album, 1),
+                LocalCategoryItem(s.downloads.tabArtists, artistsCount, Icons.Filled.Person, 2),
+                LocalCategoryItem(s.downloads.tabLocalFavorites, favoritesCount, Icons.Filled.Favorite, 3),
+                LocalCategoryItem(
+                    s.downloads.tabLocalPlaylists,
+                    playlistsCount,
+                    Icons.AutoMirrored.Filled.QueueMusic,
+                    4,
+                ),
+                LocalCategoryItem(s.downloads.tabFolders, foldersCount, Icons.Filled.FolderOpen, 5),
+            ),
+            onOpenLocal = onOpenLocal,
+        )
+
+        LocalLibraryQuickActions(
+            actions = listOf(
+                LocalLibraryQuickAction(
+                    label = s.downloads.playAll,
+                    icon = Icons.Filled.PlayArrow,
+                    onClick = { model.playAll(state.localAudioItems) },
+                    enabled = localCount > 0,
+                ),
+                LocalLibraryQuickAction(
+                    label = s.downloads.shuffleAll,
+                    icon = Icons.Filled.Shuffle,
+                    onClick = { model.shuffleAll(state.localAudioItems) },
+                    enabled = localCount > 0,
+                ),
+                LocalLibraryQuickAction(
+                    label = if (state.scanning) s.downloads.scanning else s.downloads.scanDevice,
+                    icon = Icons.Filled.Refresh,
+                    onClick = { model.startScan(s) },
+                    enabled = !state.scanning,
+                    loading = state.scanning,
+                    emphasis = LocalQuickActionEmphasis.UTILITY,
+                ),
+                LocalLibraryQuickAction(
+                    label = s.downloads.browseLibrary,
+                    icon = Icons.Filled.ChevronRight,
+                    onClick = { onOpenLocal(0) },
+                    emphasis = LocalQuickActionEmphasis.UTILITY,
+                ),
+            ),
+        )
+
+        if (state.recentAudioItems.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SectionHeader(
+                    title = s.downloads.recentAdded,
+                    supportingText = s.downloads.localSongCount(localCount),
+                    action = {
+                        TextButton(onClick = { onOpenLocal(0) }) {
+                            CpText(s.downloads.viewAll, style = MaterialTheme.typography.labelMedium)
+                            Icon(Icons.Filled.ChevronRight, null, Modifier.size(16.dp))
                         }
-                    }
-                    Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f)) {
-                        CpText(
-                            s.downloads.tabLocalLibrary,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
+                    },
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap)) {
+                    state.recentAudioItems.forEachIndexed { index, song ->
+                        val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
+                        val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
+                        LocalSongRow(
+                            song = song,
+                            isCurrentlyPlaying = currentPlayingTrackId == mediaId,
+                            likedIds = likedIds,
+                            favoritePaths = state.favoritePaths,
+                            model = model,
+                            strings = s,
+                            onPlay = {
+                                val allIdx = state.localAudioItems.indexOfFirst { it.path == song.path }.coerceAtLeast(0)
+                                model.playAll(state.localAudioItems, allIdx)
+                            },
+                            onToggleCloudFav = toggleCloudFav,
+                            onToggleLocalFav = toggleLocalFav,
+                            onAddToCloudPlaylist = { addToCloudPlaylistTrack = it },
+                            onAddToLocalPlaylist = { addToLocalPlaylistPath = it },
+                            onRemoveSong = { removeTargetSong = it },
+                            onDeleteSong = { deleteTargetSong = it },
+                            onShowInfo = { showInfoTrack = it },
+                            onOptionsClick = { optionsTargetSong = it },
+                            index = index,
+                            total = state.recentAudioItems.size,
                         )
-                        CpText(
-                            "共 $localCount 首本地歌曲",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
-                }
-                FilledTonalButton(
-                    onClick = onOpenLocal,
-                    modifier = Modifier.padding(start = 12.dp),
-                ) {
-                    CpText("浏览曲库")
                 }
             }
         }
 
-        // 次级卡片：下载传输管理
-        BentoCard(
+        Surface(
             onClick = onOpenDownloads,
-            modifier = Modifier.fillMaxWidth(),
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            contentPadding = PaddingValues(16.dp),
-            fillHeight = false,
+            shape = MaterialTheme.shapes.extraLarge,
+            color = cpCardSurface(),
+            modifier = Modifier.fillMaxWidth().cpPressScale(),
         ) {
             Row(
-                Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth().padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.Download,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    CpText(
-                        s.library.offlineDownloads,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    if (activeCount > 0) {
-                        Spacer(Modifier.width(8.dp))
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primary,
-                        ) {
-                            CpText(
-                                "$activeCount 下载中",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            )
-                        }
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Filled.Download,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(22.dp),
+                        )
                     }
                 }
-                CpText(
-                    "已下载 $completedCount 首",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    CpText(
+                        s.library.offlineDownloads,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    CpText(
+                        s.downloads.downloadedCount(completedCount),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (activeCount > 0) {
+                    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
+                        CpText(
+                            s.downloads.downloadingCount(activeCount),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+                Icon(
+                    Icons.Filled.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
                 )
             }
         }
     }
+
+    optionsTargetSong?.let { song ->
+        val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
+        val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
+        val isDownloaded = song.source == LocalMediaOrigin.DOWNLOADED || !song.originalMediaId.isNullOrBlank()
+        val cloudMediaId = song.originalMediaId
+        val cloudFavId = cloudMediaId?.let { runCatching { cp.player.core.music.CPMediaId.parse(it).resourceId }.getOrDefault(it) }
+        val isCloudFav = cloudFavId != null && cloudFavId in likedIds
+        val isLocalFav = song.path in state.favoritePaths
+        val isFav = if (isDownloaded && cloudMediaId != null) isCloudFav else isLocalFav
+        val trackSummary = remember(song) {
+            TrackSummary(
+                id = mediaId,
+                name = song.title,
+                artist = song.artist ?: s.downloads.unknownArtist,
+                album = song.album,
+                coverUrl = song.coverUri,
+                durationMs = song.durationMs,
+                originalMediaId = song.originalMediaId,
+            )
+        }
+
+        SongOptionsSheet(
+            songName = song.title,
+            artistName = song.artist ?: s.downloads.unknownArtist,
+            isFavorite = isFav,
+            isDownloaded = true,
+            onDismiss = { optionsTargetSong = null },
+            onPlay = {
+                val allIdx = state.localAudioItems.indexOfFirst { it.path == song.path }.coerceAtLeast(0)
+                model.playAll(state.localAudioItems, allIdx)
+            },
+            onToggleFavorite = {
+                if (isDownloaded && cloudMediaId != null) {
+                    toggleCloudFav(cloudMediaId)
+                } else {
+                    toggleLocalFav(song.path)
+                }
+            },
+            onAddToQueue = {
+                if (!isVideo) {
+                    scope.launch {
+                        AppModel.playback.addToQueue(mediaId)
+                        UiEvents.notify(s.library.queuedToPlay)
+                    }
+                }
+            },
+            onPlayNext = {
+                if (!isVideo) {
+                    scope.launch {
+                        AppModel.playback.addNextToQueue(mediaId)
+                        UiEvents.notify(s.library.playNext)
+                    }
+                }
+            },
+            onAddToPlaylist = {
+                if (isDownloaded && cloudMediaId != null) {
+                    addToCloudPlaylistTrack = trackSummary
+                } else {
+                    addToLocalPlaylistPath = song.path
+                }
+            },
+            onAddToLocalPlaylist = if (isDownloaded && cloudMediaId != null) {
+                { addToLocalPlaylistPath = song.path }
+            } else null,
+            onDownload = {},
+            onShowInfo = {
+                showInfoTrack = trackSummary
+            },
+            onShare = {
+                if (!song.originalMediaId.isNullOrBlank()) {
+                    val share = cp.player.app.ui.component.songShareText(trackSummary)
+                    cp.player.app.platform.shareText(share)
+                } else {
+                    cp.player.app.platform.shareText("${song.title} - ${song.artist ?: s.downloads.unknownArtist}")
+                }
+            },
+            coverUrl = song.coverUri,
+            onOpenInFileManager = {
+                cp.player.app.ui.util.revealInFileManager(song.path, s.downloads)
+            },
+            onRemoveFromLibrary = {
+                removeTargetSong = song
+            },
+            onDelete = {
+                deleteTargetSong = song
+            },
+            deleteLabel = s.downloads.deleteLocalFile,
+        )
+    }
+
+    cp.player.app.ui.component.CpConfirmHost(confirm)
+
+    addToCloudPlaylistTrack?.let { track ->
+        val cloudId = track.originalMediaId ?: track.id
+        AddToPlaylistSheet(
+            trackIds = listOf(cloudId),
+            onDismiss = { addToCloudPlaylistTrack = null },
+        )
+    }
+
+    addToLocalPlaylistPath?.let { path ->
+        AddToLocalPlaylistDialog(
+            trackPaths = listOf(path),
+            onDismiss = { addToLocalPlaylistPath = null },
+        )
+    }
+
+    removeTargetSong?.let { song ->
+        CpConfirmDialog(
+            title = s.downloads.removeConfirmTitle,
+            message = s.downloads.removeConfirmMessage(song.title),
+            confirmLabel = s.downloads.removeFromLibrary,
+            destructive = false,
+            onConfirm = {
+                model.removeLocalItem(song, s)
+                removeTargetSong = null
+            },
+            onDismiss = { removeTargetSong = null },
+        )
+    }
+
+    deleteTargetSong?.let { song ->
+        CpConfirmDialog(
+            title = s.downloads.deleteLocalFile,
+            message = s.downloads.deleteLocalFileMessage(song.title),
+            confirmLabel = s.downloads.delete,
+            destructive = true,
+            onConfirm = {
+                model.deleteLocalFile(song, s)
+                deleteTargetSong = null
+            },
+            onDismiss = { deleteTargetSong = null },
+        )
+    }
+
+    showInfoTrack?.let { track ->
+        SongDetailInfoDialog(
+            track = track,
+            onDismiss = { showInfoTrack = null },
+        )
+    }
 }
+
+/** 分类磁贴的一格。 */
+internal data class LocalCategoryItem(
+    val title: String,
+    val count: Int,
+    val icon: ImageVector,
+    val tab: Int,
+)
+
+/**
+ * M3E 连体分类磁贴。
+ *
+ * 宽栏三列、窄栏两列；整组外圈 20dp、相邻内角 4dp（[legacySegmentGridShape]），
+ * 拼成一张连续的卡片而不是六个独立圆角块。计数用 `headlineSmall` 大号数字，
+ * 与 PixelPlayer 的 Library 分类区同一读法：先看到数量，再看到分类名。
+ */
+@Composable
+internal fun LocalCategoryGrid(
+    items: List<LocalCategoryItem>,
+    onOpenLocal: (Int) -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val columns = if (maxWidth >= 560.dp) 3 else 2
+        val rows = items.chunked(columns)
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            rows.forEachIndexed { rowIndex, row ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    row.forEachIndexed { columnIndex, item ->
+                        LocalCategoryTile(
+                            item = item,
+                            shape = legacySegmentGridShape(rowIndex, rows.size, columnIndex, row.size),
+                            onClick = { onOpenLocal(item.tab) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalCategoryTile(
+    item: LocalCategoryItem,
+    shape: androidx.compose.ui.graphics.Shape,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier.height(108.dp).cpPressScale(),
+    ) {
+        Column(
+            Modifier.fillMaxSize().padding(16.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            item.icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                CpText(
+                    item.count.toString(),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (item.count > 0) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    },
+                )
+            }
+            CpText(
+                item.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
+    }
+}
+

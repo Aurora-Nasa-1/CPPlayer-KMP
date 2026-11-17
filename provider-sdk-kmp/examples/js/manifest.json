@@ -1,0 +1,18 @@
+{
+  "id": "my-provider",
+  "name": "My Provider",
+  "version": "1.0.0",
+  "type": "js",
+  "contract": "kmp-sdk-v1",
+  "entryPoint": "index.js",
+  "capabilities": ["search", "playback"],
+  "sdkOrigins": ["https://music.example.com"],
+  "settingsSchema": [
+    {
+      "key": "origin",
+      "label": "API origin",
+      "type": "string",
+      "default": "https://music.example.com"
+    }
+  ]
+}

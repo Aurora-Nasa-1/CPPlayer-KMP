@@ -19,8 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
@@ -36,7 +34,7 @@ import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.SettingsTextInputItem
 import cp.player.app.ui.util.UiEvents
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.control.LocalServerConfig
 import cp.player.core.control.LocalServerStatus
 import cp.player.core.control.OutputMode
@@ -50,7 +48,7 @@ import cp.player.app.ui.component.CpText
 class ExternalAccessSettingsScreen : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val s = cpStrings()
         val config by AppModel.localServerConfigFlow.collectAsState()
         val status by AppModel.localServerStatus.collectAsState()
@@ -265,7 +263,7 @@ class ExternalAccessSettingsScreen : Screen {
 
         CpRouteScaffold(
             title = s.externalAccess.screenTitle,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier -> body(pageModifier) }
     }
 }

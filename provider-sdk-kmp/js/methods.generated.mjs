@@ -160,5 +160,8 @@ export const providerMethods = Object.freeze({
   "media.qualities": "getMediaQualities",
   "messages.sendResource": "sendResourceMessage",
   "comments.userHistory": "getUserCommentHistory",
-  "accounts.likes.page": "getLikeListPage"
+  "accounts.likes.page": "getLikeListPage",
+  "social.likeResource": "likeResource",
+  "tracks.resolveDrm": "resolveDrm",
+  "tracks.exchangeLicense": "exchangeLicense"
 });

@@ -108,6 +108,42 @@ class AudioMetadataReaderTest {
         file.delete()
     }
 
+    @Test
+    fun `封面超过 96KB 后仍能读到 USLT`() {
+        val lrc = "[00:01.00]大封面之后\n[00:03.00]仍然有词"
+        // HEAD_BYTES=96KB；把封面推到 120KB，歌词帧落在头部窗口之外。
+        val bigCover = ByteArray(120 * 1024) { 0x42 }
+        val file = tempFile("big-cover.mp3").apply {
+            writeBytes(id3v2Frames(apicFrame(bigCover), usltFrame(lrc)))
+        }
+        val info = AudioMetadataReader.read(file.absolutePath)
+        assertNotNull(info)
+        assertEquals(lrc, info.lyrics)
+        assertTrue(info.hasEmbeddedCover)
+        file.delete()
+    }
+
+    @Test
+    fun `SYLT 同步歌词帧转成 LRC`() {
+        val file = tempFile("sylt.mp3").apply {
+            writeBytes(id3v2Frames(syltFrame(listOf(1_000L to "第一句", 2_500L to "第二句"))))
+        }
+        val info = AudioMetadataReader.read(file.absolutePath)
+        assertNotNull(info)
+        assertEquals("[00:01.00]第一句\n[00:02.50]第二句", info.lyrics)
+        file.delete()
+    }
+
+    @Test
+    fun `MP4 的 cpright lyr 内嵌歌词能被读取`() {
+        val lrc = "[00:01.00]m4a lyrics"
+        val file = tempFile("lyrics.m4a").apply { writeBytes(mp4WithLyrics(lrc)) }
+        val info = AudioMetadataReader.read(file.absolutePath)
+        assertNotNull(info)
+        assertEquals(lrc, info.lyrics)
+        file.delete()
+    }
+
     // ============ 健壮性 ============
 
     @Test
@@ -245,5 +281,64 @@ class AudioMetadataReaderTest {
         frame[p++] = 0 // 空描述终止符
         lrcBytes.copyInto(frame, p)
         return frame
+    }
+
+    /** SYLT：enc + lang(3) + timeFormat(1=ms) + contentType(1) + desc\0 + (text\0 + time32BE)… */
+    private fun syltFrame(entries: List<Pair<Long, String>>): ByteArray {
+        val body = java.io.ByteArrayOutputStream()
+        body.write(3) // UTF-8
+        body.write("eng".toByteArray(Charsets.ISO_8859_1))
+        body.write(2) // time format = milliseconds
+        body.write(1) // content type = lyrics
+        body.write(0) // empty descriptor
+        for ((time, text) in entries) {
+            body.write(text.toByteArray(Charsets.UTF_8))
+            body.write(0)
+            body.write((time shr 24).toInt())
+            body.write((time shr 16).toInt())
+            body.write((time shr 8).toInt())
+            body.write(time.toInt())
+        }
+        val payload = body.toByteArray()
+        val frame = ByteArray(10 + payload.size)
+        "SYLT".forEachIndexed { i, c -> frame[i] = c.code.toByte() }
+        frame[4] = (payload.size shr 24).toByte()
+        frame[5] = (payload.size shr 16).toByte()
+        frame[6] = (payload.size shr 8).toByte()
+        frame[7] = payload.size.toByte()
+        payload.copyInto(frame, 10)
+        return frame
+    }
+
+    /**
+     * 最小 MP4：`moov > udta > meta(full box) > ilst > ©lyr > data`。
+     * 没有音频轨，只验证标签偏移。
+     */
+    private fun mp4WithLyrics(lyrics: String): ByteArray {
+        fun atom(type: String, payload: ByteArray): ByteArray {
+            val out = ByteArray(8 + payload.size)
+            val size = out.size
+            out[0] = (size shr 24).toByte()
+            out[1] = (size shr 16).toByte()
+            out[2] = (size shr 8).toByte()
+            out[3] = size.toByte()
+            type.toByteArray(Charsets.ISO_8859_1).copyInto(out, 4)
+            payload.copyInto(out, 8)
+            return out
+        }
+
+        val text = lyrics.toByteArray(Charsets.UTF_8)
+        val dataPayload = ByteArray(8 + text.size)
+        // data atom 的 payload：type indicator(4) + locale(4) + value
+        dataPayload[3] = 1 // UTF-8
+        text.copyInto(dataPayload, 8)
+        val lyr = atom("\u00A9lyr", atom("data", dataPayload))
+        val ilst = atom("ilst", lyr)
+        val metaPayload = byteArrayOf(0, 0, 0, 0) + ilst // version/flags
+        val meta = atom("meta", metaPayload)
+        val udta = atom("udta", meta)
+        val moov = atom("moov", udta)
+        val ftyp = atom("ftyp", "M4A ".toByteArray(Charsets.ISO_8859_1) + ByteArray(8))
+        return ftyp + moov
     }
 }

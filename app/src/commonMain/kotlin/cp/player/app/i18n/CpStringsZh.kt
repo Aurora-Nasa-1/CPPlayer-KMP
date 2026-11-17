@@ -27,6 +27,27 @@ object CpStringsZh : CpStrings {
 
     override val settings: SettingsStrings = object : SettingsStrings {
         override val screenTitle = "设置"
+        override val isolationTitle = "音源隔离"
+        override val isolationIntro = "每个音源都有自己的登录态、缓存和账号列表，互相不共享：换一个音源，" +
+            "看到的账号、红心和歌单就是那个音源自己的。"
+        override val isolationSectionAccounts = "登录态"
+        override val isolationRefreshProfile = "切音源时同步刷新账号资料"
+        override val isolationRefreshProfileNote = "关掉后仍会换登录态（Cookie 本来就按音源存），只是不立即重新拉取昵称与头像"
+        override val isolationCurrentAccounts = "当前音源的账号"
+        override val isolationUnknownProvider = "未知音源"
+        override val isolationSaved = "登录态已保存"
+        override val isolationNotSignedIn = "未登录"
+        override fun isolationAccountCount(count: Int) = "$count 个账号"
+        override val isolationSwitchProvider = "切换音乐源"
+        override val isolationSwitchProviderNote = "不同音源之间不会互相污染登录态与缓存"
+        override val isolationSectionCache = "缓存"
+        override val isolationStorage = "存储与清理"
+        override val isolationStorageNote = "封面缓存、下载目录等按音源隔离的数据都在这里管理"
+        override val isolationSectionDanger = "危险操作"
+        override val isolationClearConfirm = "再次点击确认清除"
+        override val isolationClearSession = "清除当前音源的登录态"
+        override val isolationClearNote = "只清这一个音源；已保存的账号仍在，可一键切回"
+        override fun isolationProfileNote(name: String) = "资料展示：$name。清除登录态不会动本地下载的歌曲。"
         override val groupGeneral = "通用"
         override val groupAccountProvider = "账号与音源"
         override val groupConnectivity = "连接与集成"
@@ -84,11 +105,16 @@ object CpStringsZh : CpStrings {
             title = "重看新手引导",
             subtitle = "重新走一遍首次使用引导",
         )
+        override val itemNavigation = CpTextPair(
+            title = "导航入口",
+            subtitle = "动态替代搜索、隐藏动态 / 消息入口，以及音源不支持的功能",
+        )
     }
 
     override val common: CommonStrings = object : CommonStrings {
         override val confirm = "确认"
         override val dismiss = "取消"
+        override val save = "保存"
         override val apply = "应用"
         override val refresh = "刷新"
         override val unsavedBlocked = "未保存 · 请先修正上面的问题"
@@ -96,7 +122,11 @@ object CpStringsZh : CpStrings {
         override val back = "返回"
         override val close = "关闭"
         override val search = "搜索"
+        override val clearSearch = "清除搜索"
+        override val initializingBackend = "正在初始化后端…"
     }
+
+    override val navigation = NavigationStringsZh
 
     override val messageNotify: MessageNotifyStrings = object : MessageNotifyStrings {
         override val guideTitle = "私信默认不打扰"
@@ -110,7 +140,7 @@ object CpStringsZh : CpStrings {
         override val sheetBody = "开启后，只有这个人发来新消息时会提醒你。默认关闭。"
 
         override val settingsTitle = "消息通知"
-        override val settingsSubtitle = "哪些联系人发来的新消息要弹系统通知"
+        override val settingsSubtitle = "私信通知与关闭行为"
         override val masterLabel = "允许私信通知"
         override val masterHint = "关闭时不会做任何后台请求。仅在应用运行时有效"
         override val subscribedSection = "已开启的联系人"
@@ -142,12 +172,20 @@ object CpStringsZh : CpStrings {
     override val appearance: AppearanceStrings = object : AppearanceStrings {
         override val screenTitle = "外观与主题"
         override val sectionLook = "外观"
+        override val sectionMotion = "界面动效与视觉表现"
+        override val sectionContent = "内容与列表呈现"
+        override val sectionMobile = "手机端播放界面与布局"
         override val sectionFont = "字体"
 
         override val themeMode = "主题模式"
         override val themeModeSystem = "跟随系统"
         override val themeModeLight = "浅色"
         override val themeModeDark = "深色"
+        override val themeModeSystemNote = "根据系统日间/夜间状态自动切换"
+        override val themeModeLightNote = "始终保持明亮清爽的浅色视觉"
+        override val themeModeDarkNote = "始终保持深色暗黑风格，夜间更护眼"
+        override val sectionDarkEnhancements = "深色显示增强"
+        override val pureBlackDetail = "开启纯黑后，在深色模式下应用底色将由深灰压至绝对纯黑 (#000000)，OLED 屏幕黑色像素不发光，不仅对比度更突出，还能有效节省电量。"
 
         override val colorSource = "取色来源"
         override val colorSourcePlatform = "跟随系统"
@@ -158,34 +196,56 @@ object CpStringsZh : CpStrings {
         override val colorSourceCoverNote = "取自当前曲目封面主色；未播放或无封面时改用系统壁纸配色"
         override val colorSourceFixedNote = "始终使用内置配色，不随内容与系统变化"
 
+
         override val pureBlack = "纯黑模式"
-        override val pureBlackNote = "深色主题下使用纯黑背景，OLED 屏幕更省电"
+        override val pureBlackNote = "深色下使用纯黑背景，OLED 更省电"
         override val autoHideBottomBar = "自动隐藏底栏"
-        override val autoHideBottomBarNote = "向上滑动内容时收起底部导航栏，向下滑动重新显示"
+        override val autoHideBottomBarNote = "上滑收起底栏，下滑恢复"
         override val coverFlight = "封面飞行动画"
-        override val coverFlightNote = "点击歌曲 / 歌单封面时，播放封面飞向播放器或详情页的过渡动画；" +
-            "关闭后点击更干脆利落"
+        override val coverFlightNote = "封面飞入播放页的转场动画"
 
         override val fluidBackground = "流体背景"
-        override val fluidBackgroundNote = "播放页使用缓慢流动的渐变底色（仿 Apple Music），" +
-            "配色跟随当前主题与封面取色；Android 13 以下自动改用静态渐变。关闭可省电"
+        override val fluidBackgroundNote = "播放页流动渐变背景，关闭可省电"
 
-        override val fluidBackgroundDither = "流体背景抗色阶断层"
-        override val fluidBackgroundDitherNote = "在动态渐变末端注入微量高频抖动（Dithering），" +
-            "在 8-bit 显示设备上消除暗部色带断层，视觉平滑度逼近 10-bit。默认开启"
+        override val fluidBackgroundFps = "流体背景帧率"
+        override val fluidBackgroundFpsNote = "流体动画最高帧率，越高越流畅"
 
         override val showSongAlbum = "显示歌曲专辑名"
-        override val showSongAlbumNote = "在歌曲列表副标题中显示所属专辑；默认关闭以保持界面清爽"
+        override val showSongAlbumNote = "在歌曲列表显示所属专辑"
 
         override val fontRoundness = "字体圆滑度"
-        override fun fontRoundnessNote(defaultRoundness: Int) =
-            "Google Sans Flex 的 ROND 可变轴：0 方正、100 最圆润。" +
-                "Android 16 及以上默认 100，其余平台默认 $defaultRoundness"
-        override val roundnessDefaultTag = " · 默认"
-        override val resetPlatformDefault = "恢复平台默认"
-        override val resetPlatformDefaultNote = "清除自定义值，回到当前平台的默认圆滑度"
-        override val roundnessNote = "字体圆滑度即时生效，只作用于 Google Sans Flex 的拉丁字符与数字；" +
-            "中文与日文字体（MiSans / Noto Sans JP）没有 ROND 轴，不受此设置影响。"
+        override val fontRoundnessRounded = "圆滑"
+        override val fontRoundnessSquare = "方正"
+
+        override fun themeSummary(mode: String, color: String, pureBlack: Boolean) =
+            "$mode${if (pureBlack) " · 纯黑已开启" else ""} · $color"
+
+        override val playerStyle = "播放器样式"
+        override val playerStyleNote = "切换播放页排版"
+        override val playerStyleThreePane = "三段式播放器"
+        override val playerStyleStandard = "标准播放器"
+        override val playerStyleThreePaneNote = "歌词、播放与评论分页横滑"
+        override val playerStyleStandardNote = "封面、歌词与播控收在同一页"
+        override val mobilePreferences = "播放器设置"
+        override val mobilePreferencesNote = "歌词呈现、沉浸与恢复默认"
+        override val playerSettingsTitle = "播放器设置"
+        override val playerSettingsHeroNote = "歌词与播放页外观"
+        override val playerLyricsPresentation = "歌词呈现"
+        override val playerLyricsTranslation = "显示歌词翻译"
+        override val playerLyricsTranslationNote = "原文下方同步显示译文"
+        override val playerLyricsImmersive = "沉浸歌词"
+        override val playerLyricsImmersiveToggle = "自动隐藏控制栏"
+        override val playerLyricsImmersiveNote = "无操作后隐藏控制栏"
+        override val playerLyricsImmersiveTimeout = "等待时间"
+        override val playerLyricsImmersiveTimeoutNote = "无操作多久后收起控制栏"
+        override fun playerLyricsImmersiveSeconds(seconds: Int) = "$seconds 秒"
+        override val playerResetSection = "重置"
+        override val playerReset = "恢复播放器默认设置"
+        override val playerResetNote = "重置歌词呈现与沉浸歌词选项"
+        override val sectionPreview = "布局与视图预览"
+        override val mobilePreview = "手机版界面预览 (412×892)"
+        override val mobilePreviewOn = "当前为手机版紧凑视图，点击恢复桌面端大窗口"
+        override val mobilePreviewOff = "切换为 412×892 紧凑手机版布局、底部导航栏与手机顶栏"
     }
 
     override val fontPacks: FontPackStrings = object : FontPackStrings {
@@ -238,15 +298,21 @@ object CpStringsZh : CpStrings {
         override val customCapacity = "自定义容量"
         override val customCapacityDialogTitle = "自定义歌曲缓存上限"
         override val customCapacityDialogNote = "请输入新的缓存容量上限。调小后将立刻按最久未播放清理到位。"
+        override fun customCapacityPlaceholderGb() = "例如 10"
+        override fun customCapacityPlaceholderMb() = "例如 2048"
+        override fun customCapacityPreview(bytes: String) = "设定容量：$bytes"
+        override val customCapacityInvalid = "请输入有效容量（128 MB ~ 1024 GB）"
         override val customCapacityUnitGb = "GB"
         override val customCapacityUnitMb = "MB"
         override fun customCapacitySubtitle(capacity: String) = "当前自定义上限: $capacity，点击可修改"
+        override fun customCapacityCurrent(capacity: String) = "当前上限: $capacity，点击可自定义任意大小"
         override val cacheDir = "缓存目录"
         override val migrateCacheDir = "迁移缓存目录"
         override val migrateCacheDirNote = "更改歌曲缓存位置并搬移已有文件"
         override val migrateCacheDirConfirmTitle = "迁移歌曲缓存目录"
         override fun migrateCacheDirConfirmMessage(target: String) =
             "确定要将歌曲缓存迁移至以下目录吗？\n$target\n\n已有的缓存文件将被自动复制到新目录。"
+        override val confirmMigrate = "确定迁移"
         override val cacheDirMigrating = "正在迁移缓存目录..."
         override val clearStaleCache = "清理 30 天未播放的缓存"
         override val clearStaleCacheNote = "只删长期不听的，最近在听的不受影响"
@@ -315,25 +381,64 @@ object CpStringsZh : CpStrings {
 
         override val sectionQuality = "音质"
         override val defaultQuality = "默认音质"
-        override val defaultQualityNote = "WiFi / 非计费网络下在线播放优先请求的音质；音源不提供时自动降级"
+        override val defaultQualityNote = "在线播放优先请求的音质"
         override val meteredQuality = "移动数据音质"
-        override val meteredQualityNote = "蜂窝数据 / 热点下生效；切换网络后对下一首播放的曲目生效"
+        override val meteredQualityNote = "蜂窝网络下使用的音质"
+
+        override val sectionAudioEngineAndroid = "播放内核"
+        override val sectionAudioOutputDesktop = "音频输出模式"
+        override val engineMedia3 = "系统 Media3（默认）"
+        override val engineFlick = "FlickEngine（VIP）"
+        override val outputShared = "共享（默认）"
+        override val outputExclusive = "独占（VIP）"
+        override val activeKernel = "当前生效内核"
+        override val wasapiMode = "WASAPI 输出模式"
+        override val kernelVipInactive = "卡密未激活：已自动回落到系统内核"
+        override val kernelFlickActive = "FlickEngine 低延迟直通 · 下次起播生效"
+        override val kernelMedia3 = "系统 Media3：兼容与耗电更稳，发烧特性不可用"
+        override val kernelExclusiveActive = "已接管声卡：播放期间其它应用静音"
+        override val kernelShared = "共享声卡：可与其它应用同时出声"
+        override val engineDetailAndroid = "Oboe 直通、USB DAC 与 DSD"
+        override val engineDetailDesktop = "独占、Bit-Perfect 与 DSD"
+        override val engineDetailAndroidNote = "Oboe 低延迟直通 · UAC 2.0 USB DAC 源码输出 · DSD64/128 软解"
+        override val engineDetailDesktopNote = "WASAPI 独占 · Bit-Perfect 采样率自适应 · DSD64/128 软解"
+        override val engineDetailDesktopUnsupportedNote = "当前平台没有 WASAPI 独占通道，仅提供共享输出"
+        override val featureDetails = "特性说明"
+        override val vipManagement = "发烧特权授权管理"
+        override fun vipActivated(plan: String) = "已激活：$plan"
+        override fun vipActivatedWithKey(plan: String, key: String) = "已激活：$plan ($key)"
+        override val vipInactiveNote = "未激活，点击输入卡密解锁 FlickEngine 与独占直通"
+        override val vipDialogTitle = "解锁 Hi-Res 发烧友专有特权"
+        override val vipDialogNote = "FlickEngine 在 Windows 上提供 WASAPI 硬件独占（Bit-Perfect 源码直通），" +
+            "在 Android 上提供 Oboe 低延迟与 USB DAC 直通；两者都内置 DSD64/128 软解与" +
+            "64 位浮点 DSP。独占模式默认关闭，激活后仍需你在设置里手动开启。"
+        override val vipKeyLabel = "请输入特权卡密"
+        override val vipKeyPlaceholder = "输入 16 位激活卡密"
+        override val vipActivateFailed = "激活失败，请检查激活码"
+        override val vipActivateNow = "立即激活"
+        override val vipActivateLater = "暂不激活"
+        override val changeLicenseKey = "更换卡密"
+        override val activatePrivilege = "激活特权"
+        override val dspSection = "DSP 音效与调音台"
+        override val dspNote = "5 段参数均衡器 (PEQ)、风格预设、声道平衡与立体声宽度"
+        override val mixer = "调音台"
+        override val edit = "修改"
+        override val set = "设置"
 
         override val sectionLyrics = "歌词"
         override val lyricsSource = "歌词来源"
-        override val lyricsSourceNote = "AMLL 为逐词歌词库（翻译/罗马音更全）；" +
-            "AMLL 优先时无匹配自动回退音源歌词，对下次刷新生效"
+        override val lyricsSourceNote = "AMLL 优先，缺词时回退音源歌词"
         override val lyricsProviderOnly = "仅音源 API"
         override val lyricsAmllFirst = "AMLL 优先"
         override val lyricsAmllOnly = "仅 AMLL"
-        override val showMiniPlayerLyrics = "底部迷你播放器显示歌词"
-        override val showMiniPlayerLyricsSubtitle = "关闭后显示歌手"
+        override val showMiniPlayerLyrics = "迷你播放器歌词"
+        override val showMiniPlayerLyricsSubtitle = "显示当前歌词，关闭后显示歌手"
         override val showRubyLyrics = "日文汉字注音"
-        override val showRubyLyricsSubtitle = "在日文歌词汉字上方显示小字假名（振假名）"
+        override val showRubyLyricsSubtitle = "日文歌词汉字上方显示假名"
         override val lyricsWordSegmentation = "歌词智能分词"
-        override val lyricsWordSegmentationSubtitle = "根据语言断句分词折行排版（如日文），关闭后按整句原始排版"
+        override val lyricsWordSegmentationSubtitle = "日文等按词换行，关闭按整句"
         override val smartKaraokeLrc = "行级歌词智能逐字 (Beta)"
-        override val smartKaraokeLrcSubtitle = "无逐字歌词时，结合节拍网格与声学词汇权重模拟逐字高亮效果"
+        override val smartKaraokeLrcSubtitle = "无逐字歌词时模拟逐字高亮"
 
         override val sectionSleepTimer = "睡眠定时"
         override val sleepTimer = "定时关闭"
@@ -343,7 +448,7 @@ object CpStringsZh : CpStrings {
 
         override val sectionAutoPlay = "启动与自动播放"
         override val autoPlayMode = "打开软件自动播放"
-        override val autoPlayModeNote = "应用启动且音源就绪后，自动开始播放指定来源的音乐"
+        override val autoPlayModeNote = "启动后自动开始播放"
         override val autoPlayModeOff = "关闭"
         override val autoPlayModeContinue = "继续上次播放"
         override val autoPlayModeDaily = "每日推荐"
@@ -359,24 +464,26 @@ object CpStringsZh : CpStrings {
         override val autoPlayTypeTrack = "指定单曲"
         override val autoPlayInputIdPlaceholder = "输入歌单/歌曲 ID 或分享链接"
         override val autoPlayInputTitlePlaceholder = "自定义显示名称 (可选)"
+        override fun autoPlayPlaylistLabel(id: String) = "歌单 $id"
         override val autoPlayClearTarget = "清除指定"
 
         override val sectionLastPlayback = "上次播放"
         override val keepLastPlayback = "保留上次播放"
-        override val keepLastPlaybackNote =
-            "启动时恢复上次的播放队列与进度，但不自动播放；点播放才从上次位置接着听"
+        override val keepLastPlaybackNote = "启动时恢复上次队列与进度"
 
         override val sectionPreload = "音频预加载"
         override val preloadNext = "预加载下一首歌曲"
-        override val preloadNextNote =
-            "在后台提前解析与缓冲下一首歌曲，实现切歌秒开与平滑过渡"
+        override val preloadNextNote = "提前缓冲下一首，切歌更快"
 
         override val sectionFade = "淡入淡出"
+        override val fadeToggle = "启用淡入淡出"
+        override val fadeNote = "切歌时音量平滑过渡"
         override val fadeIn = "开始时淡入"
         override val fadeInNote = "播放新曲目时，音量从无声逐渐升到当前音量"
         override val fadeOut = "结束前淡出"
         override val fadeOutNote = "曲目结束前音量逐渐降低，避免下一首突然响起"
         override val fadeDuration = "过渡时长"
+        override val fadeDurationNote = "淡入与淡出各用这段时长"
         override fun fadeDurationSeconds(seconds: String) = "$seconds 秒"
 
         override val sectionBackground = "后台播放"
@@ -414,6 +521,16 @@ object CpStringsZh : CpStrings {
         override val entrySubtitle = "参数均衡器、声道平衡与响度均衡"
         override val unsupportedNote = "当前平台的音频引擎只提供音量接口，没有可用的均衡与效果处理，" +
             "因此本页在桌面端不可调整。"
+        override val kernelStatusSection = "音频内核状态"
+        override val kernelNotReadyTitle = "FlickEngine 原生音频库未就绪"
+        override val kernelNotReadyNote = "桌面端的解码、音效与输出全部由 FlickEngine 提供；库缺失时音效与播放都不可用。" +
+            "请确认安装完整，或到音频输出页查看引擎状态。"
+        override val viewStatus = "查看状态"
+        override val equalizerEnabledSummary = "已启用 · 5 段参数均衡生效中"
+        override val resetFlat = "重置平直"
+        override val advancedFrequencyTuning = "高级：中心频点微调 (PEQ)"
+        override val advancedFrequencyTuningNote = "逐段调整频段滤波截止频率"
+        override fun bandCenterFrequency(index: Int) = "频段 ${index + 1} 中心频率"
 
         override val sectionEqualizer = "参数均衡器"
         override val equalizerEnabled = "启用均衡器"
@@ -705,6 +822,7 @@ object CpStringsZh : CpStrings {
 
     override val player: PlayerStrings = object : PlayerStrings {
         override val share = "分享"
+        override val shareUnavailableLocal = "本地歌曲无在线分享链接"
         override val addToPlaylist = "加入歌单"
         override val downloaded = "已下载"
         override val download = "下载"
@@ -751,6 +869,8 @@ object CpStringsZh : CpStrings {
         override val infoBitDepth = "位深"
         override val infoBitrate = "码率"
         override val infoChannels = "声道"
+        override val infoSize = "文件大小"
+        override val infoPath = "文件路径"
         override val unknownAlbum = "未知专辑"
 
         override fun shareTrack(name: String, artist: String, album: String, duration: String, id: String) =
@@ -778,6 +898,12 @@ object CpStringsZh : CpStrings {
 
         override val nowPlaying = "正在播放"
         override val collapse = "收起"
+        override val lyricsCollapse = "收起歌词"
+        override val lyricsExpand = "展开完整歌词"
+        override val immersive = "沉浸歌词"
+        override val exitImmersive = "退出沉浸"
+        override val songComments = "歌曲评论"
+        override val audioOutputDevice = "播放设备"
         override val translation = "翻译"
         override val queue = "队列"
         override val repeat = "循环"
@@ -830,7 +956,67 @@ object CpStringsZh : CpStrings {
         override val miniModePin = "始终置顶"
         override val miniModeUnpin = "取消置顶"
 
+        override val exploreSimilar = "探索相似歌曲"
+        override val exploreSimilarNote = "基于在播曲目发现更多同风格好音乐"
+        override val immersiveLyricsOn = "沉浸歌词 (已开启)"
+        override val immersiveLyricsOff = "沉浸歌词 (已关闭)"
+        override val playerSettings = "播放界面设置"
+        override val viewFullMetadata = "查看完整元数据 →"
+        override val wordByWordLyrics = "逐字歌词"
+        override val dynamicLyrics = "动态歌词"
+        override val lyricOffsetChip = "微调"
+        override fun lyricOffsetChipValue(label: String, seconds: String) = "$label ($seconds)"
+
+        override val similarSongs = "相似歌曲"
+        override fun similarCount(count: Int) = "$count 首相似好歌 · 点击即播"
+        override val similarEmptyNote = "基于在播歌曲探索推荐"
+        override val similarLoadFailed = "获取相似歌曲失败"
+        override val similarUnsupported = "当前音源暂不支持相似歌曲"
+        override val similarUnsupportedNote = "切换到支持该功能的音源后再试试"
+        override val similarNothingPlaying = "没有正在播放的歌曲"
+        override val similarNothingPlayingNote = "播放一首歌后再来看相似推荐"
+        override val similarNoMatch = "没有找到相似歌曲"
+        override val similarNoMatchNote = "换一首歌再试试"
+
         override val searchQueue = "搜索播放队列…"
+
+        override val favoriteTrack = "收藏歌曲"
+        override val unfavoriteTrack = "取消收藏"
+        override val repeatOne = "单曲循环"
+        override val repeatAll = "列表循环"
+        override val repeatOff = "顺序播放"
+        override val showLyrics = "显示歌词"
+        override val showQueue = "显示队列"
+        override val showComments = "显示评论"
+        override val playMainView = "播放主界面"
+        override val backToPlayer = "返回播放页"
+        override val showLyricsTranslation = "显示歌词翻译"
+        override val hideLyricsTranslation = "隐藏歌词翻译"
+        override val lyricsPluginSettings = "歌词插件设置"
+        override val playMv = "播放 MV"
+        override val addToPlaylistMenu = "添加到歌单..."
+        override val songDetailsMenu = "歌曲详情..."
+        override val transferDeviceMenu = "设备接力 / 投送..."
+        override val sleepTimerMenu = "定时关闭..."
+        override val copyTrackInfo = "复制歌曲信息"
+        override val switchToStandardPlayer = "切换到标准播放器"
+        override val switchToThreePanePlayer = "切换到三段式播放器"
+        override val collapsePlayer = "收起播放页"
+
+        override val tabLyrics = "歌词"
+        override val tabSong = "歌曲"
+        override val tabQueue = "队列"
+        override val tabComments = "评论"
+
+        override fun switchToTab(tab: String) = "切换到$tab"
+        override val lyricsTranslation = "歌词翻译"
+        override val closeLyricsTranslation = "关闭歌词翻译"
+        override val miniPlayer = "迷你播放器"
+        override val restoreVolume = "恢复音量"
+        override val maxVolume = "最大音量"
+
+        override val commentsUnsupported = "当前音源暂不支持评论功能"
+        override val exclusiveBadge = "WASAPI 独占 · Bit-Perfect"
     }
 
     override val library: LibraryStrings = object : LibraryStrings {
@@ -860,6 +1046,38 @@ object CpStringsZh : CpStrings {
         override val playNext = "将在下一首播放"
         override val operationFailed = "操作失败"
         override val importFromPlaylist = "从歌单导入"
+
+        override fun playlistRefreshed() = "已刷新"
+        override val playlistDetailRefreshFailed = "歌单详情刷新失败"
+        override val playlistDetailLoadFailed = "歌单详情加载失败"
+        override val loadMoreFailed = "加载更多失败"
+        override fun playlistDeleted(name: String) = "已删除「$name」"
+        override fun playlistUnsubscribed(name: String) = "已取消收藏「$name」"
+        override val ownerOnlyAddTracks = "只能向自己创建的歌单添加歌曲"
+        override val tracksAlreadyInPlaylist = "所选歌曲均已在歌单中"
+        override fun tracksAdded(count: Int) = "已添加 $count 首歌曲"
+        override val addTracksFailed = "加入歌单失败"
+        override fun tracksRemoved(count: Int) = "已移除 $count 首歌曲"
+        override val playlistFavorited = "已收藏歌单"
+        override val playlistUnfavorited = "已取消收藏歌单"
+        override fun emptyPlaylist(name: String) = "「$name」里还没有歌"
+        override fun playlistQueued(name: String) = "已把「$name」加入播放队列"
+        override val localLibraryEmpty = "本地曲库暂无音乐，请先扫描或导入"
+        override val personalFmUnavailable = "私人FM暂不可用，请稍后再试"
+        override fun playlistSourceLabel(key: String) = when (key) {
+            "Recommended" -> "推荐"
+            "Hot" -> "热门"
+            "Premium" -> "精品"
+            else -> key
+        }
+        override fun newSongRegionLabel(key: String) = when (key) {
+            "All" -> "全部"
+            "Chinese" -> "华语"
+            "Western" -> "欧美"
+            "Japanese" -> "日本"
+            "Korean" -> "韩国"
+            else -> key
+        }
 
         override val songDetails = "歌曲详情"
         override val paidType = "付费类型"
@@ -961,6 +1179,13 @@ object CpStringsZh : CpStrings {
         override val play = "播放"
         override val shuffle = "随机"
         override val add = "添加"
+
+        override val searchFieldHint = "搜索歌曲、歌手或专辑"
+        override val trackSearchHint = "搜索歌曲、歌手、专辑..."
+        override val trackSearchClear = "清除"
+        override val trackSearchClose = "关闭搜索"
+        override fun trackSearchResultCount(count: Int) = "$count 首"
+        override val trackAdd = "添加"
     }
 
     override val album: AlbumStrings = object : AlbumStrings {
@@ -1039,6 +1264,9 @@ object CpStringsZh : CpStrings {
         override fun saveDailyToPlaylistSuccess(name: String, count: Int) = "已成功转为歌单「$name」（共 $count 首）"
         override val saveDailyToPlaylistAlreadySaved = "提示：今日推荐已转存过歌单，确认后将再次创建新歌单"
         override val saveDailyToPlaylistFailed = "转存歌单失败，请检查网络或登录状态"
+        override fun saveDailyToPlaylistPartial(name: String) = "歌单「$name」已创建，但部分歌曲添加失败"
+        override fun dailyRecommendationPlaylistName(date: String) = "每日推荐 · $date"
+        override val artistFallback = "歌手"
     }
     override val playlistImport = PlaylistImportStringsZh
     override val account = AccountStringsZh
@@ -1048,6 +1276,10 @@ object CpStringsZh : CpStrings {
     override val social = SocialStringsZh
     override val lyricsPlugin = LyricsPluginStringsZh
     override val pluginRepository = PluginRepositoryStringsZh
+    override val ai = AiStringsZh
+    override val onboarding = OnboardingStringsZh
+    override val providerManagement = ProviderManagementStringsZh
+    override val contextMenu = ContextMenuStringsZh
     override val lyricPush = LyricPushStringsZh
     override val scrobble = ScrobbleStringsZh
 
@@ -1078,8 +1310,17 @@ object CpStringsZh : CpStrings {
         override val alipay = "支付宝"
         override val sponsorAccount = "收款人: Aurora星空(*森)"
         override val sponsorThanks = "感谢每一位支持者的认可与鼓励 ❤️"
+        override val saveQrCode = "保存二维码"
+        override val savingQrCode = "保存中…"
+        override val qrSavedToGallery = "已保存到相册"
+        override fun qrSavedTo(path: String) = "已保存到 $path"
+        override val qrSaveFailed = "保存失败，请检查存储权限或磁盘空间"
         override val close = "关闭"
         override val footerNote = "CPPlayer · Compose Multiplatform"
+        override val legacyCleanupNone = "未发现符合条件的旧版 Provider V1/V3 模块目录，不会删除 SDK Provider 或账号数据。"
+        override val legacyCleanupHint = "以下旧模块目录将在确认后排队，并仅在目标更新版本成功启动后删除；" +
+            "如果安装被取消或失败，旧版本会保留这些目录："
+        override val updateConfirmDownload = "确认并下载"
     }
 
     override val update: AppUpdateStrings = object : AppUpdateStrings {
@@ -1090,6 +1331,236 @@ object CpStringsZh : CpStrings {
         override val downloadNow = "立即下载更新"
         override val releasePage = "发布页"
         override val later = "稍后再说"
+        override fun publishedAt(date: String) = "发布于 $date"
+        override val packageAndroid = "Android 安装包 (.apk)"
+        override val packageWindows = "Windows 安装程序 (.exe)"
+        override val packageLinuxDeb = "Linux Debian/Ubuntu (.deb)"
+        override val packageLinuxTar = "Linux 通用包 (.tar.gz)"
+        override val packageLinux = "Linux 软件包"
+        override val packageUniversal = "跨平台软件包"
+    }
+
+    override val video: VideoStrings = object : VideoStrings {
+        override val playbackFailed = "播放失败"
+        override val retry = "重试"
+        override val videoTitle = "视频播放"
+        override val nowPlaying = "正在播放"
+        override val resolvedQuality = "已解析画质"
+        override val standardQuality = "标准"
+        override val desktopPlayerHint = "建议使用系统播放器以启用完整硬件解码"
+        override val openInSystemPlayer = "系统播放器打开 (PotPlayer/推荐)"
+        override val copiedDirectLink = "已复制直链"
+        override val copyDirectLink = "复制播放直链"
+        override val playPause = "播放/暂停"
+        override val quality = "清晰度"
+        override val fullscreen = "全屏切换"
+        override val scalingMode = "画幅模式"
+        override val openExternally = "在系统播放器中打开"
+    }
+
+    override val home: HomeStrings = object : HomeStrings {
+        override val title = "发现音乐"
+        override val subtitle = "你的音乐，常听常新"
+        override val posterWall = "唱片墙"
+
+        override val dailyTitle = "每日推荐"
+        override fun dailySubtitle(count: Int) = "为你精选 $count 首"
+        override val intelligenceTitle = "心动模式"
+
+        override val discoveryTitle = "发现歌单"
+        override val rankingTitle = "排行榜"
+        override val rankingSubtitle = "点击进入榜单曲目"
+        override val newAlbumsTitle = "新碟上架"
+        override val newAlbumsSubtitle = "点击查看专辑曲目"
+        override val hotArtistsTitle = "热门歌手"
+        override val hotArtistsSubtitle = "点击查看歌手曲目"
+        override val newSongsTitle = "新歌速递"
+        override val newSongsSubtitle = "按地区查看最新发布"
+
+        override val recentTitle = "最近播放"
+        override val recentSubtitle = "熟悉的旋律，一点继续"
+        override val recentEmptySubtitle = "听过的歌会出现在这里"
+        override val continueListening = "继续收听"
+        override val continueListeningSubtitle = "接着上次继续听"
+
+        override val playlistSourceRecommended = "推荐"
+        override val playlistSourceRecommendedHint = "根据近期收听持续更新"
+        override val playlistSourceHot = "热门"
+        override val playlistSourceHotHint = "大家正在收藏的歌单"
+        override val playlistSourcePremium = "精选"
+        override val playlistSourcePremiumHint = "编辑精选的高质量歌单"
+
+        override val quickEntry = "快捷入口"
+        override val quickRadio = "快捷电台"
+        override val localShuffle = "本地随机"
+        override val localShuffleNote = "随机畅听本地音乐"
+        override val personalFm = "私人 FM"
+        override val personalFmNote = "连续播放，不用挑歌"
+        override val localLibrary = "本地曲库"
+        override val localLibraryNote = "浏览设备音乐文件"
+        override val intelligenceNote = "围绕今日推荐延展"
+        override val intelligenceNeedsDaily = "需要先有每日推荐"
+        override val recentNote = "接着上次继续听"
+
+        override val nowPlaying = "正在播放"
+        override val paused = "已暂停"
+
+        override val loadIncompleteTitle = "推荐内容未完全加载"
+        override val loadFailed = "加载失败"
+        override val localModeTitle = "本地音乐模式"
+        override val localModeNoteDesktop =
+            "当前未导入在线音源插件。点击上方「本地随机」或「本地曲库」可直接播放或扫描本地设备中的音乐。"
+        override val localModeNoteMobile =
+            "当前未导入在线音源插件。点击上方「本地随机」或「本地曲库」可直接播放或管理本地设备中的音乐。"
+        override val openLocalLibrary = "打开本地曲库"
+        override val noPersonalizedTitle = "还没有个性化推荐"
+        override val noPersonalizedNote = "登录账号后即可同步每日歌曲与歌单"
+
+        override fun trackCount(count: Int) = "$count 首"
+        override val rankingFallback = "榜单"
+        override val viewTracks = "查看曲目"
+        override val unknownArtist = "未知歌手"
+
+        override val recommendedPlaylistFallback = "推荐歌单"
+        override val rankingCreator = "榜单"
+    }
+
+    override val engine: EngineStrings = object : EngineStrings {
+        override val titleAndroid = "播放内核与发烧特性"
+        override val titleDesktop = "音频输出与硬件独占"
+
+        override val heroExclusive = "WASAPI Exclusive · Bit-Perfect 源码直通 · 独占声卡"
+        override val heroSharedWasapi = "WASAPI Shared · 经系统混音器输出 · 与其他应用共存"
+        override val heroSharedSystem = "系统共享输出 · 经系统混音器混音 · 与其他应用共存"
+        override val heroAndroidFlick = "Rust Oboe · 低延迟直通 · USB DAC · DSD 软解"
+        override val heroAndroidStandard = "系统默认内核 · 网络流兼容性最好 · 功耗最省"
+
+        override val badgeExclusive = "独占中"
+        override val badgeSharedDefault = "共享 · 默认"
+        override val badgeVip = "VIP"
+        override val badgeDefault = "默认"
+
+        override val sectionKernel = "播放内核"
+        override val kernelCurrent = "当前生效内核"
+        override val kernelNeedsVip = "卡密未激活：已自动回落到系统内核（FlickEngine 需 VIP）"
+        override val kernelEnabled = "已启用 FlickEngine，当前歌曲在下次起播时切过去"
+        override val kernelSystemNote = "系统 Media3 内核：兼容性与耗电表现更稳，发烧特性不可用"
+        override val kernelSystemOption = "系统 Media3（默认）"
+        override val kernelFlickOption = "FlickEngine（VIP）"
+        override val kernelSwitchNote = "切换内核不会打断正在播放的音频：下一次起播（切歌或重新播放）时生效。"
+
+        override val sectionOutputMode = "输出模式"
+        override val wasapiMode = "WASAPI 输出模式"
+        override val wasapiExclusiveNote = "已接管声卡：播放期间系统提示音、浏览器、会议软件都会静音"
+        override val wasapiSharedNote = "未接管声卡：可与其它应用同时出声，代价是经过系统混音器"
+        override val wasapiSharedOption = "共享（默认）"
+        override val wasapiExclusiveOption = "独占（VIP）"
+        override val sharedOutput = "共享输出"
+        override val sharedOutputNote = "当前平台没有 WASAPI 独占通道，音频始终经系统混音器输出"
+        override val ready = "已就绪"
+        override val exclusiveWarning =
+            "独占模式默认关闭，需要 VIP 授权且由你手动打开。开启后 CPPlayer 会接管声卡终端，" +
+                "直到切回共享模式或退出应用为止 —— 这是 Bit-Perfect 的必要代价，不是故障。" +
+                "切换会重新打开音频设备，当前歌曲会停止，重新点播放即可。"
+
+        override val sectionCapabilities = "FlickEngine 发烧特性"
+        override val oboeTitle = "Oboe / AAudio 低延迟直通"
+        override val oboeNote = "绕过 AudioFlinger 重采样，直接与底层音频 HAL 或 USB DAC 握手"
+        override val usbDacTitle = "USB DAC 直通 (UAC 2.0)"
+        override val usbDacNote = "外接解码器按自身支持的采样率与位深直接输出，不经过系统重采样"
+        override val dsdTitle = "DSD 母带软解"
+        override val dsdNoteAndroid = "引擎内置 DSF / DFF 解码，DSD64 / DSD128 直接播放（软解为 PCM）"
+        override val dsdNoteDesktop =
+            "引擎内置 DSF / DFF 解码，DSD64 / DSD128 直接播放（软解为 PCM），两种模式均可用"
+        override val wasapiExclusiveTitle = "WASAPI 独占直通"
+        override val wasapiExclusiveNoteWindows = "绕过 Windows 会话混音器与系统音效增强，由引擎直接接管声卡终端"
+        override val wasapiExclusiveNoteOther = "仅 Windows 提供 WASAPI 独占通道，当前平台始终为共享输出"
+        override val bitPerfectTitle = "Bit-Perfect 源码输出"
+        override val bitPerfectNoteActive =
+            "采样率按音轨物理规格重协商（44.1k / 48k / 96k / 192k），不经系统重采样"
+        override val bitPerfectNoteOther =
+            "需要能接管声卡的独占通道，仅 Windows 提供；当前平台始终经系统混音器重采样"
+        override val bitPerfectNoteInactive =
+            "仅在独占模式下成立；共享模式会被系统混音器重采样到设备默认采样率"
+        override val dspTitle = "64 位浮点 DSP 管线"
+        override val dspNote = "5 段参数均衡器 (PEQ)、左右声道平衡与立体声宽度，跑在引擎内而非系统音效链"
+
+        override val badgeActive = "生效中"
+        override val badgeNeedsFlick = "需 FlickEngine"
+        override val badgeAvailable = "可用"
+        override val badgeUnsupported = "当前平台不支持"
+        override val badgeNeedsVip = "需 VIP"
+        override val badgeNeedsExclusive = "需独占"
+        override val badgeOff = "未开启"
+
+        override val sectionEffects = "调音台与音效"
+        override val openEffects = "前往音效设置"
+        override val effectsNoteAndroid = "5 段参数均衡器、风格预设、声道平衡与响度均衡"
+        override val effectsNoteDesktop = "5 段参数均衡器、风格预设、声道平衡与立体声宽度"
+
+        override val sectionCredits = "开源内核致谢与归属"
+        override val creditsNote = "FlickEngine 核心技术源自开源项目 moss-apps/Flick (MIT)，特此致敬原作者"
+    }
+
+    override val health: HealthStrings = object : HealthStrings {
+        override val screenTitle = "诊断与健康"
+        override val clearLogAction = "清空日志"
+        override val clearTitle = "清空诊断记录"
+        override fun clearMessage(count: Int) = "确定清空全部 $count 条调用记录吗？"
+        override val clearConfirm = "清空"
+
+        override val tabOverview = "概览"
+        override val tabMethods = "操作统计"
+        override val tabLogs = "调用日志"
+        override val tabStatus = "Provider 状态"
+
+        override val providerHealthSection = "音源健康评分与指标"
+        override val noLoadedProviders = "暂无已加载音源"
+        override val systemStatus = "系统综合运行状态"
+        override fun callsSummary(totalCalls: Int, avgResponseMs: Long) =
+            "共 $totalCalls 次调用 · 平均响应 ${avgResponseMs}ms"
+        override val levelOk = "健康"
+        override val levelWarning = "警告"
+        override val levelError = "异常"
+        override val success = "成功"
+        override val failure = "失败"
+        override val unsupported = "不支持"
+        override val activeNow = "当前生效"
+        override fun providerMeta(id: String, type: String, version: String) =
+            "ID: $id · 类型: $type · 版本: $version"
+        override fun score(value: Int) = "$value 分"
+        override fun loadError(error: String) = "加载异常: $error"
+        override val noCalls = "暂无调用记录"
+        override val successRate = "成功率"
+        override val metricCalls = "调用"
+        override val metricAverage = "平均"
+        override val metricWarning = "警告"
+        override fun recentError(error: String) = "最近错误: $error"
+        override val diagnostics = "底层诊断参数"
+
+        override val noOperationStats = "暂无操作统计数据"
+        override val operationStatsHeader = "取数操作调用性能（按 UnifiedMusicSource 操作名）"
+        override fun operationSummary(totalCalls: Int, successRate: Int, avgResponseMs: Long) =
+            "$totalCalls 次 · 成功率 $successRate% · 平均 ${avgResponseMs}ms"
+        override fun failCount(count: Int) = "失败 $count"
+        override fun warningCount(count: Int) = "警告 $count"
+        override val recentSamples = "最近调用样本"
+
+        override fun history(count: Int) = "调用历史（最近 $count 条）"
+        override val resultPrefix = "结果: "
+        override val resultSuccess = "成功"
+        override val resultUnsupported = "音源不支持该操作"
+        override val resultFailed = "调用失败"
+        override fun errorMessage(message: String) = "错误信息: $message"
+
+        override val providerListSection = "已注册与已加载音源清单"
+        override val noRegisteredProviders = "暂无已注册音源"
+        override val switchToProvider = "切换至此音源"
+        override fun providerTypeVersion(type: String, version: String, apiVersion: Int) =
+            "类型: $type  ·  版本: $version  ·  API 版本: v$apiVersion"
+        override fun apiGeneration(tag: String) = "接口代际: $tag"
+        override fun startupFailed(error: String) = "启动/加载失败: $error"
+        override val runtimeDiagnostics = "运行时底层诊断"
     }
 
 }

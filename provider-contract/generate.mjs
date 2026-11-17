@@ -133,14 +133,47 @@ const extendedJni = banner + `package cp.player.sdk.jni\n\nimport cp.player.sdk.
   `    protected abstract suspend fun dispatch(operation: Int, request: Any): Any\n` +
   extended.map(([n, op]) => `    override suspend fun ${signature(n, op)} =\n` +
     `        dispatch(ProviderProtocol.${n.toUpperCase()}, request) as ${op.response}`).join("\n") + `\n}\n`;
+const nativeRequestEncode = Object.entries(schema.operations).map(([n, op]) =>
+  n === "authenticate"
+    ? `            ProviderProtocol.${n.toUpperCase()} -> writeNativeAuthActionRequest(writer, request as AuthActionRequest)`
+    : `            ProviderProtocol.${n.toUpperCase()} -> (request as ${op.request}).write(writer)`
+).join("\n");
 const nativeWire = banner + `package cp.player.sdk.jni\n\nimport cp.player.sdk.*\n\n` +
   `/** Standard native SDK wire codec, generated from the same DTO contract. */\n` +
   `object NativeWireCodec {\n` +
   `    fun encodeRequest(operation: Int, request: Any): ByteArray {\n` +
   `        val writer = WireWriter()\n        when (operation) {\n` +
-  Object.entries(schema.operations).map(([n, op]) =>
-    `            ProviderProtocol.${n.toUpperCase()} -> (request as ${op.request}).write(writer)`).join("\n") +
+  nativeRequestEncode +
   `\n            else -> error("Unknown native SDK operation: $operation")\n        }\n        return writer.finish()\n    }\n\n` +
+  `    // Keep Native v1's positional AuthActionRequest layout; legacy providers read countryCode from auth-only extraJson.\n` +
+  `    private fun writeNativeAuthActionRequest(writer: WireWriter, request: AuthActionRequest) {\n` +
+  `        val countryCode = request.countryCode\n` +
+  `        val extraJson = if (countryCode == null) request.extraJson else {\n` +
+  `            require(Regex("[0-9]{1,4}").matches(countryCode)) { "countryCode must contain 1..4 digits" }\n` +
+  `            val source = request.extraJson?.trim()\n` +
+  `            if (source != null && source.startsWith("{") && source.endsWith("}")) {\n` +
+  `                val close = source.lastIndexOf('}')\n` +
+  `                val members = source.substring(1, close).trim()\n` +
+  `                val member = "\\\"countryCode\\\":\\\"$countryCode\\\""\n` +
+  `                val merged = if (members.isEmpty()) member else "$members,$member"\n` +
+  `                source.substring(0, 1) + merged + source.substring(close)\n` +
+  `            } else "{\\\"countryCode\\\":\\\"$countryCode\\\"}"\n` +
+  `        }\n` +
+  `        with(writer) {\n` +
+  `            string(request.action)\n` +
+  `            optional(request.email) { v -> string(v) }\n` +
+  `            optional(request.phone) { v -> string(v) }\n` +
+  `            optional(request.password) { v -> string(v) }\n` +
+  `            optional(request.captcha) { v -> string(v) }\n` +
+  `            bool(request.md5)\n` +
+  `            optional(request.imageCaptcha) { v -> string(v) }\n` +
+  `            optional(request.challengeCookie) { v -> string(v) }\n` +
+  `            optional(request.key) { v -> string(v) }\n` +
+  `            optional(request.sessionId) { v -> string(v) }\n` +
+  `            optional(request.verifyId) { v -> string(v) }\n` +
+  `            optional(extraJson) { v -> string(v) }\n` +
+  `        }\n` +
+  `    }\n\n` +
   `    fun decodeResponse(operation: Int, bytes: ByteArray): Any {\n` +
   `        val reader = WireReader(bytes)\n        if (reader.bool()) {\n` +
   `            val failure = Failure.read(reader)\n            reader.finish()\n            throw ProviderException(failure)\n        }\n` +
@@ -184,14 +217,17 @@ const sourceKotlin = banner + `package cp.player.core.music\n\n` +
     `    override suspend fun ${n}(request: cp.player.sdk.${op.request}): BackendResult<cp.player.sdk.${op.response}> =\n` +
     `        extendedOperation { it.${n}(request) }`).join("\n") + `\n}\n`;
 // Nonempty, schema-derived cases exercise every additive dispatch and nested codec.
-function sample(t, field = "", record = "") {
-  if (t.endsWith("?")) return sample(t.slice(0, -1), field, record);
+// Recursive records (SocialEvent.forwardedFrom) terminate at the depth cap;
+// nested social events are exercised one level deep by the wire round-trip case.
+function sample(t, field = "", record = "", depth = 0) {
+  if (t.endsWith("?")) return sample(t.slice(0, -1), field, record, depth);
   if (t.endsWith("[]")) {
     if (field === "topReplies") return [];
+    if (field === "keySystems") return ["widevine"];
     if (field.endsWith("Ids") && ["PlaylistOrderRequest", "PlaylistTrackOrderRequest"].includes(record))
       return ["Opaque-A", "a"];
     if (field.endsWith("Ids")) return ["Opaque-A", "a", "Opaque-A"];
-    return [sample(t.slice(0, -2), field, record)];
+    return [sample(t.slice(0, -2), field, record, depth)];
   }
   if (t === "bytes") return record === "Bytes" ? [] : [0, 127, -128, -1];
   if (t === "bool") return true;
@@ -207,6 +243,8 @@ function sample(t, field = "", record = "") {
     return 1;
   }
   if (t === "string") {
+    if (field === "keySystem") return "widevine";
+    if (field === "schemeIdUri") return "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed";
     if (field === "id" || field.endsWith("Id") || field.endsWith("Ids")) return "Opaque-A";
     if (field.endsWith("Url") || field === "url" || field === "imageUrls") return "https://example.test/media";
     if (field === "date" || field === "dates") return "2026-11-10";
@@ -228,11 +266,33 @@ function sample(t, field = "", record = "") {
   if (t === "PlaylistImportRequest") return {
     name: "Imported", tracks: [sample("ImportTrack")], text: null, links: [], importLiked: false
   };
+  // A DRM descriptor must carry at least one usable reference; the host
+  // rejects an all-null descriptor before it ever reaches the player.
+  if (t === "DrmDescriptor") return {
+    keySystem: "widevine",
+    licenseUrl: "https://example.test/license",
+    headers: [sample("Header", "name", t)],
+    schemeIdUri: "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed",
+    initData: null,
+    keyId: null,
+    keyUri: "skd://example.test/key",
+    serverCertificate: null,
+    persistent: false,
+  };
   if (t === "MediaQualityRequest") return { id: "Opaque-A", type: "song" };
   if (t === "ResourceMessageRequest") return {
     userIds: ["Opaque-A", "a", "Opaque-A"], id: "Opaque-A", type: "song", text: "Text"
   };
-  return Object.fromEntries(Object.entries(schema.records[t]).map(([n, ft]) => [n, sample(ft, n, t)]));
+  if (depth >= 1) {
+    return Object.fromEntries(Object.entries(schema.records[t]).map(([n, ft]) => [
+      n,
+      ft.endsWith("?") ? null : sample(ft, n, t, depth + 1),
+    ]));
+  }
+  return Object.fromEntries(Object.entries(schema.records[t]).map(([n, ft]) => [
+    n,
+    sample(ft, n, t, depth + 1),
+  ]));
 }
 function kotlinSample(t, value) {
   if (t.endsWith("?")) return value === null ? "null" : kotlinSample(t.slice(0, -1), value);
@@ -283,31 +343,31 @@ const fixtureKotlin = banner + `package cp.player.core.provider\n\n` +
   }).join("\n");
 const operationsDoc = `<!-- Generated by provider-contract/generate.mjs; do not edit. -->\n` +
   `# Typed SDK Operations\n\n` +
-  `Contract major: ${schema.version}. Business operations: ${business.length}.\n` +
-  `Tags are append-only; 1 and 6..9 are protocol/runtime operations, not business capabilities.\n\n` +
-  `An operation in this table is a typed contract, not a claim that an installed provider implements it.\n` +
-  `Providers must declare the matching capability and implement the method. Defaults return Unsupported.\n` +
-  `The host enforces session cancellation, deadlines, validation and publication fencing.\n\n` +
-  `Request IDs are opaque, case-sensitive provider-local strings. The additive UnifiedMusicSource\n` +
-  `request-object methods are scoped to the current session; do not pass CPMediaId values to them.\n` +
-  `Namespaced playback callers use resolveVideoResource for cross-provider validation.\n` +
-  `Times and durations are milliseconds, absolute times are Unix epoch milliseconds.\n` +
-  `Cursor strings are opaque and must be returned unchanged. PageRequest offsets count items.\n` +
-  `MessagePage items are newest-first. Message text is plain text, never a JSON envelope.\n` +
-  `Empty playlist tags clear the tags; null leaves them unchanged. Empty queue REPLACE clears the queue.\n` +
-  `Listen heartbeat intervalMs is milliseconds. ScrobbleRequest.playedSeconds is explicitly seconds.\n` +
-  `Listen snapshots distinguish an absent playlist from an explicitly empty playlist.\n\n` +
-  `CommentQuery preserves opaque input cursors; the original CommentPageRequest layout is unchanged.\n` +
-  `Album browsing, latest albums and dated charts are separate operations, not aliases.\n` +
-  `Upload IDs are opaque account-session handles. Providers own token/storage state; no host paths\n` +
-  `or upload credentials cross the business boundary. Image and audio chunks are at most 1 MiB.\n` +
-  `prepareCloudUpload validates the file metadata; uploadCloudChunk accepts the entire chunk or fails,\n` +
-  `returning the exact next offset and complete = last. completeCloudUpload publishes the uploaded file.\n` +
-  `Providers enforce handle ownership, declared size, offset order and final-chunk boundaries.\n` +
-  `Playlist imports accept exactly one of tracks, text or links. Reordering preserves opaque IDs\n` +
-  `and sequence; duplicate IDs are invalid rather than silently deduplicated.\n\n` +
-  `See [field/type reference](SDK_TYPES.md) for every request/response field, nullability and default,\n` +
-  `and [provider workflows](PROVIDER_WORKFLOWS.md) for domain implementation guidance.\n\n` +
+  `Contract major: \`${schema.version}\`. Business operations: ${business.length}. Tags are append-only.\n\n` +
+  `## Conventions\n\n` +
+  `| Item | Rule |\n|---|---|\n` +
+  `| Scope | An operation is a typed contract, not proof that an installed provider implements it |\n` +
+  `| Provider duty | Declare the capability and implement the method; unimplemented defaults return Unsupported |\n` +
+  `| Host duty | Session cancellation, deadlines, validation, publication fencing |\n` +
+  `| Protocol tags | 1 and 6..9 are runtime operations, not business capabilities |\n` +
+  `| IDs | Opaque, case-sensitive provider-local strings; never pass CPMediaId values |\n` +
+  `| Namespaced playback | resolveVideoResource performs cross-provider validation |\n` +
+  `| Times | Milliseconds; absolute times are Unix epoch milliseconds |\n` +
+  `| Cursors | Opaque, returned unchanged; PageRequest offsets count items |\n` +
+  `| Messages | Newest-first; text is plain text, never a JSON envelope |\n` +
+  `| Playlist tags | [] clears the tags, null leaves them unchanged |\n` +
+  `| Queue | Empty REPLACE clears the queue |\n` +
+  `| Listen | intervalMs is milliseconds; an absent playlist differs from an explicitly empty one |\n` +
+  `| Scrobble | playedSeconds is explicitly seconds |\n` +
+  `| Comments | CommentQuery preserves opaque cursors; the CommentPageRequest layout is unchanged |\n` +
+  `| Albums | Browsing, latest albums and dated charts are separate operations, not aliases |\n` +
+  `| Uploads | Opaque account-session handles; no host paths or upload credentials cross the boundary; image and audio chunks are at most 1 MiB |\n` +
+  `| Cloud upload | prepareCloudUpload then uploadCloudChunk (whole chunk or fail, exact next offset, complete = last) then completeCloudUpload |\n` +
+  `| Provider ownership | Handle ownership, declared size, offset order and final-chunk boundaries |\n` +
+  `| Imports | Exactly one of tracks, text or links |\n` +
+  `| Reorder | Preserves opaque IDs and sequence; duplicate IDs are invalid, never deduplicated |\n\n` +
+  `See the [field/type reference](SDK_TYPES.md) for every field, nullability and default,\n` +
+  `and [provider workflows](WORKFLOWS.md) for domain implementation guidance.\n\n` +
   groups.map(group => `## ${group}\n\n` +
     `| Tag | Method | Capability | Request | Response | Behavior |\n|---|---|---|---|---|---|\n` +
     business.filter(([, op]) => op.group === group).map(([n, op]) =>
@@ -318,30 +378,28 @@ const fieldDefault = (name, field, t) => schema.defaults?.[name]?.[field] !== un
   : t.endsWith("?") ? "null" : t.endsWith("[]") ? "[]" : "required";
 const typesDoc = `<!-- Generated by provider-contract/generate.mjs; do not edit. -->\n` +
   `# SDK Field And Type Reference\n\n` +
-  `Contract major: ${schema.version}. Records: ${Object.keys(schema.records).length}.\n` +
-  `Source: provider-contract/schema.mjs (layout/defaults) and documentation.mjs (semantics).\n` +
-  `Operation meanings and capabilities: [SDK operations](SDK_OPERATIONS.md).\n\n` +
+  `Contract major: \`${schema.version}\`. Records: ${Object.keys(schema.records).length}.\n` +
+  `Source: provider-contract/schema.mjs (layout, defaults) and documentation.mjs (semantics).\n` +
+  `Operations: [SDK operations](SDK_OPERATIONS.md).\n\n` +
   `## Reading Declarations\n\n` +
-  `Kotlin Long maps to an exact integer JavaScript number, bounded by 9007199254740991.\n` +
-  `Int uses the signed 32-bit range, with narrower host checks where documented.\n` +
-  `Most counters/times are nonnegative; birthdayEpochMs permits pre-1970 values.\n` +
-  `bytes maps to Kotlin ByteArray and TypeScript Binary (Int8Array or Uint8Array).\n` +
-  `Do not use base64 strings or host paths for binary fields.\n\n` +
-  `The default column describes Kotlin construction and missing-field decoding rules.\n` +
-  `TypeScript nullable properties may be absent or null; non-null array properties may\n` +
-  `be absent and decode as an empty list. This does not waive semantic requirements\n` +
-  `such as a nonempty reorder list or one outcome per batch input.\n` +
-  `Scalar defaults are Kotlin constructor defaults: required TypeScript properties\n` +
-  `remain required, and a provider receives the host's complete typed request.\n` +
-  `Null means unknown on result metadata and unchanged on patch fields where stated;\n` +
-  `do not globally replace it with zero, false, empty text or an empty list.\n\n` +
-  `IDs are normally opaque strings. Existing CommentItem/CommentReply and floor\n` +
-  `operations retain numeric v1 IDs; do not change record layouts to hide that limitation.\n` +
-  `The complete encoded request/result is bounded to 4 MiB, lists to 500 items.\n` +
-  `Extended operations additionally bound nesting to 12, cursors to 4096 characters,\n` +
-  `ordinary strings to 16384 and description/signature text to 65536 characters;\n` +
-  `operation-specific rules can be stricter. These are host checks, not a promise that\n` +
-  `every upstream service accepts the maximum. See ProviderHost and ExtendedOperationValidation.\n\n` +
+  `| Item | Rule |\n|---|---|\n` +
+  `| Kotlin Long | Exact integer JavaScript number, bounded by 9007199254740991 |\n` +
+  `| Int | Signed 32-bit range, narrower host checks where documented |\n` +
+  `| Counters / times | Nonnegative; birthdayEpochMs permits pre-1970 values |\n` +
+  `| bytes | Kotlin ByteArray, TypeScript Binary (Int8Array or Uint8Array); never base64 or host paths |\n` +
+  `| Default column | Kotlin construction and missing-field decoding rules |\n` +
+  `| TypeScript nullability | Nullable properties may be absent or null; non-null array properties may be absent and decode as an empty list |\n` +
+  `| Semantic floor | Decoding defaults do not waive requirements such as a nonempty reorder list or one outcome per batch input |\n` +
+  `| Scalar defaults | Kotlin constructor defaults; required TypeScript properties remain required |\n` +
+  `| Provider input | Always the host's complete typed request |\n` +
+  `| null | Unknown on result metadata, unchanged on patch fields where stated; never globally replaced by zero, false, empty text or empty list |\n` +
+  `| IDs | Normally opaque strings; CommentItem, CommentReply and floor operations retain numeric v1 IDs |\n` +
+  `| Record layouts | Must not be changed to hide the numeric-ID limitation |\n` +
+  `| Message ceiling | 4 MiB encoded request/result; 500 items per list |\n` +
+  `| Extended nesting / cursors | Nesting 12, cursors 4096 characters |\n` +
+  `| Extended strings | Ordinary 16384, description/signature 65536 characters |\n` +
+  `| Operation rules | May be stricter than these host checks; no upstream is promised to accept the maximum |\n` +
+  `| Enforcement | ProviderHost and ExtendedOperationValidation |\n\n` +
   Object.entries(schema.records).map(([name, fields]) => `## ${name}\n\n${recordDocs[name]}\n\n` +
     `Used by: ${Object.entries(schema.operations).filter(([, op]) => op.request === name || op.response === name)
       .map(([n]) => `\`${n}\``).join(", ") || "nested record"}.\n\n` +
@@ -375,8 +433,8 @@ const outputs = [
   ["core/src/commonMain/kotlin/cp/player/core/provider/typed/ExtendedProviderHost.generated.kt", hostKotlin],
   ["core/src/commonMain/kotlin/cp/player/core/music/ExtendedMusicSource.generated.kt", sourceKotlin],
   ["core/src/desktopTest/kotlin/cp/player/core/provider/ExtendedOperationCases.generated.kt", fixtureKotlin],
-  ["docs/dev/SDK_OPERATIONS.md", operationsDoc],
-  ["docs/dev/SDK_TYPES.md", typesDoc],
+  ["docs/dev/providers/SDK_OPERATIONS.md", operationsDoc],
+  ["docs/dev/providers/SDK_TYPES.md", typesDoc],
   ["provider-sdk-kmp/src/commonMain/kotlin/cp/player/sdk/MusicProvider.kt",
     documentKotlinMethods("provider-sdk-kmp/src/commonMain/kotlin/cp/player/sdk/MusicProvider.kt")],
   ["provider-sdk-kmp/src/commonMain/kotlin/cp/player/sdk/CatalogProvider.kt",

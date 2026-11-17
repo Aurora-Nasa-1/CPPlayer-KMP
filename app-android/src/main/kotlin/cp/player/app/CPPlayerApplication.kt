@@ -17,6 +17,7 @@ class CPPlayerApplication : Application() {
         MusicBackend.init(
             context = toPlatformContext(),
             settings = defaultSettingsStorage(),
+            applicationVersionName = BuildConfig.VERSION_NAME,
         )
     }
 

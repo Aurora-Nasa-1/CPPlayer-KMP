@@ -32,7 +32,7 @@ interface PlatformVideoPlayer : PlatformMediaPlayer {
      * 挂载平台特定的渲染承载体。
      *
      * - Android: 支持传入 `SurfaceView`、`TextureView` 或 `androidx.media3.ui.PlayerView`
-     * - Desktop: 支持传入 AWT `Canvas` / `Component` / 原生窗口句柄 (HWND / Window ID)
+     * - Desktop: 传入原生窗口句柄 (HWND / Window ID)
      * - 传入 null 表示解绑（组件 dispose 或页面退出时调用）
      */
     fun attachSurface(surfaceTarget: Any?)

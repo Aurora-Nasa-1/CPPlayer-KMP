@@ -130,6 +130,9 @@ internal fun extendedOperationCases(): List<ExtendedOperationCase> = listOf(
     extendedCase164(),
     extendedCase165(),
     extendedCase166(),
+    extendedCase167(),
+    extendedCase168(),
+    extendedCase169(),
 )
 
 private fun extendedCase61(): ExtendedOperationCase {
@@ -182,7 +185,7 @@ private fun extendedCase62(): ExtendedOperationCase {
 
 private fun extendedCase63(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = SocialUserPage(items = listOf(SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media")), total = 1L, hasMore = true)
+        val response = SocialUserPage(items = listOf(SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getRecentContacts", "messages.contacts", 63, request, request.values(), response, response.values(),
             { it.getRecentContacts(request).values() },
             { source -> when (val result = source.getRecentContacts(request)) {
@@ -206,7 +209,7 @@ private fun extendedCase63(): ExtendedOperationCase {
 
 private fun extendedCase64(): ExtendedOperationCase {
         val request = CursorRequest(limit = 30, cursor = "cursor")
-        val response = ConversationPage(items = listOf(Conversation(user = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), lastMessage = PrivateMessage(id = "Opaque-A", sender = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), recipient = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), text = "{\"msg\":\"literal text\"}", sentAtEpochMs = 1L), unreadCount = 1)), hasMore = true, cursor = "cursor")
+        val response = ConversationPage(items = listOf(Conversation(user = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = null), lastMessage = null, unreadCount = 1)), hasMore = true, cursor = "cursor")
         return ExtendedOperationCase("getPrivateMessages", "messages.conversations", 64, request, request.values(), response, response.values(),
             { it.getPrivateMessages(request).values() },
             { source -> when (val result = source.getPrivateMessages(request)) {
@@ -230,7 +233,7 @@ private fun extendedCase64(): ExtendedOperationCase {
 
 private fun extendedCase65(): ExtendedOperationCase {
         val request = MessageHistoryRequest(userId = "Opaque-A", limit = 30, cursor = "cursor")
-        val response = MessagePage(items = listOf(PrivateMessage(id = "Opaque-A", sender = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), recipient = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), text = "{\"msg\":\"literal text\"}", sentAtEpochMs = 1L)), hasMore = true, cursor = "cursor")
+        val response = MessagePage(items = listOf(PrivateMessage(id = "Opaque-A", sender = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = null), recipient = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = null), text = "{\"msg\":\"literal text\"}", sentAtEpochMs = 1L)), hasMore = true, cursor = "cursor")
         return ExtendedOperationCase("getMessageHistory", "messages.history", 65, request, request.values(), response, response.values(),
             { it.getMessageHistory(request).values() },
             { source -> when (val result = source.getMessageHistory(request)) {
@@ -302,7 +305,7 @@ private fun extendedCase67(): ExtendedOperationCase {
 
 private fun extendedCase68(): ExtendedOperationCase {
         val request = Bytes(value = byteArrayOf())
-        val response = ListenStatus(inRoom = true, room = ListenRoom(id = "Opaque-A", members = listOf(ListenMember(user = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), online = true)), creatorId = "Opaque-A", roomType = "roomType", createdAtEpochMs = 1L, effectiveDurationMs = 1L, waitMs = 1L), connectionStatus = "connectionStatus")
+        val response = ListenStatus(inRoom = true, room = ListenRoom(id = "Opaque-A", members = listOf(ListenMember(user = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = null), online = true)), creatorId = null, roomType = null, createdAtEpochMs = null, effectiveDurationMs = null, waitMs = null), connectionStatus = "connectionStatus")
         return ExtendedOperationCase("getListenTogetherStatus", "listenTogether.status", 68, request, request.values(), response, response.values(),
             { it.getListenTogetherStatus(request).values() },
             { source -> when (val result = source.getListenTogetherStatus(request)) {
@@ -326,7 +329,7 @@ private fun extendedCase68(): ExtendedOperationCase {
 
 private fun extendedCase69(): ExtendedOperationCase {
         val request = Bytes(value = byteArrayOf())
-        val response = ListenRoom(id = "Opaque-A", members = listOf(ListenMember(user = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), online = true)), creatorId = "Opaque-A", roomType = "roomType", createdAtEpochMs = 1L, effectiveDurationMs = 1L, waitMs = 1L)
+        val response = ListenRoom(id = "Opaque-A", members = listOf(ListenMember(user = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = null), online = true)), creatorId = "Opaque-A", roomType = "roomType", createdAtEpochMs = 1L, effectiveDurationMs = 1L, waitMs = 1L)
         return ExtendedOperationCase("createListenTogetherRoom", "listenTogether.create", 69, request, request.values(), response, response.values(),
             { it.createListenTogetherRoom(request).values() },
             { source -> when (val result = source.createListenTogetherRoom(request)) {
@@ -374,7 +377,7 @@ private fun extendedCase70(): ExtendedOperationCase {
 
 private fun extendedCase71(): ExtendedOperationCase {
         val request = ListenInvitationRequest(roomId = "Opaque-A", inviterId = "Opaque-A")
-        val response = ListenRoom(id = "Opaque-A", members = listOf(ListenMember(user = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), online = true)), creatorId = "Opaque-A", roomType = "roomType", createdAtEpochMs = 1L, effectiveDurationMs = 1L, waitMs = 1L)
+        val response = ListenRoom(id = "Opaque-A", members = listOf(ListenMember(user = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = null), online = true)), creatorId = "Opaque-A", roomType = "roomType", createdAtEpochMs = 1L, effectiveDurationMs = 1L, waitMs = 1L)
         return ExtendedOperationCase("acceptListenTogetherInvitation", "listenTogether.accept", 71, request, request.values(), response, response.values(),
             { it.acceptListenTogetherInvitation(request).values() },
             { source -> when (val result = source.acceptListenTogetherInvitation(request)) {
@@ -446,7 +449,7 @@ private fun extendedCase73(): ExtendedOperationCase {
 
 private fun extendedCase74(): ExtendedOperationCase {
         val request = ListenRoomRequest(roomId = "Opaque-A")
-        val response = ListenSnapshot(command = ListenCommand(action = "PLAY", trackId = "Opaque-A", positionMs = 1L, sequence = 1L, playStatus = "PLAY", formerTrackId = "Opaque-A", serverSequence = 1L, userId = "Opaque-A"), playlist = ListenPlaylist(trackIds = listOf("Opaque-A", "a", "Opaque-A"), replace = true, versions = listOf(ListenQueueVersion(userId = "Opaque-A", version = 1L))))
+        val response = ListenSnapshot(command = ListenCommand(action = "PLAY", trackId = null, positionMs = 1L, sequence = 1L, playStatus = "PLAY", formerTrackId = null, serverSequence = 1L, userId = null), playlist = ListenPlaylist(trackIds = listOf("Opaque-A", "a", "Opaque-A"), replace = true, versions = listOf(ListenQueueVersion(userId = "Opaque-A", version = 1L))))
         return ExtendedOperationCase("getListenTogetherSnapshot", "listenTogether.snapshot", 74, request, request.values(), response, response.values(),
             { it.getListenTogetherSnapshot(request).values() },
             { source -> when (val result = source.getListenTogetherSnapshot(request)) {
@@ -469,7 +472,7 @@ private fun extendedCase74(): ExtendedOperationCase {
 }
 
 private fun extendedCase75(): ExtendedOperationCase {
-        val request = ListenCommandRequest(roomId = "Opaque-A", command = ListenCommand(action = "PLAY", trackId = "Opaque-A", positionMs = 1L, sequence = 1L, playStatus = "PLAY", formerTrackId = "Opaque-A", serverSequence = 1L, userId = "Opaque-A"))
+        val request = ListenCommandRequest(roomId = "Opaque-A", command = ListenCommand(action = "PLAY", trackId = null, positionMs = 1L, sequence = 1L, playStatus = "PLAY", formerTrackId = null, serverSequence = 1L, userId = null))
         val response = MutationResult(success = true, id = "Opaque-A")
         return ExtendedOperationCase("sendListenTogetherCommand", "listenTogether.command", 75, request, request.values(), response, response.values(),
             { it.sendListenTogetherCommand(request).values() },
@@ -518,7 +521,7 @@ private fun extendedCase76(): ExtendedOperationCase {
 
 private fun extendedCase77(): ExtendedOperationCase {
         val request = IdRequest(id = "Opaque-A")
-        val response = VideoItem(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", durationMs = 1L, creators = listOf(Artist(id = "Opaque-A", name = "name")), description = "description", playCount = 1L)
+        val response = VideoItem(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", durationMs = 1L, creators = listOf(Artist(id = null, name = "name")), description = "description", playCount = 1L)
         return ExtendedOperationCase("getMv", "mvs.get", 77, request, request.values(), response, response.values(),
             { it.getMv(request).values() },
             { source -> when (val result = source.getMv(request)) {
@@ -566,7 +569,7 @@ private fun extendedCase78(): ExtendedOperationCase {
 
 private fun extendedCase79(): ExtendedOperationCase {
         val request = VideoBrowseRequest(area = "area", limit = 30, offset = 1)
-        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", durationMs = 1L, creators = listOf(Artist(id = "Opaque-A", name = "name")), description = "description", playCount = 1L)), total = 1L, hasMore = true)
+        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = null, durationMs = 1L, creators = listOf(Artist(id = null, name = "name")), description = null, playCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getAllMvs", "mvs.browse", 79, request, request.values(), response, response.values(),
             { it.getAllMvs(request).values() },
             { source -> when (val result = source.getAllMvs(request)) {
@@ -590,7 +593,7 @@ private fun extendedCase79(): ExtendedOperationCase {
 
 private fun extendedCase80(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", durationMs = 1L, creators = listOf(Artist(id = "Opaque-A", name = "name")), description = "description", playCount = 1L)), total = 1L, hasMore = true)
+        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = null, durationMs = 1L, creators = listOf(Artist(id = null, name = "name")), description = null, playCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getLatestMvs", "mvs.latest", 80, request, request.values(), response, response.values(),
             { it.getLatestMvs(request).values() },
             { source -> when (val result = source.getLatestMvs(request)) {
@@ -638,7 +641,7 @@ private fun extendedCase81(): ExtendedOperationCase {
 
 private fun extendedCase82(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", durationMs = 1L, creators = listOf(Artist(id = "Opaque-A", name = "name")), description = "description", playCount = 1L)), total = 1L, hasMore = true)
+        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = null, durationMs = 1L, creators = listOf(Artist(id = null, name = "name")), description = null, playCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getSubscribedMvs", "mvs.subscribed", 82, request, request.values(), response, response.values(),
             { it.getSubscribedMvs(request).values() },
             { source -> when (val result = source.getSubscribedMvs(request)) {
@@ -662,7 +665,7 @@ private fun extendedCase82(): ExtendedOperationCase {
 
 private fun extendedCase83(): ExtendedOperationCase {
         val request = IdRequest(id = "Opaque-A")
-        val response = VideoItem(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", durationMs = 1L, creators = listOf(Artist(id = "Opaque-A", name = "name")), description = "description", playCount = 1L)
+        val response = VideoItem(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", durationMs = 1L, creators = listOf(Artist(id = null, name = "name")), description = "description", playCount = 1L)
         return ExtendedOperationCase("getVideo", "videos.get", 83, request, request.values(), response, response.values(),
             { it.getVideo(request).values() },
             { source -> when (val result = source.getVideo(request)) {
@@ -734,7 +737,7 @@ private fun extendedCase85(): ExtendedOperationCase {
 
 private fun extendedCase86(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", durationMs = 1L, creators = listOf(Artist(id = "Opaque-A", name = "name")), description = "description", playCount = 1L)), total = 1L, hasMore = true)
+        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = null, durationMs = 1L, creators = listOf(Artist(id = null, name = "name")), description = null, playCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getVideoTimeline", "videos.timeline", 86, request, request.values(), response, response.values(),
             { it.getVideoTimeline(request).values() },
             { source -> when (val result = source.getVideoTimeline(request)) {
@@ -758,7 +761,7 @@ private fun extendedCase86(): ExtendedOperationCase {
 
 private fun extendedCase87(): ExtendedOperationCase {
         val request = IdRequest(id = "Opaque-A")
-        val response = DjRadio(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", description = "description", creator = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), programCount = 1)
+        val response = DjRadio(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", description = "description", creator = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = null), programCount = 1)
         return ExtendedOperationCase("getDjRadio", "dj.get", 87, request, request.values(), response, response.values(),
             { it.getDjRadio(request).values() },
             { source -> when (val result = source.getDjRadio(request)) {
@@ -782,7 +785,7 @@ private fun extendedCase87(): ExtendedOperationCase {
 
 private fun extendedCase88(): ExtendedOperationCase {
         val request = DjProgramsRequest(id = "Opaque-A", limit = 30, offset = 1, ascending = true)
-        val response = DjProgramPage(items = listOf(DjProgram(id = "Opaque-A", title = "title", radioId = "Opaque-A", track = Track(id = "Opaque-A", title = "title", artists = listOf(Artist(id = "Opaque-A", name = "name")), durationMs = 1L, album = "album", coverUrl = "https://example.test/media"), description = "description", publishedAtEpochMs = 1L)), total = 1L, hasMore = true)
+        val response = DjProgramPage(items = listOf(DjProgram(id = "Opaque-A", title = "title", radioId = null, track = Track(id = "Opaque-A", title = "title", artists = listOf(Artist(id = null, name = "name")), durationMs = 1L, album = null, coverUrl = null), description = null, publishedAtEpochMs = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getDjPrograms", "dj.programs", 88, request, request.values(), response, response.values(),
             { it.getDjPrograms(request).values() },
             { source -> when (val result = source.getDjPrograms(request)) {
@@ -806,7 +809,7 @@ private fun extendedCase88(): ExtendedOperationCase {
 
 private fun extendedCase89(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", description = "description", creator = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), programCount = 1)), total = 1L, hasMore = true)
+        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = null, description = null, creator = null, programCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getHotDjRadios", "dj.hot", 89, request, request.values(), response, response.values(),
             { it.getHotDjRadios(request).values() },
             { source -> when (val result = source.getHotDjRadios(request)) {
@@ -830,7 +833,7 @@ private fun extendedCase89(): ExtendedOperationCase {
 
 private fun extendedCase90(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", description = "description", creator = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), programCount = 1)), total = 1L, hasMore = true)
+        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = null, description = null, creator = null, programCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getDjRanking", "dj.ranking", 90, request, request.values(), response, response.values(),
             { it.getDjRanking(request).values() },
             { source -> when (val result = source.getDjRanking(request)) {
@@ -854,7 +857,7 @@ private fun extendedCase90(): ExtendedOperationCase {
 
 private fun extendedCase91(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", description = "description", creator = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), programCount = 1)), total = 1L, hasMore = true)
+        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = null, description = null, creator = null, programCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getRecommendedDjRadios", "dj.recommended", 91, request, request.values(), response, response.values(),
             { it.getRecommendedDjRadios(request).values() },
             { source -> when (val result = source.getRecommendedDjRadios(request)) {
@@ -902,7 +905,7 @@ private fun extendedCase92(): ExtendedOperationCase {
 
 private fun extendedCase93(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", description = "description", creator = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), programCount = 1)), total = 1L, hasMore = true)
+        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = null, description = null, creator = null, programCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getSubscribedDjRadios", "dj.subscribed", 93, request, request.values(), response, response.values(),
             { it.getSubscribedDjRadios(request).values() },
             { source -> when (val result = source.getSubscribedDjRadios(request)) {
@@ -926,7 +929,7 @@ private fun extendedCase93(): ExtendedOperationCase {
 
 private fun extendedCase94(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = DjProgramPage(items = listOf(DjProgram(id = "Opaque-A", title = "title", radioId = "Opaque-A", track = Track(id = "Opaque-A", title = "title", artists = listOf(Artist(id = "Opaque-A", name = "name")), durationMs = 1L, album = "album", coverUrl = "https://example.test/media"), description = "description", publishedAtEpochMs = 1L)), total = 1L, hasMore = true)
+        val response = DjProgramPage(items = listOf(DjProgram(id = "Opaque-A", title = "title", radioId = null, track = Track(id = "Opaque-A", title = "title", artists = listOf(Artist(id = null, name = "name")), durationMs = 1L, album = null, coverUrl = null), description = null, publishedAtEpochMs = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getRecommendedPrograms", "dj.recommendedPrograms", 94, request, request.values(), response, response.values(),
             { it.getRecommendedPrograms(request).values() },
             { source -> when (val result = source.getRecommendedPrograms(request)) {
@@ -950,7 +953,7 @@ private fun extendedCase94(): ExtendedOperationCase {
 
 private fun extendedCase95(): ExtendedOperationCase {
         val request = IdRequest(id = "Opaque-A")
-        val response = DjProgram(id = "Opaque-A", title = "title", radioId = "Opaque-A", track = Track(id = "Opaque-A", title = "title", artists = listOf(Artist(id = "Opaque-A", name = "name")), durationMs = 1L, album = "album", coverUrl = "https://example.test/media"), description = "description", publishedAtEpochMs = 1L)
+        val response = DjProgram(id = "Opaque-A", title = "title", radioId = "Opaque-A", track = Track(id = "Opaque-A", title = "title", artists = listOf(Artist(id = null, name = "name")), durationMs = 1L, album = null, coverUrl = null), description = "description", publishedAtEpochMs = 1L)
         return ExtendedOperationCase("getDjProgram", "dj.program", 95, request, request.values(), response, response.values(),
             { it.getDjProgram(request).values() },
             { source -> when (val result = source.getDjProgram(request)) {
@@ -974,7 +977,7 @@ private fun extendedCase95(): ExtendedOperationCase {
 
 private fun extendedCase96(): ExtendedOperationCase {
         val request = PagedIdRequest(id = "Opaque-A", limit = 30, offset = 1)
-        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", description = "description", creator = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), programCount = 1)), total = 1L, hasMore = true)
+        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = null, description = null, creator = null, programCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getUserDjRadios", "dj.user", 96, request, request.values(), response, response.values(),
             { it.getUserDjRadios(request).values() },
             { source -> when (val result = source.getUserDjRadios(request)) {
@@ -998,7 +1001,7 @@ private fun extendedCase96(): ExtendedOperationCase {
 
 private fun extendedCase97(): ExtendedOperationCase {
         val request = CalendarRequest(startAtEpochMs = 1L, endAtEpochMs = 1L)
-        val response = CalendarPage(items = listOf(CalendarEntry(id = "Opaque-A", title = "title", startsAtEpochMs = 1L, endsAtEpochMs = 1L, coverUrl = "https://example.test/media", resourceId = "Opaque-A", resourceType = "resourceType")))
+        val response = CalendarPage(items = listOf(CalendarEntry(id = "Opaque-A", title = "title", startsAtEpochMs = 1L, endsAtEpochMs = null, coverUrl = null, resourceId = null, resourceType = null)))
         return ExtendedOperationCase("getCalendar", "social.calendar", 97, request, request.values(), response, response.values(),
             { it.getCalendar(request).values() },
             { source -> when (val result = source.getCalendar(request)) {
@@ -1022,7 +1025,7 @@ private fun extendedCase97(): ExtendedOperationCase {
 
 private fun extendedCase98(): ExtendedOperationCase {
         val request = EventPageRequest(limit = 30, cursor = "cursor")
-        val response = EventPage(items = listOf(SocialEvent(id = "Opaque-A", user = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), text = "{\"msg\":\"literal text\"}", publishedAtEpochMs = 1L, resourceId = "Opaque-A", resourceType = "resourceType", imageUrls = listOf("https://example.test/media"))), hasMore = true, cursor = "cursor")
+        val response = EventPage(items = listOf(SocialEvent(id = "Opaque-A", user = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = null), text = "{\"msg\":\"literal text\"}", publishedAtEpochMs = 1L, resourceId = null, resourceType = null, resourceTitle = null, resourceCoverUrl = null, resourceSubtitle = null, imageUrls = listOf("https://example.test/media"), liked = true, likedCount = 1, commentCount = 1, forwardCount = 1, forwardedFrom = null, location = null)), hasMore = true, cursor = "cursor")
         return ExtendedOperationCase("getEvents", "social.events", 98, request, request.values(), response, response.values(),
             { it.getEvents(request).values() },
             { source -> when (val result = source.getEvents(request)) {
@@ -1046,7 +1049,7 @@ private fun extendedCase98(): ExtendedOperationCase {
 
 private fun extendedCase99(): ExtendedOperationCase {
         val request = UserEventRequest(id = "Opaque-A", limit = 30, cursor = "cursor")
-        val response = EventPage(items = listOf(SocialEvent(id = "Opaque-A", user = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), text = "{\"msg\":\"literal text\"}", publishedAtEpochMs = 1L, resourceId = "Opaque-A", resourceType = "resourceType", imageUrls = listOf("https://example.test/media"))), hasMore = true, cursor = "cursor")
+        val response = EventPage(items = listOf(SocialEvent(id = "Opaque-A", user = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = null), text = "{\"msg\":\"literal text\"}", publishedAtEpochMs = 1L, resourceId = null, resourceType = null, resourceTitle = null, resourceCoverUrl = null, resourceSubtitle = null, imageUrls = listOf("https://example.test/media"), liked = true, likedCount = 1, commentCount = 1, forwardCount = 1, forwardedFrom = null, location = null)), hasMore = true, cursor = "cursor")
         return ExtendedOperationCase("getUserEvents", "social.userEvents", 99, request, request.values(), response, response.values(),
             { it.getUserEvents(request).values() },
             { source -> when (val result = source.getUserEvents(request)) {
@@ -1166,7 +1169,7 @@ private fun extendedCase103(): ExtendedOperationCase {
 
 private fun extendedCase104(): ExtendedOperationCase {
         val request = PagedIdRequest(id = "Opaque-A", limit = 30, offset = 1)
-        val response = SocialUserPage(items = listOf(SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media")), total = 1L, hasMore = true)
+        val response = SocialUserPage(items = listOf(SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getPlaylistSubscribers", "playlists.subscribers", 104, request, request.values(), response, response.values(),
             { it.getPlaylistSubscribers(request).values() },
             { source -> when (val result = source.getPlaylistSubscribers(request)) {
@@ -1262,7 +1265,7 @@ private fun extendedCase107(): ExtendedOperationCase {
 
 private fun extendedCase108(): ExtendedOperationCase {
         val request = PagedIdRequest(id = "Opaque-A", limit = 30, offset = 1)
-        val response = PlaylistPage(items = listOf(Playlist(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", trackCount = 1, creatorId = "Opaque-A", creatorName = "creatorName", description = "description")), total = 1L, hasMore = true)
+        val response = PlaylistPage(items = listOf(Playlist(id = "Opaque-A", title = "title", coverUrl = null, trackCount = null, creatorId = null, creatorName = null, description = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getCreatedPlaylists", "playlists.created", 108, request, request.values(), response, response.values(),
             { it.getCreatedPlaylists(request).values() },
             { source -> when (val result = source.getCreatedPlaylists(request)) {
@@ -1286,7 +1289,7 @@ private fun extendedCase108(): ExtendedOperationCase {
 
 private fun extendedCase109(): ExtendedOperationCase {
         val request = PagedIdRequest(id = "Opaque-A", limit = 30, offset = 1)
-        val response = PlaylistPage(items = listOf(Playlist(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", trackCount = 1, creatorId = "Opaque-A", creatorName = "creatorName", description = "description")), total = 1L, hasMore = true)
+        val response = PlaylistPage(items = listOf(Playlist(id = "Opaque-A", title = "title", coverUrl = null, trackCount = null, creatorId = null, creatorName = null, description = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getCollectedPlaylists", "playlists.collected", 109, request, request.values(), response, response.values(),
             { it.getCollectedPlaylists(request).values() },
             { source -> when (val result = source.getCollectedPlaylists(request)) {
@@ -1382,7 +1385,7 @@ private fun extendedCase112(): ExtendedOperationCase {
 
 private fun extendedCase113(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = TrackPage(items = listOf(Track(id = "Opaque-A", title = "title", artists = listOf(Artist(id = "Opaque-A", name = "name")), durationMs = 1L, album = "album", coverUrl = "https://example.test/media")), total = 1L, hasMore = true)
+        val response = TrackPage(items = listOf(Track(id = "Opaque-A", title = "title", artists = listOf(Artist(id = null, name = "name")), durationMs = 1L, album = null, coverUrl = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getRecentTracks", "accounts.recentTracks", 113, request, request.values(), response, response.values(),
             { it.getRecentTracks(request).values() },
             { source -> when (val result = source.getRecentTracks(request)) {
@@ -1454,7 +1457,7 @@ private fun extendedCase115(): ExtendedOperationCase {
 
 private fun extendedCase116(): ExtendedOperationCase {
         val request = IdRequest(id = "Opaque-A")
-        val response = ArtistPage(items = listOf(CatalogArtist(id = "Opaque-A", name = "name", avatarUrl = "https://example.test/media", description = "description", aliases = listOf("aliases"), albumCount = 1, trackCount = 1)), total = 1L, hasMore = true)
+        val response = ArtistPage(items = listOf(CatalogArtist(id = "Opaque-A", name = "name", avatarUrl = null, description = null, aliases = listOf("aliases"), albumCount = null, trackCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getSimilarArtists", "artists.similar", 116, request, request.values(), response, response.values(),
             { it.getSimilarArtists(request).values() },
             { source -> when (val result = source.getSimilarArtists(request)) {
@@ -1478,7 +1481,7 @@ private fun extendedCase116(): ExtendedOperationCase {
 
 private fun extendedCase117(): ExtendedOperationCase {
         val request = IdRequest(id = "Opaque-A")
-        val response = PlaylistPage(items = listOf(Playlist(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", trackCount = 1, creatorId = "Opaque-A", creatorName = "creatorName", description = "description")), total = 1L, hasMore = true)
+        val response = PlaylistPage(items = listOf(Playlist(id = "Opaque-A", title = "title", coverUrl = null, trackCount = null, creatorId = null, creatorName = null, description = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getSimilarPlaylists", "playlists.similar", 117, request, request.values(), response, response.values(),
             { it.getSimilarPlaylists(request).values() },
             { source -> when (val result = source.getSimilarPlaylists(request)) {
@@ -1526,7 +1529,7 @@ private fun extendedCase118(): ExtendedOperationCase {
 
 private fun extendedCase119(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = ArtistPage(items = listOf(CatalogArtist(id = "Opaque-A", name = "name", avatarUrl = "https://example.test/media", description = "description", aliases = listOf("aliases"), albumCount = 1, trackCount = 1)), total = 1L, hasMore = true)
+        val response = ArtistPage(items = listOf(CatalogArtist(id = "Opaque-A", name = "name", avatarUrl = null, description = null, aliases = listOf("aliases"), albumCount = null, trackCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getSubscribedArtists", "artists.subscribed", 119, request, request.values(), response, response.values(),
             { it.getSubscribedArtists(request).values() },
             { source -> when (val result = source.getSubscribedArtists(request)) {
@@ -1550,7 +1553,7 @@ private fun extendedCase119(): ExtendedOperationCase {
 
 private fun extendedCase120(): ExtendedOperationCase {
         val request = PagedIdRequest(id = "Opaque-A", limit = 30, offset = 1)
-        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", durationMs = 1L, creators = listOf(Artist(id = "Opaque-A", name = "name")), description = "description", playCount = 1L)), total = 1L, hasMore = true)
+        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = null, durationMs = 1L, creators = listOf(Artist(id = null, name = "name")), description = null, playCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getArtistMvs", "artists.mvs", 120, request, request.values(), response, response.values(),
             { it.getArtistMvs(request).values() },
             { source -> when (val result = source.getArtistMvs(request)) {
@@ -1574,7 +1577,7 @@ private fun extendedCase120(): ExtendedOperationCase {
 
 private fun extendedCase121(): ExtendedOperationCase {
         val request = ArtistBrowseRequest(type = 1, area = 1, initial = "initial", limit = 30, offset = 1)
-        val response = ArtistPage(items = listOf(CatalogArtist(id = "Opaque-A", name = "name", avatarUrl = "https://example.test/media", description = "description", aliases = listOf("aliases"), albumCount = 1, trackCount = 1)), total = 1L, hasMore = true)
+        val response = ArtistPage(items = listOf(CatalogArtist(id = "Opaque-A", name = "name", avatarUrl = null, description = null, aliases = listOf("aliases"), albumCount = null, trackCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("browseArtists", "artists.browse", 121, request, request.values(), response, response.values(),
             { it.browseArtists(request).values() },
             { source -> when (val result = source.browseArtists(request)) {
@@ -1646,7 +1649,7 @@ private fun extendedCase123(): ExtendedOperationCase {
 
 private fun extendedCase124(): ExtendedOperationCase {
         val request = HistoryTracksRequest(date = "2026-11-10")
-        val response = TrackPage(items = listOf(Track(id = "Opaque-A", title = "title", artists = listOf(Artist(id = "Opaque-A", name = "name")), durationMs = 1L, album = "album", coverUrl = "https://example.test/media")), total = 1L, hasMore = true)
+        val response = TrackPage(items = listOf(Track(id = "Opaque-A", title = "title", artists = listOf(Artist(id = null, name = "name")), durationMs = 1L, album = null, coverUrl = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getRecommendationHistoryTracks", "recommendations.historyTracks", 124, request, request.values(), response, response.values(),
             { it.getRecommendationHistoryTracks(request).values() },
             { source -> when (val result = source.getRecommendationHistoryTracks(request)) {
@@ -1670,7 +1673,7 @@ private fun extendedCase124(): ExtendedOperationCase {
 
 private fun extendedCase125(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = AlbumPage(items = listOf(Album(id = "Opaque-A", title = "title", artists = listOf(Artist(id = "Opaque-A", name = "name")), coverUrl = "https://example.test/media", trackCount = 1, releasedAtEpochMs = 1L, company = "company", description = "description")), total = 1L, hasMore = true)
+        val response = AlbumPage(items = listOf(Album(id = "Opaque-A", title = "title", artists = listOf(Artist(id = null, name = "name")), coverUrl = null, trackCount = null, releasedAtEpochMs = null, company = null, description = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getDigitalAlbums", "albums.digital", 125, request, request.values(), response, response.values(),
             { it.getDigitalAlbums(request).values() },
             { source -> when (val result = source.getDigitalAlbums(request)) {
@@ -1718,7 +1721,7 @@ private fun extendedCase126(): ExtendedOperationCase {
 
 private fun extendedCase127(): ExtendedOperationCase {
         val request = SearchRequest(keyword = "keyword", limit = 30, offset = 1)
-        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", durationMs = 1L, creators = listOf(Artist(id = "Opaque-A", name = "name")), description = "description", playCount = 1L)), total = 1L, hasMore = true)
+        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = null, durationMs = 1L, creators = listOf(Artist(id = null, name = "name")), description = null, playCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("searchMvs", "mvs.search", 127, request, request.values(), response, response.values(),
             { it.searchMvs(request).values() },
             { source -> when (val result = source.searchMvs(request)) {
@@ -1742,7 +1745,7 @@ private fun extendedCase127(): ExtendedOperationCase {
 
 private fun extendedCase128(): ExtendedOperationCase {
         val request = SearchRequest(keyword = "keyword", limit = 30, offset = 1)
-        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", durationMs = 1L, creators = listOf(Artist(id = "Opaque-A", name = "name")), description = "description", playCount = 1L)), total = 1L, hasMore = true)
+        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = null, durationMs = 1L, creators = listOf(Artist(id = null, name = "name")), description = null, playCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("searchVideos", "videos.search", 128, request, request.values(), response, response.values(),
             { it.searchVideos(request).values() },
             { source -> when (val result = source.searchVideos(request)) {
@@ -1766,7 +1769,7 @@ private fun extendedCase128(): ExtendedOperationCase {
 
 private fun extendedCase129(): ExtendedOperationCase {
         val request = SearchRequest(keyword = "keyword", limit = 30, offset = 1)
-        val response = SocialUserPage(items = listOf(SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media")), total = 1L, hasMore = true)
+        val response = SocialUserPage(items = listOf(SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("searchUsers", "users.search", 129, request, request.values(), response, response.values(),
             { it.searchUsers(request).values() },
             { source -> when (val result = source.searchUsers(request)) {
@@ -1790,7 +1793,7 @@ private fun extendedCase129(): ExtendedOperationCase {
 
 private fun extendedCase130(): ExtendedOperationCase {
         val request = SearchRequest(keyword = "keyword", limit = 30, offset = 1)
-        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", description = "description", creator = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), programCount = 1)), total = 1L, hasMore = true)
+        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = null, description = null, creator = null, programCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("searchDjRadios", "dj.search", 130, request, request.values(), response, response.values(),
             { it.searchDjRadios(request).values() },
             { source -> when (val result = source.searchDjRadios(request)) {
@@ -1838,7 +1841,7 @@ private fun extendedCase131(): ExtendedOperationCase {
 
 private fun extendedCase132(): ExtendedOperationCase {
         val request = AlbumPageRequest(area = "area", limit = 30, offset = 1)
-        val response = AlbumPage(items = listOf(Album(id = "Opaque-A", title = "title", artists = listOf(Artist(id = "Opaque-A", name = "name")), coverUrl = "https://example.test/media", trackCount = 1, releasedAtEpochMs = 1L, company = "company", description = "description")), total = 1L, hasMore = true)
+        val response = AlbumPage(items = listOf(Album(id = "Opaque-A", title = "title", artists = listOf(Artist(id = null, name = "name")), coverUrl = null, trackCount = null, releasedAtEpochMs = null, company = null, description = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("browseNewAlbums", "albums.new", 132, request, request.values(), response, response.values(),
             { it.browseNewAlbums(request).values() },
             { source -> when (val result = source.browseNewAlbums(request)) {
@@ -1862,7 +1865,7 @@ private fun extendedCase132(): ExtendedOperationCase {
 
 private fun extendedCase133(): ExtendedOperationCase {
         val request = Bytes(value = byteArrayOf())
-        val response = AlbumPage(items = listOf(Album(id = "Opaque-A", title = "title", artists = listOf(Artist(id = "Opaque-A", name = "name")), coverUrl = "https://example.test/media", trackCount = 1, releasedAtEpochMs = 1L, company = "company", description = "description")), total = 1L, hasMore = true)
+        val response = AlbumPage(items = listOf(Album(id = "Opaque-A", title = "title", artists = listOf(Artist(id = null, name = "name")), coverUrl = null, trackCount = null, releasedAtEpochMs = null, company = null, description = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getLatestAlbums", "albums.latest", 133, request, request.values(), response, response.values(),
             { it.getLatestAlbums(request).values() },
             { source -> when (val result = source.getLatestAlbums(request)) {
@@ -1886,7 +1889,7 @@ private fun extendedCase133(): ExtendedOperationCase {
 
 private fun extendedCase134(): ExtendedOperationCase {
         val request = AlbumChartRequest(area = "area", kind = "new", year = 2026, month = 11, limit = 30, offset = 1)
-        val response = AlbumPage(items = listOf(Album(id = "Opaque-A", title = "title", artists = listOf(Artist(id = "Opaque-A", name = "name")), coverUrl = "https://example.test/media", trackCount = 1, releasedAtEpochMs = 1L, company = "company", description = "description")), total = 1L, hasMore = true)
+        val response = AlbumPage(items = listOf(Album(id = "Opaque-A", title = "title", artists = listOf(Artist(id = null, name = "name")), coverUrl = null, trackCount = null, releasedAtEpochMs = null, company = null, description = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getAlbumChart", "albums.chart", 134, request, request.values(), response, response.values(),
             { it.getAlbumChart(request).values() },
             { source -> when (val result = source.getAlbumChart(request)) {
@@ -1910,7 +1913,7 @@ private fun extendedCase134(): ExtendedOperationCase {
 
 private fun extendedCase135(): ExtendedOperationCase {
         val request = UserCursorRequest(id = "Opaque-A", limit = 30, cursor = "cursor")
-        val response = NotificationPage(items = listOf(Notification(id = "Opaque-A", text = "{\"msg\":\"literal text\"}", sentAtEpochMs = 1L, sender = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), resourceId = "Opaque-A", resourceType = "resourceType", commentId = 1L)), total = 1L, hasMore = true, cursor = "cursor")
+        val response = NotificationPage(items = listOf(Notification(id = "Opaque-A", text = "{\"msg\":\"literal text\"}", sentAtEpochMs = 1L, sender = null, resourceId = null, resourceType = null, commentId = null)), total = 1L, hasMore = true, cursor = "cursor")
         return ExtendedOperationCase("getCommentNotifications", "messages.comments", 135, request, request.values(), response, response.values(),
             { it.getCommentNotifications(request).values() },
             { source -> when (val result = source.getCommentNotifications(request)) {
@@ -1934,7 +1937,7 @@ private fun extendedCase135(): ExtendedOperationCase {
 
 private fun extendedCase136(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = NotificationPage(items = listOf(Notification(id = "Opaque-A", text = "{\"msg\":\"literal text\"}", sentAtEpochMs = 1L, sender = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), resourceId = "Opaque-A", resourceType = "resourceType", commentId = 1L)), total = 1L, hasMore = true, cursor = "cursor")
+        val response = NotificationPage(items = listOf(Notification(id = "Opaque-A", text = "{\"msg\":\"literal text\"}", sentAtEpochMs = 1L, sender = null, resourceId = null, resourceType = null, commentId = null)), total = 1L, hasMore = true, cursor = "cursor")
         return ExtendedOperationCase("getMentionNotifications", "messages.mentions", 136, request, request.values(), response, response.values(),
             { it.getMentionNotifications(request).values() },
             { source -> when (val result = source.getMentionNotifications(request)) {
@@ -1958,7 +1961,7 @@ private fun extendedCase136(): ExtendedOperationCase {
 
 private fun extendedCase137(): ExtendedOperationCase {
         val request = CursorRequest(limit = 30, cursor = "cursor")
-        val response = NotificationPage(items = listOf(Notification(id = "Opaque-A", text = "{\"msg\":\"literal text\"}", sentAtEpochMs = 1L, sender = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), resourceId = "Opaque-A", resourceType = "resourceType", commentId = 1L)), total = 1L, hasMore = true, cursor = "cursor")
+        val response = NotificationPage(items = listOf(Notification(id = "Opaque-A", text = "{\"msg\":\"literal text\"}", sentAtEpochMs = 1L, sender = null, resourceId = null, resourceType = null, commentId = null)), total = 1L, hasMore = true, cursor = "cursor")
         return ExtendedOperationCase("getSystemNotifications", "messages.notices", 137, request, request.values(), response, response.values(),
             { it.getSystemNotifications(request).values() },
             { source -> when (val result = source.getSystemNotifications(request)) {
@@ -2246,7 +2249,7 @@ private fun extendedCase148(): ExtendedOperationCase {
 
 private fun extendedCase149(): ExtendedOperationCase {
         val request = PagedIdRequest(id = "Opaque-A", limit = 30, offset = 1)
-        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", durationMs = 1L, creators = listOf(Artist(id = "Opaque-A", name = "name")), description = "description", playCount = 1L)), total = 1L, hasMore = true)
+        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = null, durationMs = 1L, creators = listOf(Artist(id = null, name = "name")), description = null, playCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getVideosByGroup", "videos.group", 149, request, request.values(), response, response.values(),
             { it.getVideosByGroup(request).values() },
             { source -> when (val result = source.getVideosByGroup(request)) {
@@ -2270,7 +2273,7 @@ private fun extendedCase149(): ExtendedOperationCase {
 
 private fun extendedCase150(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", durationMs = 1L, creators = listOf(Artist(id = "Opaque-A", name = "name")), description = "description", playCount = 1L)), total = 1L, hasMore = true)
+        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = null, durationMs = 1L, creators = listOf(Artist(id = null, name = "name")), description = null, playCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getRecommendedVideoTimeline", "videos.recommended", 150, request, request.values(), response, response.values(),
             { it.getRecommendedVideoTimeline(request).values() },
             { source -> when (val result = source.getRecommendedVideoTimeline(request)) {
@@ -2342,7 +2345,7 @@ private fun extendedCase152(): ExtendedOperationCase {
 
 private fun extendedCase153(): ExtendedOperationCase {
         val request = PagedIdRequest(id = "Opaque-A", limit = 30, offset = 1)
-        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", description = "description", creator = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), programCount = 1)), total = 1L, hasMore = true)
+        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = null, description = null, creator = null, programCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getDjRadiosByCategory", "dj.category", 153, request, request.values(), response, response.values(),
             { it.getDjRadiosByCategory(request).values() },
             { source -> when (val result = source.getDjRadiosByCategory(request)) {
@@ -2366,7 +2369,7 @@ private fun extendedCase153(): ExtendedOperationCase {
 
 private fun extendedCase154(): ExtendedOperationCase {
         val request = PagedIdRequest(id = "Opaque-A", limit = 30, offset = 1)
-        val response = SocialUserPage(items = listOf(SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media")), total = 1L, hasMore = true)
+        val response = SocialUserPage(items = listOf(SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getDjRadioSubscribers", "dj.subscribers", 154, request, request.values(), response, response.values(),
             { it.getDjRadioSubscribers(request).values() },
             { source -> when (val result = source.getDjRadioSubscribers(request)) {
@@ -2390,7 +2393,7 @@ private fun extendedCase154(): ExtendedOperationCase {
 
 private fun extendedCase155(): ExtendedOperationCase {
         val request = DjRankingRequest(kind = "new", limit = 30, offset = 1)
-        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", description = "description", creator = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), programCount = 1)), total = 1L, hasMore = true)
+        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = null, description = null, creator = null, programCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("browseDjRanking", "dj.ranking.browse", 155, request, request.values(), response, response.values(),
             { it.browseDjRanking(request).values() },
             { source -> when (val result = source.browseDjRanking(request)) {
@@ -2414,7 +2417,7 @@ private fun extendedCase155(): ExtendedOperationCase {
 
 private fun extendedCase156(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = AlbumPage(items = listOf(Album(id = "Opaque-A", title = "title", artists = listOf(Artist(id = "Opaque-A", name = "name")), coverUrl = "https://example.test/media", trackCount = 1, releasedAtEpochMs = 1L, company = "company", description = "description")), total = 1L, hasMore = true)
+        val response = AlbumPage(items = listOf(Album(id = "Opaque-A", title = "title", artists = listOf(Artist(id = null, name = "name")), coverUrl = null, trackCount = null, releasedAtEpochMs = null, company = null, description = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getRecentAlbums", "accounts.recentAlbums", 156, request, request.values(), response, response.values(),
             { it.getRecentAlbums(request).values() },
             { source -> when (val result = source.getRecentAlbums(request)) {
@@ -2438,7 +2441,7 @@ private fun extendedCase156(): ExtendedOperationCase {
 
 private fun extendedCase157(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = PlaylistPage(items = listOf(Playlist(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", trackCount = 1, creatorId = "Opaque-A", creatorName = "creatorName", description = "description")), total = 1L, hasMore = true)
+        val response = PlaylistPage(items = listOf(Playlist(id = "Opaque-A", title = "title", coverUrl = null, trackCount = null, creatorId = null, creatorName = null, description = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getRecentPlaylists", "accounts.recentPlaylists", 157, request, request.values(), response, response.values(),
             { it.getRecentPlaylists(request).values() },
             { source -> when (val result = source.getRecentPlaylists(request)) {
@@ -2462,7 +2465,7 @@ private fun extendedCase157(): ExtendedOperationCase {
 
 private fun extendedCase158(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", durationMs = 1L, creators = listOf(Artist(id = "Opaque-A", name = "name")), description = "description", playCount = 1L)), total = 1L, hasMore = true)
+        val response = VideoPage(items = listOf(VideoItem(id = "Opaque-A", title = "title", coverUrl = null, durationMs = 1L, creators = listOf(Artist(id = null, name = "name")), description = null, playCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getRecentVideos", "accounts.recentVideos", 158, request, request.values(), response, response.values(),
             { it.getRecentVideos(request).values() },
             { source -> when (val result = source.getRecentVideos(request)) {
@@ -2486,7 +2489,7 @@ private fun extendedCase158(): ExtendedOperationCase {
 
 private fun extendedCase159(): ExtendedOperationCase {
         val request = PageRequest(limit = 30, offset = 1)
-        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = "https://example.test/media", description = "description", creator = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = "https://example.test/media"), programCount = 1)), total = 1L, hasMore = true)
+        val response = DjRadioPage(items = listOf(DjRadio(id = "Opaque-A", title = "title", coverUrl = null, description = null, creator = null, programCount = null)), total = 1L, hasMore = true)
         return ExtendedOperationCase("getRecentDjRadios", "accounts.recentDj", 159, request, request.values(), response, response.values(),
             { it.getRecentDjRadios(request).values() },
             { source -> when (val result = source.getRecentDjRadios(request)) {
@@ -2510,7 +2513,7 @@ private fun extendedCase159(): ExtendedOperationCase {
 
 private fun extendedCase160(): ExtendedOperationCase {
         val request = UserRequest(id = "Opaque-A")
-        val response = AccountBindingPage(items = listOf(AccountBinding(id = "Opaque-A", type = "music", name = "name", maskedAccount = "maskedAccount")))
+        val response = AccountBindingPage(items = listOf(AccountBinding(id = "Opaque-A", type = "music", name = null, maskedAccount = null)))
         return ExtendedOperationCase("getUserBindings", "accounts.bindings", 160, request, request.values(), response, response.values(),
             { it.getUserBindings(request).values() },
             { source -> when (val result = source.getUserBindings(request)) {
@@ -2582,7 +2585,7 @@ private fun extendedCase162(): ExtendedOperationCase {
 
 private fun extendedCase163(): ExtendedOperationCase {
         val request = MediaQualityRequest(id = "Opaque-A", type = "song")
-        val response = QualityPage(items = listOf(QualityOption(id = "Opaque-A", label = "label", bitrate = 128000, sizeBytes = 1L, available = true)))
+        val response = QualityPage(items = listOf(QualityOption(id = "Opaque-A", label = "label", bitrate = null, sizeBytes = null, available = true)))
         return ExtendedOperationCase("getMediaQualities", "media.qualities", 163, request, request.values(), response, response.values(),
             { it.getMediaQualities(request).values() },
             { source -> when (val result = source.getMediaQualities(request)) {
@@ -2673,5 +2676,77 @@ private fun extendedCase166(): ExtendedOperationCase {
                     extendedValues(response.values()) == extendedValues(responseRoundTrip.values())
             },
             { actual -> actual is PagedIdRequest && extendedValues(actual.values()) == extendedValues(request.values()) },
+        )
+}
+
+private fun extendedCase167(): ExtendedOperationCase {
+        val request = ResourceLikeRequest(id = "Opaque-A", type = "music", liked = true)
+        val response = MutationResult(success = true, id = "Opaque-A")
+        return ExtendedOperationCase("likeResource", "social.likeResource", 167, request, request.values(), response, response.values(),
+            { it.likeResource(request).values() },
+            { source -> when (val result = source.likeResource(request)) {
+                is BackendResult.Success -> BackendResult.Success(result.data.values())
+                is BackendResult.Error -> result
+                is BackendResult.Unsupported -> result
+            } },
+            {
+                val requestReader = WireReader(WireWriter().also(request::write).finish())
+                val requestRoundTrip = ResourceLikeRequest.read(requestReader)
+                requestReader.finish()
+                val responseReader = WireReader(WireWriter().also(response::write).finish())
+                val responseRoundTrip = MutationResult.read(responseReader)
+                responseReader.finish()
+                extendedValues(request.values()) == extendedValues(requestRoundTrip.values()) &&
+                    extendedValues(response.values()) == extendedValues(responseRoundTrip.values())
+            },
+            { actual -> actual is ResourceLikeRequest && extendedValues(actual.values()) == extendedValues(request.values()) },
+        )
+}
+
+private fun extendedCase168(): ExtendedOperationCase {
+        val request = DrmResolveRequest(id = "Opaque-A", quality = "quality", keySystems = listOf("widevine"))
+        val response = ResolvedMedia(resource = MediaResource(url = "https://example.test/media", actualQuality = "actualQuality", headers = listOf(Header(name = "X-Test", value = "value")), expiresAtEpochMs = null, format = null, bitrate = null, sizeBytes = null), drm = DrmDescriptor(keySystem = "widevine", licenseUrl = "https://example.test/license", headers = listOf(Header(name = "X-Test", value = "value")), schemeIdUri = "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed", initData = null, keyId = null, keyUri = "skd://example.test/key", serverCertificate = null, persistent = false))
+        return ExtendedOperationCase("resolveDrm", "tracks.resolveDrm", 168, request, request.values(), response, response.values(),
+            { it.resolveDrm(request).values() },
+            { source -> when (val result = source.resolveDrm(request)) {
+                is BackendResult.Success -> BackendResult.Success(result.data.values())
+                is BackendResult.Error -> result
+                is BackendResult.Unsupported -> result
+            } },
+            {
+                val requestReader = WireReader(WireWriter().also(request::write).finish())
+                val requestRoundTrip = DrmResolveRequest.read(requestReader)
+                requestReader.finish()
+                val responseReader = WireReader(WireWriter().also(response::write).finish())
+                val responseRoundTrip = ResolvedMedia.read(responseReader)
+                responseReader.finish()
+                extendedValues(request.values()) == extendedValues(requestRoundTrip.values()) &&
+                    extendedValues(response.values()) == extendedValues(responseRoundTrip.values())
+            },
+            { actual -> actual is DrmResolveRequest && extendedValues(actual.values()) == extendedValues(request.values()) },
+        )
+}
+
+private fun extendedCase169(): ExtendedOperationCase {
+        val request = LicenseRequest(id = "Opaque-A", keySystem = "widevine", challenge = byteArrayOf(0, 127, -128, -1), licenseUrl = "https://example.test/media", headers = listOf(Header(name = "X-Test", value = "value")), keyUri = "keyUri")
+        val response = LicenseResponse(license = byteArrayOf(0, 127, -128, -1))
+        return ExtendedOperationCase("exchangeLicense", "tracks.exchangeLicense", 169, request, request.values(), response, response.values(),
+            { it.exchangeLicense(request).values() },
+            { source -> when (val result = source.exchangeLicense(request)) {
+                is BackendResult.Success -> BackendResult.Success(result.data.values())
+                is BackendResult.Error -> result
+                is BackendResult.Unsupported -> result
+            } },
+            {
+                val requestReader = WireReader(WireWriter().also(request::write).finish())
+                val requestRoundTrip = LicenseRequest.read(requestReader)
+                requestReader.finish()
+                val responseReader = WireReader(WireWriter().also(response::write).finish())
+                val responseRoundTrip = LicenseResponse.read(responseReader)
+                responseReader.finish()
+                extendedValues(request.values()) == extendedValues(requestRoundTrip.values()) &&
+                    extendedValues(response.values()) == extendedValues(responseRoundTrip.values())
+            },
+            { actual -> actual is LicenseRequest && extendedValues(actual.values()) == extendedValues(request.values()) },
         )
 }

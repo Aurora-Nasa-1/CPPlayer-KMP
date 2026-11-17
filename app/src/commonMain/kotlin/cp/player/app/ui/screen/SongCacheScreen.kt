@@ -25,8 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
@@ -40,7 +38,7 @@ import cp.player.app.ui.model.displayName
 import cp.player.app.ui.util.formatBytes
 import cp.player.app.ui.model.qualityLabel
 import cp.player.app.ui.model.relativeTime
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.playback.SongCacheEntry
 import cp.player.app.ui.component.CpText
 
@@ -71,10 +69,10 @@ class SongCacheScreen : Screen {
 
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         // rememberScreenModel 是 Screen 的扩展函数，只能在 Content() 里调用（见 AGENTS.md）。
         val model = rememberScreenModel { SongCacheModel() }
-        SongCacheContent(model = model, onBack = { navigator.popOrNotify() })
+        SongCacheContent(model = model, onBack = { navigator.pop() })
     }
 }
 

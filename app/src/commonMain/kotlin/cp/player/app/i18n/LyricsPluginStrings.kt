@@ -27,11 +27,13 @@ interface LyricsPluginStrings {
     val builtinSidecar: String
     val builtinEmbedded: String
     val builtinAmll: String
+    val builtinLrclib: String
     val builtinProvider: String
     /** 内置来源的副标题。 */
     val builtinSidecarNote: String
     val builtinEmbeddedNote: String
     val builtinAmllNote: String
+    val builtinLrclibNote: String
     val builtinProviderNote: String
     /** 播放页无歌词时的换源入口文案。 */
     val changeSourceAction: String
@@ -80,10 +82,12 @@ object LyricsPluginStringsZh : LyricsPluginStrings {
     override val builtinSidecar = "本地边车歌词"
     override val builtinEmbedded = "音频内嵌歌词"
     override val builtinAmll = "AMLL 官方词库"
+    override val builtinLrclib = "LrcLib 行级词库"
     override val builtinProvider = "音源自带歌词"
     override val builtinSidecarNote = "音频同目录的 .lrc / .ttml / .elrc"
     override val builtinEmbeddedNote = "文件自带的 ID3 USLT / Vorbis / ©lyr"
     override val builtinAmllNote = "api.amll.dev · 逐字 TTML"
+    override val builtinLrclibNote = "api.amll.dev · 行级同步 LRC"
     override val builtinProviderNote = "当前音源的 lyric/new · 逐字 YRC"
     override val changeSourceAction = "换个歌词来源"
 
@@ -126,10 +130,12 @@ object LyricsPluginStringsEn : LyricsPluginStrings {
     override val builtinSidecar = "Local sidecar lyrics"
     override val builtinEmbedded = "Embedded lyrics"
     override val builtinAmll = "AMLL official database"
+    override val builtinLrclib = "LrcLib synced lyrics"
     override val builtinProvider = "Provider lyrics"
     override val builtinSidecarNote = "Same-folder .lrc / .ttml / .elrc next to the audio"
     override val builtinEmbeddedNote = "ID3 USLT, Vorbis comments, MP4 lyrics tags"
     override val builtinAmllNote = "api.amll.dev · word-level TTML"
+    override val builtinLrclibNote = "api.amll.dev · line-synced LRC"
     override val builtinProviderNote = "Current provider's lyric/new · word-level YRC"
     override val changeSourceAction = "Change lyric source"
 

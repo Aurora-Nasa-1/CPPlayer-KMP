@@ -58,18 +58,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.ApiCallRecord
 import cp.player.app.AppModel
 import cp.player.app.HealthLevel
+import cp.player.app.i18n.HealthStrings
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsLazyPage
 import cp.player.app.ui.component.TopBarAction
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.settingsRowContainer
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.monitor.HealthMonitor
 import cp.player.core.provider.BackendProvider
 import cp.player.core.util.localDateTimeOf
@@ -88,11 +88,19 @@ import kotlinx.serialization.json.Json
 // 汉字 → MiSans」的逐 run 切换，中日文落回平台回退字体。这是本页刻意的取舍
 // —— 诊断页的首要目标是**读得到**，不是观感统一。
 
-private enum class HealthTab(val label: String, val icon: ImageVector) {
-    OVERVIEW("概览", Icons.Default.Dashboard),
-    METHODS("操作统计", Icons.Default.Analytics),
-    LOGS("调用日志", Icons.AutoMirrored.Filled.List),
-    STATUS("Provider 状态", Icons.Default.Info),
+private enum class HealthTab(val icon: ImageVector) {
+    OVERVIEW(Icons.Default.Dashboard),
+    METHODS(Icons.Default.Analytics),
+    LOGS(Icons.AutoMirrored.Filled.List),
+    STATUS(Icons.Default.Info),
+    ;
+
+    fun label(s: HealthStrings): String = when (this) {
+        OVERVIEW -> s.tabOverview
+        METHODS -> s.tabMethods
+        LOGS -> s.tabLogs
+        STATUS -> s.tabStatus
+    }
 }
 
 private val prettyJson = Json {
@@ -111,25 +119,26 @@ class HealthScreen : Screen {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val records by AppModel.health.recordsFlow.collectAsState()
         val overall by AppModel.health.overallLevelFlow.collectAsState()
+        val s = cpStrings().health
 
         var currentTab by remember { mutableStateOf(HealthTab.OVERVIEW) }
         val confirm = rememberConfirmState()
 
         CpRouteScaffold(
-            title = "诊断与健康",
-            onBack = { navigator.popOrNotify() },
+            title = s.screenTitle,
+            onBack = { navigator.pop() },
             topBarActions = listOf(
                 TopBarAction(
-                    icon = { Icon(Icons.Filled.DeleteSweep, "清空日志") },
+                    icon = { Icon(Icons.Filled.DeleteSweep, s.clearLogAction) },
                     onClick = {
                         if (records.isNotEmpty()) {
                             confirm.request(
-                                title = "清空诊断记录",
-                                message = "确定清空全部 ${records.size} 条调用记录吗？",
-                                confirmLabel = "清空",
+                                title = s.clearTitle,
+                                message = s.clearMessage(records.size),
+                                confirmLabel = s.clearConfirm,
                                 onConfirm = { AppModel.health.clearRecords() },
                             )
                         }
@@ -160,7 +169,7 @@ class HealthScreen : Screen {
                                     onClick = { currentTab = tab },
                                     label = {
                                         Text(
-                                            tab.label,
+                                            tab.label(s),
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                                         )
@@ -176,16 +185,16 @@ class HealthScreen : Screen {
             ) {
                 when (currentTab) {
                     HealthTab.OVERVIEW -> {
-                        overviewTabContent(records, overall)
+                        overviewTabContent(records, overall, s)
                     }
                     HealthTab.METHODS -> {
-                        methodsTabContent(records)
+                        methodsTabContent(records, s)
                     }
                     HealthTab.LOGS -> {
-                        logsTabContent(records)
+                        logsTabContent(records, s)
                     }
                     HealthTab.STATUS -> {
-                        statusTabContent()
+                        statusTabContent(s)
                     }
                 }
             }
@@ -200,15 +209,16 @@ class HealthScreen : Screen {
 private fun androidx.compose.foundation.lazy.LazyListScope.overviewTabContent(
     records: List<ApiCallRecord>,
     overall: HealthLevel,
+    s: HealthStrings,
 ) {
     item(key = "overview_global") {
-        GlobalHealthCard(records, overall)
+        GlobalHealthCard(records, overall, s)
     }
 
     item(key = "overview_provider_title") {
         Spacer(Modifier.height(4.dp))
         Text(
-            "音源健康评分与指标",
+            s.providerHealthSection,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary,
@@ -226,7 +236,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTabContent(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("暂无已加载音源", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(s.noLoadedProviders, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     } else {
@@ -237,20 +247,42 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTabContent(
                 provider = provider,
                 providerId = providerId,
                 stats = stats,
+                s = s,
             )
         }
     }
 }
 
 // internal：离屏渲染预览测试（desktopTest）直接组合这几张卡片核对「不截断」。
+private data class GlobalHealthSummary(
+    val totalSuccess: Int,
+    val totalUnsupported: Int,
+    val avgResponse: Long,
+)
+
 @Composable
-internal fun GlobalHealthCard(records: List<ApiCallRecord>, overall: HealthLevel) {
+internal fun GlobalHealthCard(records: List<ApiCallRecord>, overall: HealthLevel, s: HealthStrings) {
     val totalCalls = records.size
-    val totalSuccess = records.count { it.success }
+    val summary = remember(records) {
+        var totalSuccess = 0
+        var totalUnsupported = 0
+        var totalDuration = 0L
+        records.forEach { record ->
+            if (record.success) totalSuccess++
+            if (record.level == HealthLevel.WARNING) totalUnsupported++
+            totalDuration += record.durationMs
+        }
+        GlobalHealthSummary(
+            totalSuccess = totalSuccess,
+            totalUnsupported = totalUnsupported,
+            avgResponse = if (totalCalls > 0) totalDuration / totalCalls else 0L,
+        )
+    }
+    val totalSuccess = summary.totalSuccess
     val totalFail = totalCalls - totalSuccess
-    val totalUnsupported = records.count { it.level == HealthLevel.WARNING }
+    val totalUnsupported = summary.totalUnsupported
     val globalSuccessRate = if (totalCalls > 0) totalSuccess * 100f / totalCalls else 100f
-    val avgResponse = if (totalCalls > 0) records.sumOf { it.durationMs } / totalCalls else 0L
+    val avgResponse = summary.avgResponse
 
     val accentColor = when (overall) {
         HealthLevel.OK -> Color(0xFF4CAF50)
@@ -271,10 +303,10 @@ internal fun GlobalHealthCard(records: List<ApiCallRecord>, overall: HealthLevel
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("系统综合运行状态", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(s.systemStatus, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        "共 $totalCalls 次调用 · 平均响应 ${avgResponse}ms",
+                        s.callsSummary(totalCalls, avgResponse),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -297,9 +329,9 @@ internal fun GlobalHealthCard(records: List<ApiCallRecord>, overall: HealthLevel
                         )
                         Text(
                             when (overall) {
-                                HealthLevel.OK -> "健康"
-                                HealthLevel.WARNING -> "警告"
-                                HealthLevel.ERROR -> "异常"
+                                HealthLevel.OK -> s.levelOk
+                                HealthLevel.WARNING -> s.levelWarning
+                                HealthLevel.ERROR -> s.levelError
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = accentColor,
@@ -313,9 +345,9 @@ internal fun GlobalHealthCard(records: List<ApiCallRecord>, overall: HealthLevel
             Spacer(Modifier.height(14.dp))
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                GlobalMetricChip("成功", "$totalSuccess", Color(0xFF4CAF50), Icons.Default.CheckCircle)
-                GlobalMetricChip("失败", "$totalFail", MaterialTheme.colorScheme.error, Icons.Default.Error)
-                GlobalMetricChip("不支持", "$totalUnsupported", Color(0xFFFF9800), Icons.Default.Warning)
+                GlobalMetricChip(s.success, "$totalSuccess", Color(0xFF4CAF50), Icons.Default.CheckCircle)
+                GlobalMetricChip(s.failure, "$totalFail", MaterialTheme.colorScheme.error, Icons.Default.Error)
+                GlobalMetricChip(s.unsupported, "$totalUnsupported", Color(0xFFFF9800), Icons.Default.Warning)
             }
         }
     }
@@ -344,6 +376,7 @@ internal fun ProviderHealthCard(
     provider: BackendProvider?,
     providerId: String,
     stats: HealthMonitor.ProviderHealthStats?,
+    s: HealthStrings,
 ) {
     val active = AppModel.activeProvider()?.id == providerId
     val hasData = stats != null && stats.totalCalls > 0
@@ -393,7 +426,7 @@ internal fun ProviderHealthCard(
                                     color = MaterialTheme.colorScheme.primaryContainer,
                                 ) {
                                     Text(
-                                        "当前生效",
+                                        s.activeNow,
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -403,7 +436,11 @@ internal fun ProviderHealthCard(
                         }
                         // ID / 类型 / 版本整行显示，长了就换行 —— 不再靠省略号。
                         Text(
-                            "ID: $providerId · 类型: ${provider?.type?.name ?: "UNKNOWN"} · 版本: ${provider?.version ?: "v1.0"}",
+                            s.providerMeta(
+                                id = providerId,
+                                type = provider?.type?.name ?: "UNKNOWN",
+                                version = provider?.version ?: "v1.0",
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -416,7 +453,7 @@ internal fun ProviderHealthCard(
                     color = scoreColor.copy(alpha = 0.14f),
                 ) {
                     Text(
-                        "${(score * 100).toInt()} 分",
+                        s.score((score * 100).toInt()),
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
@@ -440,7 +477,7 @@ internal fun ProviderHealthCard(
                         Icon(Icons.Filled.Error, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "加载异常: $err",
+                            s.loadError(err),
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer,
@@ -452,18 +489,18 @@ internal fun ProviderHealthCard(
             if (stats == null || stats.totalCalls == 0) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "暂无调用记录",
+                    s.noCalls,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                val s = stats
+                val stat = stats
                 Spacer(Modifier.height(12.dp))
 
-                val successRate = s.successCount.toFloat() / s.totalCalls
+                val successRate = stat.successCount.toFloat() / stat.totalCalls
                 Column {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("成功率", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(s.successRate, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("${(successRate * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = scoreColor)
                     }
                     Spacer(Modifier.height(4.dp))
@@ -477,15 +514,15 @@ internal fun ProviderHealthCard(
 
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    MiniMetric("调用", "${s.totalCalls}")
-                    MiniMetric("成功", "${s.successCount}", Color(0xFF4CAF50))
-                    MiniMetric("失败", "${s.failCount}", if (s.failCount > 0) MaterialTheme.colorScheme.error else Color.Unspecified)
-                    MiniMetric("警告", "${s.warningCount}", if (s.warningCount > 0) Color(0xFFFF9800) else Color.Unspecified)
-                    MiniMetric("平均", "${s.avgResponseMs}ms")
-                    MiniMetric("P95", "${s.p95ResponseMs}ms")
+                    MiniMetric(s.metricCalls, "${stat.totalCalls}")
+                    MiniMetric(s.success, "${stat.successCount}", Color(0xFF4CAF50))
+                    MiniMetric(s.failure, "${stat.failCount}", if (stat.failCount > 0) MaterialTheme.colorScheme.error else Color.Unspecified)
+                    MiniMetric(s.metricWarning, "${stat.warningCount}", if (stat.warningCount > 0) Color(0xFFFF9800) else Color.Unspecified)
+                    MiniMetric(s.metricAverage, "${stat.avgResponseMs}ms")
+                    MiniMetric("P95", "${stat.p95ResponseMs}ms")
                 }
 
-                s.lastError?.let { lastErr ->
+                stat.lastError?.let { lastErr ->
                     Spacer(Modifier.height(8.dp))
                     Surface(
                         shape = MaterialTheme.shapes.extraSmall,
@@ -497,7 +534,7 @@ internal fun ProviderHealthCard(
                             Spacer(Modifier.width(6.dp))
                             // 最近错误整串显示：截到 120 字只会在最关键的尾部（堆栈 / 原因）断掉。
                             Text(
-                                "最近错误: $lastErr",
+                                s.recentError(lastErr),
                                 modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
@@ -517,7 +554,7 @@ internal fun ProviderHealthCard(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(Modifier.padding(8.dp)) {
-                        Text("底层诊断参数", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text(s.diagnostics, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.height(4.dp))
                         diag.forEach { (k, v) ->
                             // 左右各占一半：诊断值（PID / 端口 / 路径）长短不定，靠
@@ -562,19 +599,20 @@ private fun MiniMetric(label: String, value: String, valueColor: Color = Color.U
 
 private fun androidx.compose.foundation.lazy.LazyListScope.methodsTabContent(
     records: List<ApiCallRecord>,
+    s: HealthStrings,
 ) {
     val operationStats = HealthMonitor.getStatsByOperation()
 
     if (operationStats.isEmpty()) {
         item(key = "methods_empty") {
             Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
-                Text("暂无操作统计数据", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(s.noOperationStats, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     } else {
         item(key = "methods_header") {
             Text(
-                "取数操作调用性能（按 UnifiedMusicSource 操作名）",
+                s.operationStatsHeader,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
@@ -583,7 +621,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.methodsTabContent(
 
         val sorted = operationStats.values.sortedByDescending { it.totalCalls }
         items(sorted, key = { "op_${it.operation}" }) { stat ->
-            MethodStatCard(stat, records)
+            MethodStatCard(stat, records, s)
         }
     }
 }
@@ -592,6 +630,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.methodsTabContent(
 internal fun MethodStatCard(
     stat: HealthMonitor.OperationStats,
     allRecords: List<ApiCallRecord>,
+    s: HealthStrings,
     initialExpanded: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(initialExpanded) }
@@ -615,18 +654,18 @@ internal fun MethodStatCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(stat.operation, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "${stat.totalCalls} 次 · 成功率 ${successRate.toInt()}% · 平均 ${stat.avgResponseMs}ms",
+                        s.operationSummary(stat.totalCalls, successRate.toInt(), stat.avgResponseMs),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
                 if (stat.failCount > 0) {
-                    Text("失败 ${stat.failCount}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    Text(s.failCount(stat.failCount), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.width(6.dp))
                 }
                 if (stat.warningCount > 0) {
-                    Text("警告 ${stat.warningCount}", style = MaterialTheme.typography.labelSmall, color = Color(0xFFFF9800))
+                    Text(s.warningCount(stat.warningCount), style = MaterialTheme.typography.labelSmall, color = Color(0xFFFF9800))
                     Spacer(Modifier.width(6.dp))
                 }
 
@@ -644,9 +683,9 @@ internal fun MethodStatCard(
                         allRecords.filter { it.operation == stat.operation }.takeLast(5).reversed()
                     }
                     if (recentCalls.isNotEmpty()) {
-                        Text("最近调用样本", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(s.recentSamples, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         recentCalls.forEach { record ->
-                            CallRecordItem(record, compact = true)
+                            CallRecordItem(record, compact = true, s = s)
                         }
                     }
                 }
@@ -659,6 +698,7 @@ internal fun MethodStatCard(
 
 private fun androidx.compose.foundation.lazy.LazyListScope.logsTabContent(
     records: List<ApiCallRecord>,
+    s: HealthStrings,
 ) {
     item(key = "logs_summary") {
         Row(
@@ -666,20 +706,20 @@ private fun androidx.compose.foundation.lazy.LazyListScope.logsTabContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("调用历史（最近 ${records.size} 条）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(s.history(records.size), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
     }
 
     if (records.isEmpty()) {
         item(key = "logs_empty") {
             Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
-                Text("暂无调用记录", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(s.noCalls, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     } else {
         val reversed = records.reversed()
         itemsIndexed(reversed, key = { index, r -> "log_${r.timestamp}_$index" }) { index, record ->
-            CallRecordItem(record, compact = false)
+            CallRecordItem(record, compact = false, s = s)
         }
     }
 }
@@ -688,6 +728,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.logsTabContent(
 internal fun CallRecordItem(
     record: ApiCallRecord,
     compact: Boolean,
+    s: HealthStrings,
     initialExpanded: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(initialExpanded) }
@@ -734,10 +775,10 @@ internal fun CallRecordItem(
                 ) {
                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            "结果: " + when (record.level) {
-                                HealthLevel.OK -> "成功"
-                                HealthLevel.WARNING -> "音源不支持该操作"
-                                HealthLevel.ERROR -> "调用失败"
+                            s.resultPrefix + when (record.level) {
+                                HealthLevel.OK -> s.resultSuccess
+                                HealthLevel.WARNING -> s.resultUnsupported
+                                HealthLevel.ERROR -> s.resultFailed
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = if (record.level == HealthLevel.OK)
@@ -745,7 +786,7 @@ internal fun CallRecordItem(
                         )
                         record.errorMessage?.let { msg ->
                             Text(
-                                "错误信息: $msg",
+                                s.errorMessage(msg),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error,
                             )
@@ -759,18 +800,20 @@ internal fun CallRecordItem(
 
 // ======================== Tab 4: API 测试 (Api Test) ========================
 
-private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent() {
+private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent(
+    s: HealthStrings,
+) {
     val providers = AppModel.availableProviders()
     val activeProvider = AppModel.activeProvider()
 
     item(key = "status_title") {
-        Text("已注册与已加载音源清单", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+        Text(s.providerListSection, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
     }
 
     if (providers.isEmpty()) {
         item(key = "status_empty") {
             Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
-                Text("暂无已注册音源", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(s.noRegisteredProviders, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     } else {
@@ -797,7 +840,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent() {
                             if (isActive) {
                                 Spacer(Modifier.width(8.dp))
                                 Surface(shape = MaterialTheme.shapes.extraSmall, color = MaterialTheme.colorScheme.primaryContainer) {
-                                    Text("当前生效", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                    Text(s.activeNow, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
                                 }
                             }
                         }
@@ -807,18 +850,22 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent() {
                             OutlinedButton(
                                 onClick = { AppModel.switchOrReport(provider) },
                             ) {
-                                Text("切换至此音源", style = MaterialTheme.typography.labelSmall)
+                                Text(s.switchToProvider, style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
 
                     Spacer(Modifier.height(6.dp))
                     Text("ID: ${provider.id}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("类型: ${provider.type.name}  ·  版本: ${provider.version}  ·  API 版本: v${provider.apiVersion}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        s.providerTypeVersion(provider.type.name, provider.version, provider.apiVersion),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     // 接口代际标签（manifest 的 `apiVersionTag`）：没声明就不占一行，
                     // 老包与以后的内置源诊断页保持原样。
                     provider.apiVersionTag?.let { tag ->
-                        Text("接口代际: $tag", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(s.apiGeneration(tag), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
 
                     provider.loadError?.let { err ->
@@ -831,7 +878,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent() {
                             Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Filled.Error, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("启动/加载失败: $err", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                                Text(s.startupFailed(err), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
                             }
                         }
                     }
@@ -845,7 +892,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent() {
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text("运行时底层诊断", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Text(s.runtimeDiagnostics, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                                 diag.forEach { (k, v) ->
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         Text(
@@ -873,5 +920,4 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent() {
 }
 
 // ======================== 辅助函数 ========================
-
 

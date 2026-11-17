@@ -5,10 +5,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -27,11 +29,10 @@ import cp.player.app.ui.component.CpText
 /**
  * 「渲染后端」设置页（仅桌面端）。
  *
- * 用途是给 Windows 上「开 VRR 后刷新率被拉低 / 面板闪烁」这类问题留一个可切换的开关：
- * Compose Desktop 由 Skiko 绘制，Skiko 在 Windows 的出厂默认走 Direct3D 12，其
- * `Present(FLIP_DISCARD)` + `DwmFlush` 的出帧节奏会与 DWM 合成节奏（也就是 VRR 与
- * 系统帧节奏控制的作用对象）互相影响。因此本应用在 Windows 上**默认选择 OpenGL**，
- * 换后端则是上游给出的另一个规避手段。
+ * 提供 Windows 渲染后端与 VSync 选择。Windows 未选择时默认 Direct3D 12，VSync 关闭；
+ * 其它平台后端交给 Skiko AUTO、VSync 属性不干预。OpenGL 保留为诊断/手动选择项。
+ * Skiko 0.150.2 的 VSync=false 仅设置 Present interval 0，不暴露 tearing 标志，不能保证
+ * 或声称启用了 windowed VRR。
  *
  * 具体机制、取值来源与优先级见 [DesktopRenderTuning]。
  *
@@ -46,6 +47,18 @@ actual fun PlatformRenderTuningContent() {
     // 本地态只用于即时反馈；真正的持久化交给 DesktopRenderTuning。
     var backend by remember { mutableStateOf(DesktopRenderTuning.storedBackend()) }
     var vsync by remember { mutableStateOf(DesktopRenderTuning.storedVsyncOverride()) }
+
+    // VRR 逐程序覆盖：默认「固定刷新率」，见 WindowsNvapiVrr。
+    var vrrMode by remember { mutableStateOf(WindowsNvapiVrr.storedMode()) }
+    var vrrStatus by remember { mutableStateOf(WindowsNvapiVrr.lastStatus()) }
+
+    // 写入是后台线程做的（驱动调用同步几十毫秒），点完立刻读会读到旧值，所以短暂轮询。
+    LaunchedEffect(vrrMode) {
+        repeat(10) {
+            vrrStatus = WindowsNvapiVrr.lastStatus()
+            delay(200)
+        }
+    }
 
     // 上次启动被安全模式自动回退掉的后端；null 表示没发生过。
     var reverted by remember { mutableStateOf(DesktopRenderTuning.lastRevertedBackend()) }
@@ -68,7 +81,7 @@ actual fun PlatformRenderTuningContent() {
                 )
             }
 
-            SettingsNote("改完需要重启应用才生效。若开 VRR / G-SYNC 后出现刷新率被拉低、动鼠标就顿挫或面板闪烁，先试「OpenGL」。")
+            SettingsNote("改完需要重启应用才生效。OpenGL 保留作手动对照；VSync 关闭仅设置 interval 0，不代表启用 VRR。")
             if (restartPending) {
                 SettingsNote("已保存，重启应用后生效。", color = MaterialTheme.colorScheme.primary)
             }
@@ -95,10 +108,10 @@ actual fun PlatformRenderTuningContent() {
                 }
             }
 
-            SettingsNote("Windows 上默认使用 OpenGL（针对 VRR 闪烁的规避手段）；其余平台交给 Skiko 决定。仅在换后端后仍抖动时，才需要动这一项做对照。")
+            SettingsNote("Windows 未选择时默认 Direct3D 12；OpenGL 是诊断/手动选择项。其它平台交给 Skiko AUTO。")
             SettingsSection("垂直同步") {
                 listOf(
-                    Triple("不干预", null as Boolean?, "交给 Skiko 决定"),
+                    Triple("不覆盖", null as Boolean?, if (DesktopRenderTuning.isWindows) "平台默认：关闭 VSync" else "平台默认：交给 Skiko 决定"),
                     Triple("强制开启", true, "skiko.vsync.enabled=true"),
                     Triple("强制关闭", false, "skiko.vsync.enabled=false"),
                 ).forEachIndexed { index, (label, value, note) ->
@@ -118,6 +131,33 @@ actual fun PlatformRenderTuningContent() {
                 }
             }
 
+            SettingsSection("VRR / G-SYNC（逐程序）") {
+                WindowsNvapiVrr.Mode.entries.forEachIndexed { index, mode ->
+                    SettingsClickItem(
+                        title = mode.label,
+                        subtitle = when (mode) {
+                            WindowsNvapiVrr.Mode.FIXED_REFRESH ->
+                                "写 NVIDIA 驱动配置：本程序「监视器技术 = 固定刷新率」，下次启动生效"
+                            WindowsNvapiVrr.Mode.OFF ->
+                                "完全不动驱动配置，保留 NVIDIA 控制面板里现有的选择"
+                        },
+                        index = index,
+                        total = WindowsNvapiVrr.Mode.entries.size,
+                        onClick = {
+                            vrrMode = mode
+                            WindowsNvapiVrr.storeMode(mode)
+                            if (mode == WindowsNvapiVrr.Mode.FIXED_REFRESH) {
+                                // 用户刚点「要关」，立刻写一次，省得还要再重启一遍才知道成没成。
+                                WindowsNvapiVrr.applyInBackground()
+                            }
+                        },
+                        trailingContent = {
+                            RadioButton(selected = vrrMode == mode, onClick = null)
+                        },
+                    )
+                }
+            }
+
             SettingsSection("当前生效") {
                 SettingsFieldGroup {
                     EffectiveLine("本次运行请求的后端", DesktopRenderTuning.requestedApiSummary())
@@ -125,9 +165,17 @@ actual fun PlatformRenderTuningContent() {
                     EffectiveLine(
                         "垂直同步",
                         when (DesktopRenderTuning.effectiveVsyncOverride()) {
-                            null -> "未干预（Skiko 默认）"
+                            null -> if (DesktopRenderTuning.isWindows) "未覆盖（平台默认：关闭 VSync）" else "未覆盖（平台默认：Skiko 决定）"
                             else -> "skiko.vsync.enabled=${DesktopRenderTuning.effectiveVsyncOverride()}"
                         },
+                    )
+                    EffectiveLine("VRR（逐程序）", vrrStatus)
+                    CpText(
+                        text = "「固定刷新率」是写进 NVIDIA 驱动配置的逐程序设置（管理 3D 设置 → 程序设置 → " +
+                            "CPPlayer → 监视器技术），驱动只在进程启动时读它，所以改完要**下次启动**才生效；" +
+                            "开发运行（JVM）不写，免得给 java.exe 建配置。拿不到 nvapi64.dll（非 N 卡）时自动跳过。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     CpText(
                         text = "「实际采用」才是对照实验的依据：Skiko 在本机不支持所选后端时会静默回退，请求值不一定等于实际值。",

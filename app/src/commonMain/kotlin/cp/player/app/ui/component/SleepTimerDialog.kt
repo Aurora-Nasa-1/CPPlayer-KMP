@@ -113,7 +113,7 @@ fun SleepTimerDialog(
                                 checked = isCustomActive,
                                 onCheckedChange = { showCustomDialog = true },
                                 label = if (isCustomActive) {
-                                    s.playback.timerMinutesChip(activeMinutes!!)
+                                    s.playback.timerMinutesChip(activeMinutes)
                                 } else {
                                     s.playback.timerCustomChip
                                 },

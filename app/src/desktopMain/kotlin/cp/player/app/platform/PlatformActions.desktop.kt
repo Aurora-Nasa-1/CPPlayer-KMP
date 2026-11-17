@@ -17,9 +17,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.awt.Desktop
 import java.io.File
-import java.net.URI
 
 actual fun isAndroidPlatform(): Boolean = false
 actual fun desktopPlatform(): String = when {
@@ -46,23 +44,86 @@ actual fun defaultFontRoundness(): Int = 0
  */
 actual fun saveQrCodeToGallery(base64Image: String, fileName: String): Boolean = false
 
+/**
+ * 桌面端保存图片：走系统「另存为」对话框，把字节原样写进用户选定的路径。
+ *
+ * 不自动塞进某个固定目录：桌面上「保存到本地」的预期是**用户自己选位置**，
+ * 而且 Windows 的图片库可能被重定向到 D 盘，猜路径只会让用户找不到文件。
+ */
+actual fun saveImageToLocal(
+    imageBytes: ByteArray,
+    fileName: String,
+    extension: String,
+    dialogTitle: String,
+): ImageSaveResult {
+    if (imageBytes.isEmpty()) return ImageSaveResult.Failed
+    val safeExtension = extension.removePrefix(".").ifBlank { "png" }
+    val safeFileName = fileName
+        .substringAfterLast('/')
+        .substringAfterLast('\\')
+        .ifBlank { "CPPlayer-image" }
+    val chosen = DesktopFileDialog.saveImage(
+        title = dialogTitle,
+        defaultName = "$safeFileName.$safeExtension",
+        extension = safeExtension,
+    ) ?: return ImageSaveResult.Cancelled
+    // 系统保存框不保证补扩展名；缺了就补，避免落出一个双击打不开的无后缀文件。
+    val target = if (chosen.lowercase().endsWith(".$safeExtension")) {
+        File(chosen)
+    } else {
+        File("$chosen.$safeExtension")
+    }
+    return runCatching {
+        target.parentFile?.mkdirs()
+        target.writeBytes(imageBytes)
+        ImageSaveResult.Saved(target.absolutePath)
+    }.getOrDefault(ImageSaveResult.Failed)
+}
+
 actual fun openTargetApp(packageName: String) {}
 
 actual fun isPackageInstalled(packageName: String): Boolean = false
 
 actual fun openUrl(url: String) {
-    try {
-        if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-            Desktop.getDesktop().browse(URI(url))
-        }
-    } catch (_: Exception) {}
+    systemOpen(url)
 }
+
+/**
+ * 用系统默认程序打开 URL 或文件，不经过 `java.awt.Desktop`。
+ *
+ * Windows 的 `rundll32 url.dll,FileProtocolHandler` 同时认 URL 与本地路径；
+ * Linux / macOS 分别是 `xdg-open` / `open`。进程起不来一律返回 false，
+ * 调用方按「功能不可用」处理而不是抛异常。
+ */
+private fun systemOpen(target: String): Boolean = runCatching {
+    val os = System.getProperty("os.name").orEmpty()
+    val command = when {
+        os.startsWith("Windows", ignoreCase = true) ->
+            listOf("rundll32", "url.dll,FileProtocolHandler", target)
+        os.startsWith("Mac OS", ignoreCase = true) -> listOf("open", target)
+        else -> listOf("xdg-open", target)
+    }
+    ProcessBuilder(command).start()
+    true
+}.getOrDefault(false)
 
 actual fun openWebview(url: String, title: String?) {
     openUrl(url)
 }
 
-actual suspend fun downloadUpdate(url: String, fileName: String): Boolean = withContext(Dispatchers.IO) {
+actual suspend fun downloadUpdate(url: String, fileName: String): Boolean =
+    downloadAndInstallUpdate(
+        url, fileName, expectedSha256 = null, expectedSize = null,
+        beforeInstall = { true },
+    )
+
+actual suspend fun downloadAndInstallUpdate(
+    url: String,
+    fileName: String,
+    expectedSha256: String?,
+    expectedSize: Long?,
+    beforeInstall: suspend () -> Boolean,
+): Boolean = withContext(Dispatchers.IO) {
     val safeFileName = fileName
         .substringAfterLast('/')
         .substringAfterLast('\\')
@@ -73,23 +134,47 @@ actual suspend fun downloadUpdate(url: String, fileName: String): Boolean = with
 
     runCatching {
         directory.mkdirs()
-        if (target.isFile && target.length() > 0L) return@runCatching true
-        val resumeBytes = part.length().takeIf { part.isFile } ?: 0L
-        defaultDownloadExecutor().download(
-            url = url,
-            headers = emptyMap(),
-            targetPartPath = part.absolutePath,
-            resumeBytes = resumeBytes,
-        ) { _, _ -> }
-        if (target.exists() && !target.delete()) {
-            error("无法替换已有更新包")
+        if (!isVerifiedUpdateFile(target, expectedSha256, expectedSize)) {
+            if (target.exists() && !target.delete()) error("无法替换已有更新包")
+            val resumeBytes = part.length().takeIf { part.isFile } ?: 0L
+            defaultDownloadExecutor().download(
+                url = url,
+                headers = emptyMap(),
+                targetPartPath = part.absolutePath,
+                resumeBytes = resumeBytes,
+            ) { _, _ -> }
+            if (target.exists() && !target.delete()) error("无法替换已有更新包")
+            if (!part.renameTo(target)) error("无法保存更新包")
         }
-        if (!part.renameTo(target)) {
-            error("无法保存更新包")
-        }
+        check(isVerifiedUpdateFile(target, expectedSha256, expectedSize)) { "更新包完整性校验失败，已阻止启动安装器" }
+        check(beforeInstall()) { "更新前清理任务未能保存，已阻止启动安装器；现有模块未删除" }
+        check(openDownloadedInstaller(target)) { "已下载更新包，但无法打开平台安装器" }
         true
     }.getOrDefault(false)
 }
+
+private fun isVerifiedUpdateFile(file: File, expectedSha256: String?, expectedSize: Long?): Boolean {
+    if (!file.isFile || file.length() <= 0L) return false
+    if (expectedSize != null && file.length() != expectedSize) return false
+    val expectedHash = expectedSha256?.removePrefix("sha256:")?.takeIf { it.isNotBlank() } ?: return true
+    val actualHash = runCatching { PlatformSupport.sha256Hex(file.absolutePath) }.getOrNull() ?: return false
+    return actualHash.equals(expectedHash, ignoreCase = true)
+}
+
+/** Launches the OS installer/UI only; Windows UAC and Linux package-manager confirmation remain in control. */
+private fun openDownloadedInstaller(file: File): Boolean = runCatching {
+    when {
+        desktopPlatform() == "windows" && file.name.endsWith("-Setup.exe", ignoreCase = true) -> {
+            ProcessBuilder(file.absolutePath).directory(file.parentFile).start()
+            true
+        }
+        desktopPlatform() == "linux" && file.name.endsWith(".deb", ignoreCase = true) -> {
+            ProcessBuilder("xdg-open", file.absolutePath).start()
+            true
+        }
+        else -> systemOpen(file.absolutePath)
+    }
+}.getOrDefault(false)
 
 
 /**
@@ -115,14 +200,47 @@ actual fun imageCacheSizeBytes(): Long = runCatching {
     coil3.SingletonImageLoader.get(coil3.PlatformContext.INSTANCE).diskCache?.size ?: -1L
 }.getOrDefault(-1L)
 
+/**
+ * 在系统文件管理器中定位 [path]。
+ *
+ * 入参既可能是**目录**（设置页的下载 / 缓存目录），也可能是**文件**（歌曲行的
+ * 「在文件管理器中打开」）。此前这里先 `if (!dir.isDirectory) return false`，
+ * 于是所有歌曲行传进来的文件路径恒为 false —— 按钮点了没反应，且调用方没有
+ * 失败提示。现在按目标类型分流：
+ *
+ * - Windows：目录用 `explorer.exe <dir>`；文件用 `explorer.exe /select,<file>`，
+ *   资源管理器会打开父目录并选中该文件。
+ * - macOS：文件用 `open -R`（Reveal in Finder），目录用 `open`。
+ * - Linux：`xdg-open <dir>`（没有「选中文件」的统一协议）。
+ */
 actual fun openInFileManager(path: String): Boolean = runCatching {
-    val dir = java.io.File(path)
+    val target = File(path)
+    if (!target.exists()) return@runCatching false
+    val isDirectory = target.isDirectory
+    val dir = if (isDirectory) target else target.parentFile ?: return@runCatching false
     if (!dir.isDirectory) return@runCatching false
-    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
-        Desktop.getDesktop().open(dir)
-        true
-    } else {
-        false
+    val os = System.getProperty("os.name").orEmpty()
+    when {
+        os.startsWith("Windows", ignoreCase = true) -> {
+            val command = if (isDirectory) {
+                listOf("explorer.exe", dir.absolutePath)
+            } else {
+                // `/select,` 与路径必须是同一个参数：拆成两个参数 explorer 只会打开默认目录。
+                listOf("explorer.exe", "/select,${target.absolutePath}")
+            }
+            ProcessBuilder(command).start()
+            true
+        }
+        os.startsWith("Mac OS", ignoreCase = true) -> {
+            val command = if (isDirectory) {
+                listOf("open", target.absolutePath)
+            } else {
+                listOf("open", "-R", target.absolutePath)
+            }
+            ProcessBuilder(command).start()
+            true
+        }
+        else -> systemOpen(dir.absolutePath)
     }
 }.getOrDefault(false)
 

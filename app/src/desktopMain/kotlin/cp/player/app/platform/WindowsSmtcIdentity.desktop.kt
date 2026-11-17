@@ -1,6 +1,5 @@
 package cp.player.app.platform
 
-import java.io.ByteArrayInputStream
 import java.io.File
 import java.lang.foreign.Arena
 import java.lang.foreign.FunctionDescriptor
@@ -11,7 +10,6 @@ import java.lang.foreign.SymbolLookup
 import java.lang.foreign.ValueLayout
 import java.lang.invoke.MethodHandle
 import java.nio.charset.StandardCharsets
-import javax.imageio.ImageIO
 
 /**
  * Windows SMTC 的应用身份注册（「来源应用」名字 + 图标）。
@@ -128,8 +126,13 @@ internal object WindowsSmtcIdentity {
             .getResourceAsStream(ICON_RESOURCE)
             ?.use { it.readBytes() }
             ?: return null
+        // PNG IHDR 的宽高各占 4 字节大端（签名 8 + 长度 4 + 类型 4 = 16）。
+        // 直接读字节，省掉一次 ImageIO 解码，也彻底不碰 java.desktop。
         val side = runCatching {
-            ImageIO.read(ByteArrayInputStream(png))?.let { minOf(it.width, it.height) } ?: 192
+            if (png.size < 24) return@runCatching 192
+            val w = readPngInt(png, 16)
+            val h = readPngInt(png, 20)
+            if (w <= 0 || h <= 0) 192 else minOf(w, h)
         }.getOrDefault(192).coerceIn(1, 256)
         val sideByte = if (side >= 256) 0 else side
         val ico = File(dir, "app.ico")
@@ -296,4 +299,11 @@ internal object WindowsSmtcIdentity {
         args.copyInto(invokeArgs, 1)
         return handle.invokeWithArguments(*invokeArgs) as Int
     }
+
+    /** PNG IHDR 里的 4 字节大端整数；越界由调用方的长度检查挡住。 */
+    private fun readPngInt(bytes: ByteArray, offset: Int): Int =
+        ((bytes[offset].toInt() and 0xFF) shl 24) or
+            ((bytes[offset + 1].toInt() and 0xFF) shl 16) or
+            ((bytes[offset + 2].toInt() and 0xFF) shl 8) or
+            (bytes[offset + 3].toInt() and 0xFF)
 }

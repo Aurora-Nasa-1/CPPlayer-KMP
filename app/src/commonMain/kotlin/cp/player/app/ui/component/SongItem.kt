@@ -19,8 +19,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Surface
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cp.player.app.ui.screen.VideoPlayerScreen
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +29,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,10 +37,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.anim.coverFlightSource
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.theme.CpMotion
-import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.resized
 import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -82,7 +82,16 @@ fun SongItem(
      * 自定义副标题文本（非空时覆盖默认的 "歌手 · 专辑" 格式，用于本地歌曲的时长/码率展示）。
      */
     supportingText: String? = null,
+    /** 副标题末尾追加的音源名（不覆盖歌手 / 专辑的既有展示规则）。 */
+    supportingSource: String? = null,
+    /**
+     * 副标题行尾的轻量徽标（如「其他音源」）。为 null 时不占位。
+     * [supportingBadgeAlert] 为 true 时使用错误色容器，用于不可播放等需要立刻扫到的状态。
+     */
+    supportingBadge: String? = null,
+    supportingBadgeAlert: Boolean = false,
 ) {
+    val s = cpStrings()
     val globalShowAlbum by AppModel.showSongAlbumFlow.collectAsState()
     val actualShowAlbum = showAlbum ?: globalShowAlbum
     // 预览和启动早期没有后端；观察初始化信号，完成后再切换到真实播放状态。
@@ -117,11 +126,9 @@ fun SongItem(
     val targetContainerColor = when {
         selectionMode && isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
         isCurrent -> MaterialTheme.colorScheme.primaryContainer
-        // ⚠️ 读 LocalIsDarkTheme（已解析的明暗），不要读 isSystemInDarkTheme() ——
-        // 用户显式选深色而系统是浅色时后者会给出错的色板，行与背景撞色。
-        // 浅色分支取 surfaceContainerLow 而非 surface：后者与页面背景同色，整列会糊成一片。
-        else -> if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHighest
-        else MaterialTheme.colorScheme.surfaceContainerLow
+        // 行是「页面上的卡片」，统一走卡片层 —— 深浅两套层级是反的，
+        // 分散写角色名会在「用户显式选深色、系统是浅色」时取错色板（见 cpCardSurface）。
+        else -> cp.player.app.ui.theme.cpCardSurface()
     }
     val animatedContainerColor by animateColorAsState(
         targetValue = targetContainerColor,
@@ -215,14 +222,14 @@ fun SongItem(
                     )
                     val mvId = track.mvId
                     if (mvId != null && mvId > 0) {
-                        val nav = LocalNavigator.current
+                        val nav = LocalAppNavigator.current
                         Spacer(Modifier.width(6.dp))
                         Surface(
                             shape = RoundedCornerShape(4.dp),
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
                             modifier = Modifier.clickable {
-                                nav?.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV"))
+                                nav.push(AppRoute.VideoPlayer("netease://mv/$mvId", title = "${track.name} - MV"))
                             },
                         ) {
                             CpText(
@@ -237,19 +244,49 @@ fun SongItem(
                 }
             },
             supportingContent = {
-                CpText(
-                    text = supportingText ?: buildString {
-                        append(track.artist)
-                        if (actualShowAlbum && !track.album.isNullOrBlank()) {
-                            append(" · ")
-                            append(track.album)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CpText(
+                        text = supportingText ?: buildString {
+                            append(track.artist)
+                            if (actualShowAlbum && !track.album.isNullOrBlank()) {
+                                append(" · ")
+                                append(track.album)
+                            }
+                            if (!supportingSource.isNullOrBlank()) {
+                                if (isNotEmpty()) append(" · ")
+                                append(supportingSource)
+                            }
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        emphasized = isCurrent,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (!supportingBadge.isNullOrBlank()) {
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (supportingBadgeAlert) {
+                                MaterialTheme.colorScheme.errorContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerHighest
+                            },
+                        ) {
+                            CpText(
+                                text = supportingBadge,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (supportingBadgeAlert) {
+                                    MaterialTheme.colorScheme.onErrorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                maxLines = 1,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
                         }
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    emphasized = isCurrent,
-                )
+                    }
+                }
             },
             trailingContent = if (showMoreButton) {{
             // 桌面端：MoreVert 点击弹出锚定菜单（与右键同一份 items，见 CpAnchoredMenu），
@@ -272,7 +309,7 @@ fun SongItem(
                 ) {
                     Icon(
                         Icons.Filled.MoreVert,
-                        contentDescription = "更多操作",
+                        contentDescription = s.contextMenu.moreActions,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp),
                     )

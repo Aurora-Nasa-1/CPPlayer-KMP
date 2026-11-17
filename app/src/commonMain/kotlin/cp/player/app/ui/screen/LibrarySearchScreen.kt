@@ -36,12 +36,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.AddToLocalPlaylistDialog
 import cp.player.app.ui.component.AddToPlaylistSheet
@@ -53,6 +52,7 @@ import cp.player.app.ui.component.CpSearchField
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.PlaylistItem
+import cp.player.app.ui.component.PlaylistMenuActions
 import cp.player.app.ui.component.PlaylistOptionsSheet
 import cp.player.app.ui.component.RenamePlaylistDialog
 import cp.player.app.ui.component.SectionHeader
@@ -67,12 +67,13 @@ import cp.player.app.ui.model.DownloadsScreenModel
 import cp.player.app.ui.model.LibraryScreenModel
 import cp.player.app.ui.model.LibrarySearchScreenModel
 import cp.player.app.ui.model.LibraryTrackHit
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.util.UiEvents
-import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.util.resized
 import cp.player.core.media.LocalMediaItem
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.TrackSummary
+import cp.player.core.music.isRemote
 import kotlinx.coroutines.launch
 
 /**
@@ -111,7 +112,7 @@ private fun LibrarySearchContent(
     initialQuery: String,
 ) {
     val s = cpStrings()
-    val navigator = LocalNavigator.currentOrThrow
+    val navigator = LocalAppNavigator.current
     val scope = rememberCoroutineScope()
     val libraryState by library.state.collectAsState()
     val downloadsState by downloads.state.collectAsState()
@@ -175,7 +176,7 @@ private fun LibrarySearchContent(
 
     CpRouteScaffold(
         title = s.library.searchLibrary,
-        onBack = { navigator.popOrNotify() },
+        onBack = { navigator.pop() },
     ) { modifier ->
         Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             CpSearchField(
@@ -214,7 +215,7 @@ private fun LibrarySearchContent(
                             ContentState(
                                 title = s.library.noSearchResults,
                                 actionLabel = s.library.searchOnlineHint(keyword),
-                                onAction = { navigator.push(SearchScreen(keyword)) },
+                                onAction = { navigator.push(AppRoute.Search(keyword)) },
                             )
                         }
                     }
@@ -228,11 +229,53 @@ private fun LibrarySearchContent(
                                 )
                             }
                             items(playlists, key = { "p-${it.resourceId}" }) { playlist ->
+                                val owner = library.isOwner(playlist)
+                                val requestDelete: () -> Unit = {
+                                    confirm.request(
+                                        title = if (owner) s.library.deletePlaylist else s.library.unfavoritePlaylist,
+                                        message = if (owner) {
+                                            s.library.deletePlaylistMessage(playlist.name)
+                                        } else {
+                                            s.library.unfavoritePlaylistMessage(playlist.name)
+                                        },
+                                        confirmLabel = if (owner) s.common.confirm else s.library.unfavoritePlaylist,
+                                        destructive = owner,
+                                        onConfirm = { library.deleteOrUnsubscribe(playlist) },
+                                    )
+                                }
+                                val menuActions = if (playlist.isRemote) {
+                                    PlaylistMenuActions(
+                                        isOwner = owner,
+                                        isFavorite = true,
+                                        onPlay = { library.play(playlist) },
+                                        onAddToQueue = { library.play(playlist, addOnly = true) },
+                                        onDownload = { library.download(playlist) },
+                                        onShare = {
+                                            shareText(playlistShareText(playlist.resourceId, playlist.name))
+                                        },
+                                        // 本页的“取消收藏 / 重命名 / 删除”都要先经过
+                                        // CpConfirmHost，桌面右键与手机弹层共用同一份。
+                                        onToggleFavorite = if (!owner) {
+                                            requestDelete
+                                        } else {
+                                            null
+                                        },
+                                        onRename = if (owner) {
+                                            { renameTarget = playlist }
+                                        } else {
+                                            null
+                                        },
+                                        onDelete = requestDelete,
+                                    )
+                                } else {
+                                    null
+                                }
                                 PlaylistItem(
                                     playlist = playlist,
-                                    isOwner = library.isOwner(playlist),
-                                    onClick = { navigator.push(PlaylistDetailScreen(playlist)) },
+                                    isOwner = owner,
+                                    onClick = { navigator.push(AppRoute.PlaylistDetail(playlist)) },
                                     onOptionsClick = { selectedPlaylist = playlist },
+                                    menuActions = menuActions,
                                 )
                             }
                         }
@@ -302,7 +345,7 @@ private fun LibrarySearchContent(
                         }
                         item {
                             TextButton(
-                                onClick = { navigator.push(SearchScreen(keyword)) },
+                                onClick = { navigator.push(AppRoute.Search(keyword)) },
                                 modifier = Modifier.padding(top = 8.dp),
                             ) {
                                 Icon(
@@ -345,8 +388,14 @@ private fun LibrarySearchContent(
             onDismiss = { selectedPlaylist = null },
             onPlay = { library.play(playlist) },
             onAddToQueue = { library.play(playlist, addOnly = true) },
+            onRefresh = { library.refresh() },
+            onDownload = { library.download(playlist) },
             onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
-            onDelete = { selectedPlaylist = null; requestDelete() },
+            onDelete = if (owner) {
+                { selectedPlaylist = null; requestDelete() }
+            } else {
+                null
+            },
             onRename = if (owner) {
                 { selectedPlaylist = null; renameTarget = playlist }
             } else {
@@ -354,7 +403,11 @@ private fun LibrarySearchContent(
             },
             coverUrl = playlist.coverUrl,
             isFavorite = true,
-            onToggleFavorite = { selectedPlaylist = null; requestDelete() },
+            onToggleFavorite = if (!owner) {
+                { selectedPlaylist = null; requestDelete() }
+            } else {
+                null
+            },
         )
     }
 
@@ -420,7 +473,8 @@ private fun LibrarySearchContent(
 
     optionsTargetSong?.let { song ->
         val isVideo = song.mediaType == cp.player.core.media.MediaType.VIDEO
-        val mediaId = if (isVideo) "local://video/" else "local://audio/"
+        // 必须带 path（与各列表行一致）：空资源 ID 会让「歌曲信息」与队列找不到这首。
+        val mediaId = if (isVideo) "local://video/${song.path}" else "local://audio/${song.path}"
         val isDownloaded = song.source == cp.player.core.media.LocalMediaOrigin.DOWNLOADED || !song.originalMediaId.isNullOrBlank()
         val cloudMediaId = song.originalMediaId
         val cloudFavId = cloudMediaId?.let { runCatching { cp.player.core.music.CPMediaId.parse(it).resourceId }.getOrDefault(it) }
@@ -447,7 +501,7 @@ private fun LibrarySearchContent(
             onDismiss = { optionsTargetSong = null },
             onPlay = {
                 if (isVideo) {
-                    navigator.push(VideoPlayerScreen(mediaId, title = song.title))
+                    navigator.push(AppRoute.VideoPlayer(mediaId, title = song.title))
                 } else {
                     downloads.playAll(listOf(song), 0)
                 }
@@ -498,11 +552,11 @@ private fun LibrarySearchContent(
                 }
             },
             onPlayMv = if (isVideo) {
-                { navigator.push(VideoPlayerScreen(mediaId, title = song.title)) }
+                { navigator.push(AppRoute.VideoPlayer(mediaId, title = song.title)) }
             } else null,
             coverUrl = song.coverUri,
             onOpenInFileManager = {
-                cp.player.app.platform.openInFileManager(song.path)
+                cp.player.app.ui.util.revealInFileManager(song.path, s.downloads)
             },
             onRemoveFromLibrary = {
                 removeTargetSong = song

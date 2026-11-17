@@ -1,60 +1,199 @@
 package cp.player.app.ui.component
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.remember
+import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import com.mikepenz.hypnoticcanvas.NonAndroidRuntimeEffect
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.Density
 import cp.player.app.AppModel
-import org.jetbrains.skia.RuntimeEffect
+import cp.player.app.readPng
+import cp.player.app.ui.theme.CpTheme
+import cp.player.app.ui.theme.ThemeMode
+import cp.player.app.ui.theme.solidImage
+import java.security.MessageDigest
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class FluidBackgroundTest {
 
     @Test
-    fun `CpFluidMeshGradient着色器SkSL编译无错误且支持Dither`() {
-        val colors = arrayOf(
-            Color(0xFF2B1B17),
-            Color(0xFF1C2833),
-            Color(0xFF1E3F20),
-            Color(0xFF121212),
-        )
-        val shader = CpFluidMeshGradient(
-            colors = colors,
-            speed = 1f,
-            scale = 2f,
-            dither = true,
-        )
+    fun `流体背景只在导航转场期间冻结`() {
+        // 反过来（转场结束才冻结）会让播放页一亮相就永久定格 —— 别再改回去。
+        assertTrue(shouldPauseFluidBackgroundDuringNavigation(transitionIsRunning = true))
+        assertFalse(shouldPauseFluidBackgroundDuringNavigation(transitionIsRunning = false))
+    }
 
-        val sksl = shader.sksl
-        assertTrue(sksl.contains("uniform float uDither;"))
-        assertTrue(sksl.contains("TPDF"))
+    /**
+     * 本 bug 的像素级回归守卫：**时间轴在走，画面就必须变**。
+     *
+     * 之前 `shouldPauseFluidShaderAfterNavigation` 把「转场结束」接成「暂停」，
+     * 播放页进场 400ms 后背景永久停在第一帧；这个用例会在那种实现下直接失败。
+     */
+    @Test
+    fun `流体背景在未暂停时随时间流动`() {
+        val frames = renderFrames(pauseShaderAnimation = false)
+        try {
+            assertNotEquals(frames.sha1, frames.laterSha1, "时间轴前进后流体画面必须变化；完全相同说明又冻住了")
+        } finally {
+            frames.close()
+        }
+    }
 
-        // 使用 Skia RuntimeEffect 验证 SkSL 语法完全合法
-        val effect = RuntimeEffect.makeForShader(sksl)
-        assertNotNull(effect, "SkSL 应该成功通过 Skia 编译")
+    /** 冻结必须真的省资源：不再推进时间，后续帧应当与冻结帧逐像素一致。 */
+    @Test
+    fun `流体背景冻结时不再推进时间也不请求新帧`() {
+        val frames = renderFrames(pauseShaderAnimation = true)
+        try {
+            assertEquals(frames.sha1, frames.laterSha1, "冻结期间不应再推进时间轴")
+            repeat(10) { frames.scene.render(frames.lastFrameTimeNanos + it * 16_666_667L) }
+            assertFalse(
+                frames.scene.hasInvalidations(),
+                "冻结期间不应再有帧请求；还有失效说明时间轴仍在跑，转场动画期间白烧一份着色器开销",
+            )
+        } finally {
+            frames.close()
+        }
+    }
 
-        // 验证 NonAndroidRuntimeEffect 初始化与 applyUniforms 赋值
-        val runtimeEffect = NonAndroidRuntimeEffect(shader)
-        assertTrue(runtimeEffect.supported)
+    private class RenderedFrames(
+        val sha1: String,
+        val laterSha1: String,
+        val scene: ImageComposeScene,
+        val lastFrameTimeNanos: Long,
+    ) {
+        fun close() = scene.close()
+    }
 
-        // 开启抖动
-        shader.dither = true
-        shader.applyUniforms(runtimeEffect, 1.0f, 800f, 600f)
+    private fun renderFrames(pauseShaderAnimation: Boolean): RenderedFrames {
+        val scene = ImageComposeScene(width = 240, height = 240, density = Density(1f)) {
+            CpTheme(themeMode = ThemeMode.DARK) {
+                androidx.compose.foundation.layout.Box(
+                    Modifier.fillMaxSize().cpFluidBackground(
+                        enabled = true,
+                        fallback = SolidColor(Color.Black),
+                        pauseShaderAnimation = pauseShaderAnimation,
+                    ),
+                )
+            }
+        }
+        var t = 0L
+        val step = 16_666_667L
+        repeat(8) { scene.render(t); t += step }
+        val first = hashRendered(scene)
+        repeat(40) { scene.render(t); t += step }
+        val later = hashRendered(scene)
+        return RenderedFrames(first, later, scene, t)
+    }
 
-        // 关闭抖动
-        shader.dither = false
-        shader.applyUniforms(runtimeEffect, 2.0f, 800f, 600f)
+    private fun hashRendered(scene: ImageComposeScene): String {
+        val bytes = scene.render().encodeToData()?.bytes ?: error("ImageComposeScene PNG encode failed")
+        val image = readPng(bytes)
+        val digest = MessageDigest.getInstance("SHA-1")
+        for (y in 0 until image.height) {
+            for (x in 0 until image.width) {
+                val argb = image.getRGB(x, y)
+                digest.update((argb ushr 16).toByte())
+                digest.update((argb ushr 8).toByte())
+                digest.update(argb.toByte())
+            }
+        }
+        return digest.digest().joinToString("") { (it.toInt() and 0xFF).toString(16).padStart(2, '0') }
     }
 
     @Test
-    fun `AppModel抖动设置默认开启并支持切换`() {
-        val initial = AppModel.fluidBackgroundDither()
-        assertTrue(initial, "流体背景抗色阶断层默认应开启")
+    fun `流体背景抖动层在暗色上产生微噪声`() {
+        val scene = ImageComposeScene(width = 64, height = 64, density = Density(1f)) {
+            val dither = remember { createFluidDitherBrush() }
+            Canvas(Modifier.fillMaxSize()) {
+                // 用暗灰而不是中灰：乘性抖动在暗部会被压到不足 1 LSB，
+                // 这个底色能保证回归用例真的覆盖「暗部色带」这个场景。
+                drawRect(Color(0xFF101010))
+                drawRect(brush = dither, blendMode = BlendMode.Plus)
+            }
+        }
+        try {
+            val encoded = scene.render().encodeToData() ?: error("ImageComposeScene PNG encode failed")
+            val image = readPng(encoded.bytes)
+            val colors = buildSet {
+                for (y in 0 until image.height) {
+                    for (x in 0 until image.width) add(image.getRGB(x, y))
+                }
+            }
+            assertTrue(colors.size > 1, "纯色叠加抖动层后必须出现多个相邻像素值，否则色带不会被打破")
+        } finally {
+            scene.close()
+        }
+    }
 
-        AppModel.setFluidBackgroundDither(false)
-        assertTrue(!AppModel.fluidBackgroundDither())
+    @Test
+    fun `流体背景默认开启且帧率默认30并支持切换`() {
+        assertTrue(AppModel.fluidBackground(), "流体背景默认应开启")
+        assertEquals(30, AppModel.fluidBackgroundFps())
 
-        AppModel.setFluidBackgroundDither(true)
-        assertTrue(AppModel.fluidBackgroundDither())
+        AppModel.setFluidBackgroundFps(60)
+        assertEquals(60, AppModel.fluidBackgroundFps())
+        AppModel.setFluidBackgroundFps(24)
+        assertEquals(30, AppModel.fluidBackgroundFps(), "不支持的 FPS 值应回落到默认30")
+        AppModel.setFluidBackgroundFps(30)
+    }
+
+    @Test
+    fun `流体帧率按显示器刷新率整数分频且不超过所选上限`() {
+        val low = calculateFluidFpsConfig(screenHz = 60, targetFps = 15)
+        assertEquals(4, low.divisor)
+        assertEquals(15, low.targetFps)
+
+        val balanced = calculateFluidFpsConfig(screenHz = 60, targetFps = 30)
+        assertEquals(2, balanced.divisor)
+        assertEquals(30, balanced.targetFps)
+
+        val highRefresh = calculateFluidFpsConfig(screenHz = 144, targetFps = 60)
+        assertEquals(3, highRefresh.divisor)
+        assertEquals(48, highRefresh.targetFps)
+        assertTrue(highRefresh.targetFps <= 60)
+    }
+
+    @Test
+    fun `AppleMusic流体色盘提取具备深邃暗底与鲜活多色团`() {
+        val coverArgb = 0xFF3B82F6.toInt()
+        val image = solidImage(coverArgb)
+        // HCT 的 chroma 上限随色相与明度变化：蓝色在 tone 50 附近最多只能到 ~43，
+        // 超过上限会被色域裁剪。这里改为「贴近该色相/明度下的色域边界」，
+        // 既能验证色团够鲜艳，又不会要求几何上达不到的彩度。
+        val darkPalette = cp.player.app.ui.theme.extractCoverFluidPalette(image, dark = true)
+        assertNotNull(darkPalette, "彩色封面必须能提取出深色流体色盘")
+        assertEquals(4, darkPalette.size, "流体色盘必须包含 3 个流体光团色与 1 个底色（共 4 色）")
+
+        // 验证末位底色具有深邃氛围（纯正暗夜底 Tone 8~18，彻底告别 Monet 泥灰色）
+        val baseHct = com.materialkolor.hct.Hct.fromInt(darkPalette.last().toArgb())
+        assertTrue(baseHct.tone in 8.0..18.0, "深色流体底色必须为幽邃暗夜调（Tone 8~18），当前 Tone=${baseHct.tone}")
+
+        // 验证前 3 个色团具备鲜活的彩度与通透的明度
+        for (i in 0 until 3) {
+            val hct = com.materialkolor.hct.Hct.fromInt(darkPalette[i].toArgb())
+            assertTrue(hct.tone in 40.0..62.0, "流体高光色团明度需通透且文字可读（Tone 40~62），当前 Tone=${hct.tone}")
+            val maxChromaAtTone = com.materialkolor.hct.Hct.from(hct.hue, 200.0, hct.tone).chroma
+            assertTrue(
+                hct.chroma >= maxChromaAtTone * 0.9,
+                "流体高光色团应贴近色域边界（Hue=${hct.hue} Tone=${hct.tone} " +
+                    "上限 Chroma=$maxChromaAtTone），当前 Chroma=${hct.chroma}",
+            )
+        }
+
+        // 浅色模式流体色盘验证
+        val lightPalette = cp.player.app.ui.theme.extractCoverFluidPalette(image, dark = false)
+        assertNotNull(lightPalette, "彩色封面必须能提取出浅色流体色盘")
+        assertEquals(4, lightPalette.size)
+        val lightBaseHct = com.materialkolor.hct.Hct.fromInt(lightPalette.last().toArgb())
+        assertTrue(lightBaseHct.tone >= 95.0, "浅色流体底色必须为纯净明底（Tone>=95），当前 Tone=${lightBaseHct.tone}")
     }
 }

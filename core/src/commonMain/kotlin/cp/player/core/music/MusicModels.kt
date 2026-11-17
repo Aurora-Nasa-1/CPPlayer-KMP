@@ -17,6 +17,14 @@ typealias MusicResult<T> = cp.player.core.BackendResult<T>
 /**
  * 歌单摘要（列表/网格用）。
  */
+enum class PlaylistKind {
+    /** 服务端真实歌单。 */
+    REMOTE,
+
+    /** 账号云盘：借用歌单详情 UI，但曲目来自 `user/cloud` 分页。 */
+    CLOUD_DRIVE,
+}
+
 data class PlaylistSummary(
     val id: Long,
     val name: String,
@@ -25,9 +33,23 @@ data class PlaylistSummary(
     val creatorName: String?,
     /** Canonical upstream ID. [id] remains available for legacy numeric callers. */
     val resourceId: String = if (id == 0L) "" else id.toString(),
-) : cp.player.core.util.JavaSerializable
+    /**
+     * 数据来源。默认 [PlaylistKind.REMOTE]；云盘用 [PlaylistKind.CLOUD_DRIVE] 显式标记，
+     * 不再靠负数 id / 特殊名称猜。
+     */
+    val kind: PlaylistKind = PlaylistKind.REMOTE,
+) : cp.player.core.util.JavaSerializable {
+    companion object {
+        /** 云盘没有服务端歌单 id；这个值只用于本地路由与播放列表上下文。 */
+        const val CLOUD_DRIVE_ID: Long = Long.MIN_VALUE
+        const val CLOUD_DRIVE_RESOURCE_ID: String = "cloud:self"
+    }
+}
 
-val PlaylistSummary.isRemote: Boolean get() = id >= 0L && resourceId.isNotBlank()
+val PlaylistSummary.isRemote: Boolean
+    get() = kind == PlaylistKind.REMOTE && id >= 0L && resourceId.isNotBlank()
+
+val PlaylistSummary.isCloudDrive: Boolean get() = kind == PlaylistKind.CLOUD_DRIVE
 
 /**
  * 歌单详情（含完整曲目）。
@@ -89,6 +111,8 @@ data class SongUrl(
     val bitrate: Int? = null,
     val qualityKey: String? = null,
     val qualityLabel: String? = null,
+    /** Non-null for encrypted streams; the platform must supply a CDM. */
+    val drm: DrmPlaybackInfo? = null,
 )
 
 /**

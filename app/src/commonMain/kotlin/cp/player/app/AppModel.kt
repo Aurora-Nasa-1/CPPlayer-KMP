@@ -28,11 +28,15 @@ import cp.player.core.util.SettingsStorage
 import cp.player.core.util.runCatchingExceptCancellation
 import cp.player.app.repository.AuthRepository
 import cp.player.app.repository.MusicRepository
+import cp.player.app.repository.MusicRepositoryProvider
 import cp.player.app.repository.SocialRepository
 import cp.player.app.shortcut.ShortcutAction
 import cp.player.app.shortcut.ShortcutBinding
 import cp.player.app.shortcut.UNBOUND_SHORTCUT_MARKER
 import cp.player.app.ui.theme.AppFontFace
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -50,6 +54,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -239,18 +244,22 @@ object AppModel {
      */
     val settings: SettingsStorage by lazy { cp.player.core.util.defaultSettingsStorage() }
 
-    /** Application-facing repository; new UI code should use this instead of raw API. */
-    val musicRepository: MusicRepository get() = MusicRepository(backend.unifiedSource)
+    /** Application-facing repository; keep its in-memory read caches across screen opens. */
+    private val musicRepositoryProvider by lazy {
+        MusicRepositoryProvider { backend.unifiedSource }
+    }
+    val musicRepository: MusicRepository get() = musicRepositoryProvider.get()
 
     /**
      * 私信 / 联系人门面。
      *
-     * 与 [musicRepository] 同样每次访问新建 —— 它只是统一音源之上的一层**无状态**
-     * 映射包装（真正有状态、需要单例的是 [settings] 那一类）。
+     * 每次访问新建 —— 它只是统一音源之上的一层**无状态**映射包装；
+     * 像歌单读缓存这样的有状态职责由 [musicRepository] 持有。
      */
     val socialRepository: SocialRepository get() = SocialRepository(backend.unifiedSource)
 
-    val authRepository: AuthRepository get() = AuthRepository(backend.unifiedSource)
+    val authRepository: AuthRepository
+        get() = AuthRepository(backend.unifiedSource, activeProvider()?.defaultCountryCode)
 
     /**
      * 睡眠定时「播完当前曲目后暂停」的哨兵值。
@@ -390,7 +399,7 @@ object AppModel {
     private val KEY_COLOR_SOURCE = "color_source"
     private val KEY_PURE_BLACK = "pure_black"
     private val KEY_FLUID_BACKGROUND = "fluid_background"
-    private val KEY_FLUID_BACKGROUND_DITHER = "fluid_background_dither"
+    private val KEY_FLUID_BACKGROUND_FPS = "fluid_background_fps"
     private val KEY_PLAYBACK_QUALITY = "playback_quality"
     private val KEY_METERED_PLAYBACK_QUALITY = "playback_quality_metered"
     private val KEY_LISTEN_TOGETHER_ADD_NEXT = "listen_together_add_next"
@@ -436,6 +445,14 @@ object AppModel {
      */
     private val _coverSeed = MutableStateFlow<androidx.compose.ui.graphics.Color?>(null)
     val coverSeedFlow: StateFlow<androidx.compose.ui.graphics.Color?> = _coverSeed.asStateFlow()
+
+    /**
+     * 当前播放曲目封面的 Apple Music 风格流体色盘（4 色，底色在末位）。
+     * 无论全局主题是否跟随封面，播放页流体背景均优先采用该色盘。
+     */
+    private val _currentCoverFluidPalette = MutableStateFlow<List<androidx.compose.ui.graphics.Color>?>(null)
+    val currentCoverFluidPalette: StateFlow<List<androidx.compose.ui.graphics.Color>?> =
+        _currentCoverFluidPalette.asStateFlow()
 
     /**
      * 系统壁纸的种子色，用于「跟随封面」但**当前没有曲目封面**时的回退。
@@ -500,12 +517,11 @@ object AppModel {
      * 播放页是否使用流体背景（仿 Apple Music 的流动网格渐变）。
      *
      * **默认开**：这是播放页的主视觉，默认关掉等于「做了个没人看得见的功能」。
-     * 低版本安卓（API < 33，没有 `RuntimeShader`）本来就自动回退成静态渐变，
-     * 不需要用户为平台差异操心。
+     * Compose 的 `MeshGradientPainter` 在所有目标平台都能绘制，不需要用户为平台差异操心。
      *
-     * 关掉的意义只有一条：**着色器在屏期间持续出帧**（见 `cpFluidBackground` 的 KDoc），
+     * 关掉的意义只有一条：**背景在屏期间持续出帧**（见 `cpFluidBackground` 的 KDoc），
      * 低端机 / 想省电的用户需要一个开关。所以这里存的是用户偏好，不是能力探测 ——
-     * 「这个平台跑不跑得动」由库自己判，别在设置层再猜一遍。
+     * 「这个平台跑不跑得动」不该在设置层猜。
      */
     val fluidBackgroundFlow: StateFlow<Boolean> = _fluidBackground.asStateFlow()
 
@@ -517,23 +533,24 @@ object AppModel {
         _fluidBackground.value = enabled
     }
 
-    private val _fluidBackgroundDither = MutableStateFlow(fluidBackgroundDither())
+    private val _fluidBackgroundFps = MutableStateFlow(fluidBackgroundFps())
+    val fluidBackgroundFpsFlow: StateFlow<Int> = _fluidBackgroundFps.asStateFlow()
 
-    /**
-     * 播放页流体背景着色器是否开启抗色阶断层高频抖动（TPDF Dithering）。
-     *
-     * 默认开。在 8-bit SDR 帧缓冲区下消除大面积渐变的暗部色阶断层，
-     * 计算仅占几条 GPU 算术指令，不占显存带宽。
-     */
-    val fluidBackgroundDitherFlow: StateFlow<Boolean> = _fluidBackgroundDither.asStateFlow()
+    fun fluidBackgroundFps(): Int =
+        settings.getString(KEY_FLUID_BACKGROUND_FPS)?.toIntOrNull()
+            ?.let(::normalizeFluidBackgroundFps) ?: 30
 
-    fun fluidBackgroundDither(): Boolean =
-        settings.getString(KEY_FLUID_BACKGROUND_DITHER)?.toBooleanStrictOrNull() ?: true
-
-    fun setFluidBackgroundDither(enabled: Boolean) {
-        settings.putString(KEY_FLUID_BACKGROUND_DITHER, enabled.toString())
-        _fluidBackgroundDither.value = enabled
+    fun setFluidBackgroundFps(fps: Int) {
+        val normalized = normalizeFluidBackgroundFps(fps)
+        settings.putString(KEY_FLUID_BACKGROUND_FPS, normalized.toString())
+        _fluidBackgroundFps.value = normalized
     }
+
+    private fun normalizeFluidBackgroundFps(fps: Int): Int =
+        when (fps) {
+            15, 30, 60 -> fps
+            else -> 30
+        }
 
     // ============ 保留上次播放（持久化） ============
 
@@ -951,6 +968,64 @@ object AppModel {
         _bottomBarAutoHide.value = enabled
     }
 
+    // ============ 主导航入口（持久化） ============
+
+    private const val KEY_DYNAMIC_REPLACES_SEARCH = "nav_dynamic_replaces_search"
+    private const val KEY_HIDE_DYNAMIC_ENTRY = "nav_hide_dynamic_entry"
+    private const val KEY_HIDE_MESSAGES_ENTRY = "nav_hide_messages_entry"
+
+    private val _dynamicReplacesSearch = MutableStateFlow(
+        settings.getString(KEY_DYNAMIC_REPLACES_SEARCH)?.toBooleanStrictOrNull() ?: false
+    )
+
+    /**
+     * 「动态」是否占用主 tab 中「搜索」的位置（默认关）。
+     *
+     * 打开后第 2 个 tab 变成动态，搜索移到顶栏动作位（仍是同一条 `SearchScreen` 路由，
+     * 因此搜索历史、建议、结果类型切换全部照旧）。关掉即恢复「首页 / 搜索 / 我的」。
+     */
+    val dynamicReplacesSearchFlow: StateFlow<Boolean> = _dynamicReplacesSearch.asStateFlow()
+
+    fun dynamicReplacesSearch(): Boolean = _dynamicReplacesSearch.value
+
+    fun setDynamicReplacesSearch(enabled: Boolean) {
+        settings.putString(KEY_DYNAMIC_REPLACES_SEARCH, enabled.toString())
+        _dynamicReplacesSearch.value = enabled
+    }
+
+    private val _hideDynamicEntry = MutableStateFlow(
+        settings.getString(KEY_HIDE_DYNAMIC_ENTRY)?.toBooleanStrictOrNull() ?: false
+    )
+
+    /**
+     * 是否隐藏所有「动态」入口（默认关）。
+     *
+     * 隐藏只影响入口，不动数据：音源仍支持时从设置页仍可打开动态页，
+     * 关掉开关后入口原样回来。
+     */
+    val hideDynamicEntryFlow: StateFlow<Boolean> = _hideDynamicEntry.asStateFlow()
+
+    fun hideDynamicEntry(): Boolean = _hideDynamicEntry.value
+
+    fun setHideDynamicEntry(enabled: Boolean) {
+        settings.putString(KEY_HIDE_DYNAMIC_ENTRY, enabled.toString())
+        _hideDynamicEntry.value = enabled
+    }
+
+    private val _hideMessagesEntry = MutableStateFlow(
+        settings.getString(KEY_HIDE_MESSAGES_ENTRY)?.toBooleanStrictOrNull() ?: false
+    )
+
+    /** 是否隐藏顶栏 / 侧栏 / 底栏的「消息」入口（默认关）。 */
+    val hideMessagesEntryFlow: StateFlow<Boolean> = _hideMessagesEntry.asStateFlow()
+
+    fun hideMessagesEntry(): Boolean = _hideMessagesEntry.value
+
+    fun setHideMessagesEntry(enabled: Boolean) {
+        settings.putString(KEY_HIDE_MESSAGES_ENTRY, enabled.toString())
+        _hideMessagesEntry.value = enabled
+    }
+
     // ============ 封面飞行动画（持久化） ============
 
     private const val KEY_COVER_FLIGHT_ANIMATION = "cover_flight_animation"
@@ -1046,14 +1121,13 @@ object AppModel {
         _showRubyLyrics.value = enabled
     }
 
-    // ============ 全新手机端播放界面与布局微调（持久化） ============
+    // ============ 手机端播放界面样式（标准 / 三段式）与布局微调（持久化） ============
 
     private const val KEY_MODERN_MOBILE_PLAYER = "modern_mobile_player"
     private const val KEY_MOBILE_PLAYER_COVER_SCALE = "mobile_player_cover_scale"
     private const val KEY_MOBILE_PLAYER_COVER_CORNER = "mobile_player_cover_corner"
     private const val KEY_MOBILE_PLAYER_COVER_ELEVATION = "mobile_player_cover_elevation"
     private const val KEY_MOBILE_PLAYER_AMBIENT_GLOW = "mobile_player_ambient_glow"
-    private const val KEY_MOBILE_PLAYER_COVER_SWIPE = "mobile_player_cover_swipe"
     private const val KEY_MOBILE_PLAYER_WAVY_SEEKBAR = "mobile_player_wavy_seekbar"
     private const val KEY_MOBILE_PLAYER_LYRICS_LINES = "mobile_player_lyrics_lines"
     private const val KEY_MOBILE_PLAYER_LYRICS_FONT_SIZE = "mobile_player_lyrics_font_size"
@@ -1071,7 +1145,6 @@ object AppModel {
             coverCornerDp = settings.getString(KEY_MOBILE_PLAYER_COVER_CORNER)?.toIntOrNull() ?: 24,
             coverElevationDp = settings.getString(KEY_MOBILE_PLAYER_COVER_ELEVATION)?.toIntOrNull() ?: 16,
             ambientGlow = settings.getString(KEY_MOBILE_PLAYER_AMBIENT_GLOW)?.toBooleanStrictOrNull() ?: true,
-            coverSwipeGesture = settings.getString(KEY_MOBILE_PLAYER_COVER_SWIPE)?.toBooleanStrictOrNull() ?: true,
             useWavySeekBar = settings.getString(KEY_MOBILE_PLAYER_WAVY_SEEKBAR)?.toBooleanStrictOrNull() ?: false,
             lyricsLines = settings.getString(KEY_MOBILE_PLAYER_LYRICS_LINES)?.toIntOrNull() ?: 2,
             lyricsFontSizeSp = settings.getString(KEY_MOBILE_PLAYER_LYRICS_FONT_SIZE)?.toIntOrNull() ?: 17,
@@ -1100,7 +1173,6 @@ object AppModel {
         settings.putString(KEY_MOBILE_PLAYER_COVER_CORNER, updated.coverCornerDp.toString())
         settings.putString(KEY_MOBILE_PLAYER_COVER_ELEVATION, updated.coverElevationDp.toString())
         settings.putString(KEY_MOBILE_PLAYER_AMBIENT_GLOW, updated.ambientGlow.toString())
-        settings.putString(KEY_MOBILE_PLAYER_COVER_SWIPE, updated.coverSwipeGesture.toString())
         settings.putString(KEY_MOBILE_PLAYER_WAVY_SEEKBAR, updated.useWavySeekBar.toString())
         settings.putString(KEY_MOBILE_PLAYER_LYRICS_LINES, updated.lyricsLines.toString())
         settings.putString(KEY_MOBILE_PLAYER_LYRICS_FONT_SIZE, updated.lyricsFontSizeSp.toString())
@@ -1253,6 +1325,18 @@ object AppModel {
                 }
         }
         modelScope.launch {
+            playback.state
+                .map { it.currentTrack?.coverUrl }
+                .distinctUntilChanged()
+                .collectLatest { url ->
+                    if (url.isNullOrBlank()) {
+                        _currentCoverFluidPalette.value = null
+                        return@collectLatest
+                    }
+                    _currentCoverFluidPalette.value = resolveCoverFluidPalette(url)
+                }
+        }
+        modelScope.launch {
             // 一个进程只尝试一次：壁纸在运行中不会变，失败（没有壁纸 / 是动态壁纸）
             // 也不该在用户每次切来源时重试一遍解码。
             var attempted = false
@@ -1263,6 +1347,32 @@ object AppModel {
                     runCatching { cp.player.app.ui.theme.platformWallpaperSeed() }.getOrNull()
             }
         }
+    }
+
+    /** 取封面流体色盘：先查缓存，未命中才解码 + 提取。任何异常都退化为 null。 */
+    private suspend fun resolveCoverFluidPalette(url: String): List<androidx.compose.ui.graphics.Color>? {
+        cp.player.app.ui.theme.CoverFluidPaletteCache.get(url, dark = true)?.let { return it }
+        val bitmap = runCatching {
+            cp.player.app.ui.theme.loadCoverBitmap(
+                url,
+                cp.player.app.ui.theme.CoverSampleSizePx,
+            )
+        }.getOrNull()
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (bitmap == null) return null
+        val darkPalette = runCatching {
+            cp.player.app.ui.theme.extractCoverFluidPalette(bitmap, dark = true)
+        }.getOrNull()
+        val lightPalette = runCatching {
+            cp.player.app.ui.theme.extractCoverFluidPalette(bitmap, dark = false)
+        }.getOrNull()
+        if (darkPalette != null) {
+            cp.player.app.ui.theme.CoverFluidPaletteCache.put(url, dark = true, darkPalette)
+        }
+        if (lightPalette != null) {
+            cp.player.app.ui.theme.CoverFluidPaletteCache.put(url, dark = false, lightPalette)
+        }
+        return darkPalette
     }
 
     /** 取封面种子色：先查缓存，未命中才解码 + 量化。任何异常都退化为 null。 */
@@ -1891,7 +2001,7 @@ object AppModel {
      * 用于冷启动、弱网或离线时秒级恢复身份，避免界面闪烁或误显示「未登录」。
      */
     fun getCachedUserProfile(): UserProfile? {
-        val pId = activeProvider()?.id ?: activeProviderId() ?: return null
+        val pId = activeProvider()?.id ?: activeProviderId()
         val activeUid = cp.player.app.auth.AccountStore.activeUid(pId) ?: return null
         val saved = cp.player.app.auth.AccountStore.list(pId).firstOrNull { it.uid == activeUid } ?: return null
         return UserProfile(
@@ -2049,10 +2159,7 @@ object AppModel {
      * 3. 该音源至少有一个订阅（没有目标就不该占连接）。
      */
     fun syncMessageWatch() {
-        val shouldRun = userProfileFlow.value != null &&
-            messageNotifyPrefs.isMasterEnabled() &&
-            messageNotifyPrefs.subscribedCount(activeProviderId()) > 0
-        if (shouldRun) messageWatch.start(modelScope) else messageWatch.stop()
+        messageWatch.sync(modelScope)
     }
 
     /** 该联系人是否已开启新消息通知（当前音源下）。 */
@@ -2073,7 +2180,7 @@ object AppModel {
     fun messageNotifyMasterEnabled(): Boolean = messageNotifyPrefs.isMasterEnabled()
 
     fun setMessageNotifyMasterEnabled(enabled: Boolean) {
-        messageNotifyPrefs.setMasterEnabled(enabled)
+        messageWatch.setMasterEnabled(enabled)
         syncMessageWatch()
         if (enabled) messageWatch.tickNow(modelScope)
     }
@@ -2087,8 +2194,7 @@ object AppModel {
      * @return 切换后的状态
      */
     fun toggleMessageNotify(uid: Long, enabled: Boolean = !isMessageNotifySubscribed(uid)): Boolean {
-        if (enabled && !messageNotifyPrefs.isMasterEnabled()) messageNotifyPrefs.setMasterEnabled(true)
-        messageNotifyPrefs.setSubscribed(activeProviderId(), uid, enabled)
+        messageWatch.setSubscription(activeProviderId(), uid, enabled)
         syncMessageWatch()
         // 立刻跑一轮：用户刚开开关，马上看到效果才像「生效了」（否则最多等 45s）。
         if (enabled) messageWatch.tickNow(modelScope)
@@ -2143,7 +2249,7 @@ object AppModel {
      * **旧 cookie 的那次请求**；不取消的话，慢响应回来会把旧 uid 写回 _userProfile
      * 并再 bump 一次账号代际 —— 界面表现为「刚注销，昵称又冒出来了」。
      */
-    fun clearUserProfile() {
+    suspend fun clearUserProfile() {
         // 1) 先掐掉在途请求，再谈清状态 —— 顺序反了就会被慢响应写回。
         profileRefreshJob?.cancel()
         profileRefreshJob = null
@@ -2165,7 +2271,15 @@ object AppModel {
         runCatching { clearListeningRecords() }
 
         // 3) 播放现场：队列 + 「保留上次播放」快照。不清的话重启会把这些恢复出来。
-        runCatching { playback.clearQueue() }
+        // 清队列必须属于登出完成屏障：若丢到 Default 上 fire-and-forget，
+        // 新会话可能先开始播放，之后迟到的清理会把新队列也停掉。
+        try {
+            withContext(NonCancellable + Dispatchers.Default) { playback.clearQueue() }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            // 账号清理不因播放器异常而失败；但不吞协程取消。
+        }
 
         // 4) 收藏集合（内存）。
         modelScope.launch { runCatching { playback.refreshFavorites() } }
@@ -2180,7 +2294,7 @@ object AppModel {
     /**
      * 清空搜索历史（持久化键 search_history）。
      *
-     * 键是**全局单例**而不是按账号存的（见 SearchScreenModel），所以换号后
+     * 键是**全局单例**而不是按账号存的（见 SearchPresenter），所以换号后
      * 新用户会直接看到上一个账号的搜索词 —— 登出必须清掉。
      */
     fun clearSearchHistory() {
@@ -2190,10 +2304,10 @@ object AppModel {
     // ============ 最近播放（持久化） ============
 
     private val KEY_RECENT_TRACKS = "recent_tracks"
-    private val RECENT_LIMIT = 30
+    private val RECENT_LIMIT = cp.player.app.recent.RECENT_TRACKS_LIMIT
 
     /**
-     * 搜索历史键。必须与 `SearchScreenModel` 里的 `SEARCH_HISTORY_KEY` 保持**同一个字面量** ——
+     * 搜索历史键。必须与 `SearchPresenter` 里的 `SEARCH_HISTORY_KEY` 保持**同一个字面量** ——
      * 那边是私有常量，登出清理走 [clearSearchHistory] 时要用同一个键才删得掉。
      */
     private val KEY_SEARCH_HISTORY = "search_history"
@@ -2211,9 +2325,15 @@ object AppModel {
             var lastRecordedId: String? = null
             playback.state.collect { st ->
                 val track = st.currentTrack
-                if (track != null && st.isPlaying && track.id != lastRecordedId) {
-                    lastRecordedId = track.id
-                    recordRecentTrack(track)
+                // 队列条目持有的是规范 mediaId；用它覆盖裸 id，后续切源后
+                // 才能仅凭最近播放条目判断它属于哪个音源。
+                val queueMediaId = st.queue.getOrNull(st.currentIndex)?.mediaId
+                val recordedId = queueMediaId?.takeIf { it.isNotBlank() } ?: track?.id
+                if (track != null && st.isPlaying && recordedId != null && recordedId != lastRecordedId) {
+                    lastRecordedId = recordedId
+                    recordRecentTrack(
+                        if (recordedId == track.id) track else track.copy(id = recordedId),
+                    )
                 }
             }
         }
@@ -2238,7 +2358,7 @@ object AppModel {
                                 val songs = (result as? cp.player.core.BackendResult.Success<List<cp.player.core.music.TrackSummary>>)?.data.orEmpty()
                                 val provider = activeProviderId()
                                 val existingIds = playback.state.value.queue.map { it.mediaId }.toSet()
-                                val newIds = songs.map { "$provider://song/${it.id}" }.filter { it !in existingIds }
+                                val newIds = songs.map { toMediaId(it.id, provider) }.filter { it !in existingIds }
                                 for (mediaId in newIds) {
                                     playback.addToQueue(mediaId)
                                 }
@@ -2256,7 +2376,7 @@ object AppModel {
         // update 为原子 CAS，避免与 enrich 回写的读改写窗口互覆
         var recorded: List<cp.player.core.music.TrackSummary>? = null
         _recentTracks.update { list ->
-            ((listOf(track) + list.filter { it.id != track.id }).take(RECENT_LIMIT)).also {
+            cp.player.app.recent.mergeRecentTrack(list, track, RECENT_LIMIT).also {
                 recorded = it
             }
         }
@@ -2305,7 +2425,7 @@ object AppModel {
                         ?.let { runCatching { it.content.toLong() }.getOrNull() } ?: 0L,
                     originalMediaId = str("originalMediaId").ifBlank { null },
                 )
-            }
+            }.take(RECENT_LIMIT)
         }.getOrDefault(emptyList())
     }
 
@@ -2337,10 +2457,13 @@ object AppModel {
                 val details = (result as? cp.player.core.BackendResult.Success)?.data
                     ?: return@runCatching
                 if (details.isEmpty()) return@runCatching
-                // mediaId → 详情；同时按裸 id 建索引（新记录条目可能已存完整 mediaId）
+                // mediaId → 详情；裸 id 的旧条目按「音源 + 资源 id」建索引。
+                // 不能只用裸 id：两个音源可以有相同的数字 id，混用会把封面补到别的歌上。
                 val byMediaId = details.associateBy { it.id }
-                val byBareId = details.associateBy {
-                    it.id.substringAfterLast("/", it.id)
+                val byProviderRawId = details.associateBy { detail ->
+                    val detailProvider = cp.player.core.music.CPMediaId.parseOrNull(detail.id)?.providerId
+                        ?: providerId
+                    detailProvider to cp.player.core.music.CPMediaId.toRawResourceId(detail.id)
                 }
                 // 以「最新」列表为基线按 id 合并，仅回填缺失字段，
                 // 保留挂起期间 historyRecorder 新写入的条目与顺序（避免旧快照整体覆盖）
@@ -2349,7 +2472,9 @@ object AppModel {
                 _recentTracks.update { latest ->
                     val merged = latest.map { t ->
                         val mediaId = if (t.id.contains("://")) t.id else "$providerId://song/${t.id}"
-                        val fresh = byMediaId[mediaId] ?: byBareId[t.id]
+                        val trackProvider = cp.player.app.recent.recentTrackProviderId(t, providerId)
+                        val rawId = cp.player.core.music.CPMediaId.toRawResourceId(t.id)
+                        val fresh = byMediaId[mediaId] ?: byProviderRawId[trackProvider to rawId]
                         ?: return@map t
                         if (fresh.coverUrl.isNullOrBlank()) return@map t
                         // 仅回填缺失字段（幂等：字段已有时保持原值）
@@ -3274,6 +3399,14 @@ object AppModel {
         }
         return result
     }
+
+    /** 旧版非 SDK Provider API V1/V3 的待清理列表；仅用于确认弹窗展示。 */
+    fun legacyProviderModulesToRemove(): List<cp.player.core.provider.LegacyProviderModule> =
+        backend.findLegacyProviderModules()
+
+    /** 保存用户确认的清理请求；目标版本真正启动后才删除仍匹配的旧模块目录。 */
+    fun scheduleLegacyProviderCleanup(ids: Set<String>, targetVersionName: String): BackendResult<Unit> =
+        backend.queueLegacyProviderCleanup(ids, targetVersionName)
 
     val lastLoadError: String? get() = backend.lastLoadError
 }

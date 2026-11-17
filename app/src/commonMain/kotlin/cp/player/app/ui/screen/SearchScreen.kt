@@ -1,6 +1,7 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -35,15 +37,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.zIndex
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.presentation.navigation.AppRoute
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.AlbumItem
 import cp.player.app.ui.component.ArtistItem
@@ -53,6 +57,7 @@ import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSearchField
 import cp.player.app.ui.component.CpSearchFieldHeight
 import cp.player.app.ui.component.CpSearchSuggestionPanel
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.CpSectionHeaderSkeleton
 import cp.player.app.ui.component.CpSkeletonCaption
 import cp.player.app.ui.component.CpSongRowSkeleton
@@ -64,7 +69,9 @@ import cp.player.app.ui.component.SectionHeader
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.StateSurface
+import cp.player.app.ui.component.cpBounceClickable
 import cp.player.app.ui.component.PlaylistItem
+import cp.player.app.ui.component.PlaylistMenuActions
 import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.component.playlistShareText
@@ -72,6 +79,8 @@ import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.shareText
 import cp.player.app.ui.model.SearchScreenModel
 import cp.player.app.repository.SearchType
+import cp.player.app.ui.theme.CpShapes
+import cp.player.core.music.isRemote
 import kotlinx.coroutines.launch
 
 /**
@@ -81,6 +90,25 @@ import kotlinx.coroutines.launch
  * 控件**，内部的节奏要紧；区块间距留给「最近搜索」↔「热门搜索」那种真正的分组。
  */
 private val SearchFieldTopPadding = 12.dp
+
+/** 最近搜索默认展示的条数；超出的部分折叠进 `+N` 卡片。 */
+private const val HistoryPreviewCount = 9
+
+private val HistoryCardHeight = 44.dp
+
+/**
+ * 最近搜索卡片的宽度按文字长度分级。
+ *
+ * 固定等宽会让「周杰伦」占一整行、「晴天」旁边空一大块；按长度分四档后，
+ * 短词是胶囊、长词是宽卡，扫视时更接近 M3 Expressive 的「内容决定形状」。
+ * 最大宽度仍受限，避免长关键词把一行挤成一张通栏卡。
+ */
+private fun historyCardWidth(keyword: String): Dp = when (keyword.length) {
+    in 0..3 -> 92.dp
+    in 4..6 -> 148.dp
+    in 7..10 -> 190.dp
+    else -> 228.dp
+}
 
 class SearchScreen(private val initialQuery: String = "") : Screen {
     /**
@@ -110,7 +138,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         val scope = rememberCoroutineScope()
         val provider = AppModel.activeProviderId()
         val toMediaId = { id: String -> AppModel.toMediaId(id, provider) }
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
 
         // 歌单搜索结果那一行右侧的「更多」需要一个动作来源：本页没有自己的
         // ScreenModel，就借 HomeScreenModel 现成的那几个歌单动作（播放 / 队列 /
@@ -121,6 +149,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         val playlistActions = androidx.compose.runtime.remember {
             cp.player.app.ui.model.HomeScreenModel(loadDiscovery = false)
         }
+        val s = cpStrings()
         var playlistOptionsTarget by androidx.compose.runtime.remember {
             androidx.compose.runtime.mutableStateOf<cp.player.core.music.PlaylistSummary?>(null)
         }
@@ -131,7 +160,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         //  (b) 被首页 push 出来的路由页 —— 需要自己的标题与返回键（否则宽屏平板无顶栏、
         //      无返回，桌面窗口标题也会停在「首页」）。
         // 判据用「本实例是不是导航栈顶」：tab 形态下栈顶是 tab 宿主，不是本页。
-        val isRoutePage = navigator.lastItem === this
+        val isRoutePage = navigator.currentKey == key
 
         // 桌面标题栏的全局搜索框把关键词投递到这里。它是唯一消费者（MainScreen 只负责切 tab，
         // 不消费），所以这里喂给 ScreenModel 后立刻置回 null。见 DesktopShell 的 KDoc。
@@ -155,6 +184,8 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         }
         // 「清空搜索历史」的二次确认：一键即生效会把积累的搜索痕迹一次抹掉。
         val confirm = cp.player.app.ui.component.rememberConfirmState()
+        // 最近搜索默认只铺 9 条；`+N` 卡片展开后显示全部（模型最多保留 30 条）。
+        var historyExpanded by remember { mutableStateOf(false) }
 
         // 搜索框焦点：既是建议下拉的显示判据（失焦即收起），也是本页「点别处关闭下拉」的
         // 唯一手段 —— 下拉是浮层，只能靠焦点语义判断「用户已经去干别的了」。
@@ -316,16 +347,14 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                         },
                                     )
                                 }
-                                items(state.searchHistory.size) { index ->
-                                    val keyword = state.searchHistory[index]
-                                    Row(
-                                        Modifier.fillMaxWidth().clickable { model.search(keyword) }.padding(vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Icon(Icons.Filled.History, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Spacer(Modifier.width(12.dp))
-                                        CpText(keyword)
-                                    }
+                                item {
+                                    SearchHistoryFlow(
+                                        history = state.searchHistory,
+                                        expanded = historyExpanded,
+                                        onSearch = { model.search(it) },
+                                        onExpand = { historyExpanded = true },
+                                        onCollapse = { historyExpanded = false },
+                                    )
                                 }
                             }
                             if (state.query.isBlank()) {
@@ -352,7 +381,13 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                         Column(Modifier.weight(1f)) {
                                             CpText(hot.keyword, maxLines = 1)
                                             if (hot.description.isNotBlank()) {
-                                                CpText(hot.description, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                                                // 热词说明是「这个词指什么」的唯一解释（常带
+                                                // 歌手 / 专辑 / 事件），单行会把关键部分裁掉。
+                                                CpText(
+                                                    hot.description,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    maxLines = 2,
+                                                )
                                             }
                                         }
                                         Icon(Icons.AutoMirrored.Filled.TrendingUp, null, tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
@@ -395,7 +430,15 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                     end = CpSpacing.pageHorizontal,
                                     bottom = 32.dp,
                                 ),
-                                verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
+                                // 歌单卡片比歌曲裸行多一层边界，行距用 4dp；
+                                // 歌曲 / 专辑 / 歌手结果保持全应用统一的 2dp。
+                                verticalArrangement = Arrangement.spacedBy(
+                                    if (state.searchType == SearchType.PLAYLIST) {
+                                        CpSpacing.playlistRowGap
+                                    } else {
+                                        CpSpacing.listRowGap
+                                    },
+                                ),
                             ) {
                                 item {
                                     SectionHeader(
@@ -427,7 +470,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                                         scope.launch { AppModel.playback.playQueue(result.songs.map { toMediaId(it.id) }, index) }
                                                     },
                                                     onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
-                                                        { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
+                                                        { navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId", title = "${track.name} - MV")) }
                                                     },
                                                     isFavorite = track.id in likedIds,
                                                     onToggleFavorite = {
@@ -463,18 +506,42 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                             album = album,
                                             modifier = Modifier.animateItem(),
                                             // 进得去真正的专辑详情页 —— 这一条以前是**打不开任何东西**的。
-                                            onClick = { navigator.push(AlbumDetailScreen(album.id, album)) },
+                                            onClick = { navigator.push(AppRoute.AlbumDetail(album.id, album)) },
                                         )
                                     }
                                     SearchType.PLAYLIST -> itemsIndexed(result.playlists, key = { _, playlist -> "playlist-${playlist.resourceId}" }) { _, playlist ->
+                                        val menuActions = if (playlist.isRemote) {
+                                            PlaylistMenuActions(
+                                                isOwner = false,
+                                                onPlay = {
+                                                    playlistActions.playPlaylist(playlist, s)
+                                                    playlistOptionsTarget = null
+                                                },
+                                                onAddToQueue = {
+                                                    playlistActions.queuePlaylist(playlist, s)
+                                                    playlistOptionsTarget = null
+                                                },
+                                                onDownload = {
+                                                    playlistActions.downloadPlaylist(playlist, s)
+                                                    playlistOptionsTarget = null
+                                                },
+                                                onShare = {
+                                                    shareText(playlistShareText(playlist.resourceId, playlist.name))
+                                                },
+                                            )
+                                        } else {
+                                            null
+                                        }
                                         PlaylistItem(
                                             playlist = playlist,
                                             isOwner = false,
-                                            onClick = { navigator.push(PlaylistDetailScreen(playlist)) },
+                                            onClick = { navigator.push(AppRoute.PlaylistDetail(playlist)) },
                                             // 点击弹歌单动作菜单（原先传的是空 lambda，
                                             // 按钮画得出来、点下去毫无反应）。
                                             // 搜索结果里的歌单都来自上游，isOwner 恒 false。
                                             onOptionsClick = { playlistOptionsTarget = playlist },
+                                            // 桌面端「更多 / 右键」与曲库共用同一份动作集合。
+                                            menuActions = menuActions,
                                         )
                                     }
                                     SearchType.ARTIST -> itemsIndexed(result.artists, key = { _, artist -> "artist-${artist.resourceId}" }) { _, artist ->
@@ -482,7 +549,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                                             artist = artist,
                                             subtitle = "歌手",
                                             modifier = Modifier.animateItem(),
-                                            onClick = { navigator.push(UserProfileScreen(artist.id, artist.name, artist.resourceId)) },
+                                            onClick = { navigator.push(AppRoute.UserProfile(artist.id, artist.name, artist.resourceId)) },
                                         )
                                     }
                                 }
@@ -499,7 +566,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
             // 双栏右栏则由容器接管）。
             CpRouteScaffold(
                 title = "搜索",
-                onBack = if (navigator.size > 1) ({ navigator.pop() }) else null,
+                onBack = if (navigator.depth > 1) ({ navigator.pop() }) else null,
             ) { routeBody(it) }
         } else {
             // tab 形态：正文原样输出，顶栏由外壳承担。
@@ -537,9 +604,17 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                 },
                 onAddToPlaylist = { addToPlaylistTrack = track },
                 onDownload = { AppModel.downloadTrack(track) },
+                onShowInfo = { showInfoTarget = track },
                 onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
-                    { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
+                    { navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId", title = "${track.name} - MV")) }
                 },
+            )
+        }
+
+        showInfoTarget?.let { track ->
+            cp.player.app.ui.component.SongDetailInfoDialog(
+                track = track,
+                onDismiss = { showInfoTarget = null },
             )
         }
 
@@ -550,76 +625,130 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
             )
         }
 
-        // 歌单「更多」：桌面端弹锚定菜单（与右键、歌单详情页左栏同一份 items），
-        // 非桌面（触屏 / 无窗口 chrome 的宽屏平板）回落到底部弹层。
+        // 歌单「更多」：桌面端由 PlaylistItem 内部锚定菜单处理（与右键同一份 items），
+        // 这里只负责非桌面（触屏 / 无窗口 chrome 的宽屏平板）的底部弹层。
         // PlaylistItem 的更多按钮位置不固定（列表很长时会滚到屏外），
         // 所以菜单/弹层挂在**页面级**状态上，而不是行内联一个 CpAnchoredMenu。
         playlistOptionsTarget?.let { playlist ->
-            // 本地虚拟歌单（id ≤ 0）没有服务端实体，搜索页理论上拿不到，
-            // 但判据与侧栏 / 详情页共用一条，避免哪天上游塞进来一个负数 id。
-            val menuItems = if (playlistActions.isServerPlaylist(playlist)) {
-                cp.player.app.ui.component.playlistContextMenuItems(
-                    cp.player.app.ui.component.PlaylistMenuActions(
-                        // 搜索结果里的歌单不可能是「我建的」，删除入口因此不会出现。
-                        isOwner = false,
-                        onPlay = {
-                            playlistActions.playPlaylist(playlist)
-                            playlistOptionsTarget = null
-                        },
-                        onAddToQueue = {
-                            playlistActions.queuePlaylist(playlist)
-                            playlistOptionsTarget = null
-                        },
-                        onDownload = {
-                            playlistActions.downloadPlaylist(playlist)
-                            playlistOptionsTarget = null
-                        },
-                        onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
-                    )
-                )
-            } else {
-                emptyList()
-            }
-            val windowChromeActive = cp.player.app.ui.component.LocalWindowChromeActive.current
-            if (windowChromeActive && menuItems.isNotEmpty()) {
-                // 桌面端没有可锚定的按钮（列表项可能已经滚出可视区），
-                // 用一层全屏透明点击层把菜单挂在页面中心偏上 —— 点空白处即收起。
-                Box(Modifier.fillMaxSize()) {
-                    androidx.compose.material3.DropdownMenu(
-                        expanded = true,
-                        onDismissRequest = { playlistOptionsTarget = null },
-                    ) {
-                        menuItems.forEach { item ->
-                            androidx.compose.material3.DropdownMenuItem(
-                                text = { CpText(item.label) },
-                                onClick = {
-                                    // 与 CpContextMenuPanel 同一顺序：先收面板再执行动作。
-                                    playlistOptionsTarget = null
-                                    item.onClick()
-                                },
-                            )
-                        }
-                    }
-                }
-            } else {
-                cp.player.app.ui.component.PlaylistOptionsSheet(
-                    playlistName = playlist.name,
-                    isOwner = false,
-                    onDismiss = { playlistOptionsTarget = null },
-                    onPlay = {
-                        playlistActions.playPlaylist(playlist)
-                        playlistOptionsTarget = null
-                    },
-                    onAddToQueue = {
-                        playlistActions.queuePlaylist(playlist)
-                        playlistOptionsTarget = null
-                    },
-                    onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
-                    coverUrl = playlist.coverUrl,
-                )
-            }
+            // 桌面端行的「更多」不会再走到这里；只有触屏形态会设置该目标。
+            cp.player.app.ui.component.PlaylistOptionsSheet(
+                playlistName = playlist.name,
+                isOwner = false,
+                onDismiss = { playlistOptionsTarget = null },
+                onPlay = {
+                    playlistActions.playPlaylist(playlist, s)
+                    playlistOptionsTarget = null
+                },
+                onAddToQueue = {
+                    playlistActions.queuePlaylist(playlist, s)
+                    playlistOptionsTarget = null
+                },
+                onDownload = {
+                    playlistActions.downloadPlaylist(playlist, s)
+                    playlistOptionsTarget = null
+                },
+                onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
+                coverUrl = playlist.coverUrl,
+            )
         }
 
         cp.player.app.ui.component.CpConfirmHost(confirm)
+    }
+}
+
+/**
+ * 最近搜索的流式卡片布局。
+ *
+ * 默认只铺 [HistoryPreviewCount] 条，剩余记录收进 `+N` 卡片；展开后显示全部并给出
+ * 「收起」。独立成 internal composable 是为了让离屏版式探针能直接渲染真实布局，
+ * 而不是在测试里复制一份宽度规则。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun SearchHistoryFlow(
+    history: List<String>,
+    expanded: Boolean,
+    onSearch: (String) -> Unit,
+    onExpand: () -> Unit,
+    onCollapse: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shown = if (expanded) history else history.take(HistoryPreviewCount)
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        shown.forEach { keyword ->
+            SearchHistoryCard(keyword = keyword, onClick = { onSearch(keyword) })
+        }
+        if (!expanded && history.size > HistoryPreviewCount) {
+            SearchHistoryMoreCard(
+                label = "+${history.size - HistoryPreviewCount}",
+                onClick = onExpand,
+            )
+        }
+        if (expanded && history.size > HistoryPreviewCount) {
+            SearchHistoryMoreCard(label = "收起", onClick = onCollapse)
+        }
+    }
+}
+
+/**
+ * 一条最近搜索。短词用胶囊、长词用更大的圆角卡 —— 形状本身携带「这条有多长」，
+ * 比一排等宽行更容易扫读。宽度上限 208dp，长关键词只截断显示，不撑破 FlowRow。
+ */
+@Composable
+private fun SearchHistoryCard(
+    keyword: String,
+    onClick: () -> Unit,
+) {
+    val shape = if (keyword.length <= 4) CpShapes.full else MaterialTheme.shapes.large
+    Row(
+        modifier = Modifier
+            .width(historyCardWidth(keyword))
+            .height(HistoryCardHeight)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .cpBounceClickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.History,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        CpText(
+            keyword,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+        )
+    }
+}
+
+/** `+N` / 收起卡片：用次级容器色把「这不是一条历史记录」和真实关键词区分开。 */
+@Composable
+private fun SearchHistoryMoreCard(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .height(HistoryCardHeight)
+            .clip(CpShapes.full)
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .cpBounceClickable(onClick = onClick)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CpText(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            maxLines = 1,
+        )
     }
 }

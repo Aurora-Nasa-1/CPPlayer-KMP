@@ -552,6 +552,7 @@ internal fun PosterExpandedCard(
                         fontSize = if (compact) 20.sp else 12.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
+                        emphasized = compact,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
@@ -605,7 +606,7 @@ internal fun PosterExpandedCard(
                     // 压在封面图的黑渐变上，不跟主题走（同 PosterWallPlayback 的时间行）。
                     color = Color.White.copy(alpha = 0.7f),
                     fontSize = 14.sp,
-                    maxLines = 1,
+                    maxLines = if (compact) 1 else 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = if (compact) 0.dp else 6.dp, bottom = if (compact) 4.dp else 12.dp)
                 )

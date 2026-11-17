@@ -6,6 +6,8 @@ import cp.player.core.media.LocalMediaItem
 import cp.player.core.media.MediaType
 import cp.player.core.provider.BackendProvider
 import cp.player.core.provider.typed.ProviderHost
+import cp.player.core.provider.typed.exchangeLicense
+import cp.player.core.provider.typed.resolveDrm
 import cp.player.core.provider.typed.resolveMv
 import cp.player.core.provider.typed.resolveVideo
 import cp.player.core.provider.typed.getMediaQualities
@@ -16,12 +18,22 @@ import cp.player.core.provider.typed.searchDjRadios
 import cp.player.core.provider.typed.getLikeListPage
 import cp.player.core.provider.typed.getCommentPage
 import cp.player.core.monitor.HealthMonitor
+import cp.player.core.playback.supportedDrmKeySystems
 import cp.player.core.util.PlatformSupport
 import cp.player.core.util.currentTimeMillis
 import cp.player.sdk.*
 import kotlinx.coroutines.CancellationException
 
 private const val UNKNOWN_PROVIDER = "unknown"
+
+/** Canonicalize the key-system aliases Providers may return. */
+private fun canonicalDrmKeySystem(value: String): String? = when (value.trim().lowercase()) {
+    "widevine", "com.widevine.alpha", "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed" -> "widevine"
+    "playready", "com.microsoft.playready" -> "playready"
+    "fairplay", "com.apple.streamingkeydelivery" -> "fairplay"
+    "clearkey", "org.w3.clearkey" -> "clearkey"
+    else -> null
+}
 
 /** Local media or an account-scoped SDK session. No legacy transport or JSON normalization. */
 class UnifiedMusicSourceImpl private constructor(
@@ -605,7 +617,69 @@ class UnifiedMusicSourceImpl private constructor(
         if (id.providerId != host.context.session.providerId)
             return@boundary BackendResult.Unsupported("Cross-provider requests are not supported")
         val provider = activeProvider()?.takeIf { it.id == id.providerId }
-        val resource = host.resolve(ResolveRequest(id.resourceId, provider?.resolveQualityKey(level) ?: level))
+        val requestedQuality = provider?.resolveQualityKey(level) ?: level
+        val platformDrm = supportedDrmKeySystems()
+        if (platformDrm.isNotEmpty()) {
+            val resolved = try {
+                host.resolveDrm(DrmResolveRequest(id.resourceId, requestedQuality, platformDrm))
+            } catch (e: ProviderException) {
+                // An unsupported key system is the documented fallback to clear
+                // preview; every other failure must stay visible to the caller.
+                if (e.failure.category == FailureCategory.UNSUPPORTED) null else throw e
+            }
+            if (resolved != null) {
+                val descriptor = resolved.drm
+                val keySystem = descriptor?.let { canonicalDrmKeySystem(it.keySystem) }
+                if (descriptor == null || (keySystem != null && keySystem in platformDrm)) {
+                    val resolvedResource = resolved.resource
+                    val quality = provider?.resolveQualityOption(resolvedResource.actualQuality)
+                    val drm = descriptor?.let { item ->
+                        DrmPlaybackInfo(
+                            keySystem = keySystem ?: return@boundary BackendResult.Unsupported(
+                                "Unsupported DRM key system: ${item.keySystem}",
+                            ),
+                            licenseUrl = item.licenseUrl,
+                            headers = item.headers.associate { header -> header.name to header.value },
+                            schemeIdUri = item.schemeIdUri,
+                            initData = item.initData,
+                            keyId = item.keyId,
+                            keyUri = item.keyUri,
+                            serverCertificate = item.serverCertificate,
+                            persistent = item.persistent,
+                            exchangeLicense = if (item.licenseUrl == null) {
+                                { challenge ->
+                                    host.exchangeLicense(
+                                        LicenseRequest(
+                                            id = id.resourceId,
+                                            keySystem = keySystem,
+                                            challenge = challenge,
+                                            licenseUrl = item.licenseUrl,
+                                            headers = item.headers,
+                                            keyUri = item.keyUri,
+                                        ),
+                                    ).license
+                                }
+                            } else {
+                                null
+                            },
+                        )
+                    }
+                    return@boundary BackendResult.Success(SongUrl(
+                        url = resolvedResource.url,
+                        level = quality?.targetQuality ?: resolvedResource.actualQuality,
+                        sizeBytes = resolvedResource.sizeBytes,
+                        expireAt = resolvedResource.expiresAtEpochMs,
+                        headers = resolvedResource.headers.associate { it.name to it.value },
+                        codec = resolvedResource.format,
+                        bitrate = resolvedResource.bitrate,
+                        qualityKey = resolvedResource.actualQuality,
+                        qualityLabel = quality?.label,
+                        drm = drm,
+                    ))
+                }
+            }
+        }
+        val resource = host.resolve(ResolveRequest(id.resourceId, requestedQuality))
         val quality = provider?.resolveQualityOption(resource.actualQuality)
         BackendResult.Success(SongUrl(
             url = resource.url, level = quality?.targetQuality ?: resource.actualQuality, sizeBytes = resource.sizeBytes,

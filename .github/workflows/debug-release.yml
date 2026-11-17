@@ -98,6 +98,12 @@ jobs:
 
       - name: Generate release notes
         shell: bash
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || secrets.OPENAI_MODEL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL }}
         run: |
           bash scripts/generate_release_notes.sh "${{ steps.meta.outputs.tag }}" "${{ runner.temp }}/RELEASE_NOTES.md"
 

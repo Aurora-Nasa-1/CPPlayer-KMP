@@ -46,6 +46,9 @@ interface AccountStrings {
     // —— 登录区 ——
     val addAccount: String
     val loginMethod: String
+    val loginAccount: String
+    fun loginAs(provider: String): String
+    fun loginAsAccount(provider: String): String
     val loggingIn: String
     val channelQr: String
     val channelEmail: String
@@ -58,14 +61,6 @@ interface AccountStrings {
      * 找到它的 —— 译成中文反而对不上。别当漏译改掉。
      */
     val channelCookie: String
-    val channelWebview: String
-
-    val webviewLoginTitle: String
-    val webviewLoginHint: String
-    val openWebviewLogin: String
-    val fetchWebviewUrl: String
-    val webviewUrlLoading: String
-    val webviewUrlFailed: String
     val verifyRequired: String
     val verifyRequiredTitle: String
     val verifyUrlHint: String
@@ -98,6 +93,9 @@ interface AccountStrings {
     fun providerMeta(type: String, version: String): String
 
     val switchProvider: String
+    val providerSettings: String
+    val providerCustomSettings: String
+    fun providerCustomSettingsNote(name: String): String
     val sectionIsolation: String
     val isolationTitle: String
     val isolationSubtitle: String
@@ -138,6 +136,10 @@ interface AccountStrings {
     val qrLoadFailed: String
     val refreshQr: String
     val saveQr: String
+    val savingQr: String
+    val qrSavedToGallery: String
+    fun qrSavedTo(path: String): String
+    val qrSaveFailed: String
 
     /**
      * 「这张二维码是上次没扫完、这次恢复出来的」常显提示（登录页顶部）。
@@ -161,6 +163,8 @@ interface AccountStrings {
     val passwordLabel: String
     val passwordNote: String
     val phoneLabel: String
+    /** 国际区号，不带 `+`（例如 86 / 1 / 44）。 */
+    val countryCodeLabel: String
     val imageCaptchaLabel: String
 
     /** @param action 「换一张」按钮的显示名（句子里要点到它，所以做成函数）。 */
@@ -168,6 +172,8 @@ interface AccountStrings {
 
     val refreshCaptcha: String
     val captchaOrPassword: String
+    val smsCodeLogin: String
+    val passwordLogin: String
     val sendCaptcha: String
 
     // —— Cookie 登录 ——
@@ -297,6 +303,12 @@ interface AccountStrings {
     /** @param name 歌曲名。 */
     fun cloudDeleted(name: String): String
 
+    /** @param count 删除的歌曲数（多选删除）。 */
+    fun cloudDeleteManyMessage(count: Int): String
+
+    /** @param count 已删除的歌曲数（多选删除）。 */
+    fun cloudDeletedMany(count: Int): String
+
     val cloudDeleteFailed: String
 }
 
@@ -310,19 +322,14 @@ object AccountStringsZh : AccountStrings {
 
     override val addAccount = "添加账号"
     override val loginMethod = "登录方式"
+    override val loginAccount = "登录账号"
+    override fun loginAs(provider: String) = "登录 $provider"
+    override fun loginAsAccount(provider: String) = "登录 $provider 账号"
     override val loggingIn = "登录中…"
     override val channelQr = "扫码登录"
     override val channelEmail = "邮箱登录"
     override val channelPhone = "手机号登录"
     override val channelCookie = "Cookie 登录"
-    override val channelWebview = "WebView 登录"
-
-    override val webviewLoginTitle = "WebView 网页登录"
-    override val webviewLoginHint = "在系统或内置 WebView 浏览器中打开音源登录页，登录完成后将 Cookie 复制回应用或返回刷新状态。"
-    override val openWebviewLogin = "打开 WebView 登录"
-    override val fetchWebviewUrl = "获取网页登录网址"
-    override val webviewUrlLoading = "正在获取网页登录网址…"
-    override val webviewUrlFailed = "未能获取到有效的登录网址，请稍后重试"
     override val verifyRequired = "需要完成安全验证"
     override val verifyRequiredTitle = "安全核验与验证码"
     override val verifyUrlHint = "当前登录或验证码发送被安全拦截，请在 WebView 或浏览器中打开以下网址完成滑块或人机验证后继续："
@@ -348,6 +355,9 @@ object AccountStringsZh : AccountStrings {
     override val noProviderNote = "先在音源管理里导入一个 Provider 模块"
     override fun providerMeta(type: String, version: String) = "$type · v$version"
     override val switchProvider = "切换音源"
+    override val providerSettings = "音源配置"
+    override val providerCustomSettings = "音源专属配置"
+    override fun providerCustomSettingsNote(name: String) = "自定义 $name 的各项参数与高级选项"
     override val sectionIsolation = "音源隔离"
     override val isolationTitle = "切音源时同步刷新账号资料"
     override val isolationSubtitle = "关闭后仍会切换登录态（登录态本来就按音源分开存），" +
@@ -374,6 +384,10 @@ object AccountStringsZh : AccountStrings {
     override val qrLoadFailed = "二维码加载失败"
     override val refreshQr = "刷新二维码"
     override val saveQr = "保存二维码"
+    override val savingQr = "保存中…"
+    override val qrSavedToGallery = "二维码已保存到相册"
+    override fun qrSavedTo(path: String) = "二维码已保存到 $path"
+    override val qrSaveFailed = "二维码保存失败，请重试"
     override val qrRestored = "已恢复上次没扫完的二维码 —— 用手机接着扫这一张即可；" +
         "若已经失效，刷新一次就能拿到新的。"
     override val qrResumePrompt = "上次的扫码登录还没完成，二维码已经为你保留；到「账号」页可以接着扫。"
@@ -384,10 +398,13 @@ object AccountStringsZh : AccountStrings {
     override val passwordLabel = "密码"
     override val passwordNote = "密码只发给当前音源，不会离开本机。"
     override val phoneLabel = "手机号"
+    override val countryCodeLabel = "区号"
     override val imageCaptchaLabel = "图形验证码"
     override fun imageCaptchaHint(action: String) = "音源要求人机校验；看不清点「$action」"
     override val refreshCaptcha = "换一张"
     override val captchaOrPassword = "验证码 / 密码"
+    override val smsCodeLogin = "验证码登录"
+    override val passwordLogin = "密码登录"
     override val sendCaptcha = "发送验证码"
 
     override val cookieLabel = "Cookie"
@@ -462,6 +479,8 @@ object AccountStringsZh : AccountStrings {
     override val cloudDelete = "删除"
     override fun cloudDeleteMessage(name: String) = "确定从云盘删除「$name」吗？删除后无法恢复。"
     override fun cloudDeleted(name: String) = "已从云盘删除「$name」"
+    override fun cloudDeleteManyMessage(count: Int) = "确定从云盘删除选中的 $count 首歌曲吗？删除后无法恢复。"
+    override fun cloudDeletedMany(count: Int) = "已从云盘删除 $count 首歌曲"
     override val cloudDeleteFailed = "删除失败"
 }
 
@@ -475,19 +494,14 @@ object AccountStringsEn : AccountStrings {
 
     override val addAccount = "Add account"
     override val loginMethod = "Sign-in method"
+    override val loginAccount = "Sign in"
+    override fun loginAs(provider: String) = "Sign in to $provider"
+    override fun loginAsAccount(provider: String) = "Sign in to your $provider account"
     override val loggingIn = "Signing in…"
     override val channelQr = "Scan a QR code"
     override val channelEmail = "Sign in with email"
     override val channelPhone = "Sign in with a phone number"
     override val channelCookie = "Sign in with a Cookie"
-    override val channelWebview = "Sign in with WebView"
-
-    override val webviewLoginTitle = "WebView web sign-in"
-    override val webviewLoginHint = "Open the provider's login page in WebView or browser. After signing in, copy the Cookie back or return to refresh."
-    override val openWebviewLogin = "Open WebView Sign-in"
-    override val fetchWebviewUrl = "Get web sign-in URL"
-    override val webviewUrlLoading = "Getting web sign-in URL…"
-    override val webviewUrlFailed = "Failed to get a valid login URL. Please try again later."
     override val verifyRequired = "Security verification required"
     override val verifyRequiredTitle = "Security Verification & Captcha"
     override val verifyUrlHint = "Action blocked by security check. Please open the URL in WebView or browser to complete the verification challenge, then continue:"
@@ -513,6 +527,9 @@ object AccountStringsEn : AccountStrings {
     override val noProviderNote = "Import a provider module in provider management first"
     override fun providerMeta(type: String, version: String) = "$type · v$version"
     override val switchProvider = "Switch provider"
+    override val providerSettings = "Provider settings"
+    override val providerCustomSettings = "Provider-specific settings"
+    override fun providerCustomSettingsNote(name: String) = "Customize $name parameters and advanced options"
     override val sectionIsolation = "Provider isolation"
     override val isolationTitle = "Refresh the profile when switching providers"
     override val isolationSubtitle = "Sign-in state still switches (it is kept per provider) — " +
@@ -541,6 +558,10 @@ object AccountStringsEn : AccountStrings {
     override val qrLoadFailed = "Couldn't load the QR code"
     override val refreshQr = "Refresh QR code"
     override val saveQr = "Save QR code"
+    override val savingQr = "Saving…"
+    override val qrSavedToGallery = "QR code saved to your gallery"
+    override fun qrSavedTo(path: String) = "QR code saved to $path"
+    override val qrSaveFailed = "Couldn't save the QR code. Please try again."
     override val qrRestored = "Restored the QR code you didn't finish scanning — " +
         "keep scanning the same one on your phone; if it has expired, refresh for a new one."
     override val qrResumePrompt = "Your last QR sign-in wasn't finished and the code was kept — " +
@@ -552,10 +573,13 @@ object AccountStringsEn : AccountStrings {
     override val passwordLabel = "Password"
     override val passwordNote = "The password is only sent to the current provider and never leaves this device."
     override val phoneLabel = "Phone number"
+    override val countryCodeLabel = "Country code"
     override val imageCaptchaLabel = "Image captcha"
     override fun imageCaptchaHint(action: String) = "This provider requires a human check; tap \"$action\" if it's unreadable"
     override val refreshCaptcha = "Get another"
     override val captchaOrPassword = "Verification code / Password"
+    override val smsCodeLogin = "Use a code"
+    override val passwordLogin = "Use a password"
     override val sendCaptcha = "Send code"
 
     override val cookieLabel = "Cookie"
@@ -631,5 +655,7 @@ object AccountStringsEn : AccountStrings {
     override val cloudDelete = "Delete"
     override fun cloudDeleteMessage(name: String) = "Delete \"$name\" from the cloud drive? This can't be undone."
     override fun cloudDeleted(name: String) = "Deleted \"$name\" from the cloud drive"
+    override fun cloudDeleteManyMessage(count: Int) = "Delete the $count selected songs from the cloud drive? This can't be undone."
+    override fun cloudDeletedMany(count: Int) = "Deleted $count songs from the cloud drive"
     override val cloudDeleteFailed = "Delete failed"
 }

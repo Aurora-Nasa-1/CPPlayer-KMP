@@ -19,30 +19,34 @@ import kotlinx.coroutines.launch
 private val WheelStep = 72.dp
 
 /**
- * 桌面端鼠标滚轮支持：把**垂直滚轮**映射成横向滚动。
+ * 桌面端滚轮兜底：把**垂直滚轮**映射成 `LazyRow` 的横向滚动。
  *
- * 鼠标普遍只有垂直滚轮，而 `LazyRow` 只消费水平滚轮分量，于是悬停在横向卡片行上滚轮时，
- * 事件会冒泡给外层纵向容器 —— 表现为「横向列表一动不动，页面却在上下滚」。
+ * `LazyRow` 只消费水平滚轮分量，纯垂直滚轮会冒泡给外层纵向容器。本 modifier 是给
+ * 「外层已经滚到顶 / 底」时准备的兜底：此时垂直滚轮本来无处可去，拿它来横向翻卡片行。
  *
- * ## 事件阶段为什么必须是 [PointerEventPass.Initial]
+ * ## 为什么必须是 [PointerEventPass.Final]、且先看 `isConsumed`
  *
- * 必须使用 `Initial` pass 而非默认的 `Main` pass。因为同一层级可能并存两个消费者：
+ * 早期实现挂在 `Initial` pass 上**抢先**消费（父节点优先），结果鼠标只要悬停在首页任一
+ * 横向卡片行上，垂直滚轮就被这一行独占，外层纵向列表一步也滚不动。更糟的是两个方向
+ * **不对称**：卡片行停在最左端时 `canScrollBackward == false`（放行，页面能往上滚），
+ * 而 `canScrollForward == true`（消费，页面往下滚不动）—— 用户看到的就是
+ * 「滚轮只能往上滚，往下滚没反应」。首页 / 搜索 / 个人页都有 `LazyScrollRow`，鼠标落在
+ * 卡片行上的概率很高。
  *
- * - 外层纵向滚动容器的 `MouseWheelScrollingLogic`（`ScrollableNode` 里）；
- * - `LazyRow` 自己的横向 `MouseWheelScrollingLogic`。
+ * `Main` pass 不能用来「等别人先消费」：它是**子节点优先**，而本 modifier 挂在外层纵向
+ * 滚动容器的内层，轮到它时外层还没看到事件，`isConsumed` 恒为 false，等于没改。
+ * 只有 `Final` pass 晚于所有 `Initial` / `Main` 消费者，才能准确判断这次滚轮是否已被页面吃掉：
  *
- * `Main` pass 是**子节点优先**：`LazyRow` 内部的滚动逻辑先拿到事件，它只认水平分量、
- * 对纯垂直滚轮返回「不消费」，然后事件**继续冒泡到外层纵向容器**并被它吃掉。
- * 我们的 modifier 挂在 `LazyRow` **外面**，等到它跑的时候 `change.isConsumed` 已经为真。
+ * - 页面还能朝该方向滚 ⇒ `MouseWheelScrollingLogic` 在 `Main` 消费 ⇒ 这里放行，滚轮归页面；
+ * - 页面滚到顶 / 底 ⇒ 没人消费 ⇒ 这里才接管，转成横向位移。
  *
- * `Initial` pass 是**父节点优先**：我们比 `LazyRow` 与外层容器都先看到事件，
- * 可以在它被任何滚动逻辑消费之前决定「接管还是放行」。这正是嵌套滚轮映射该用的阶段。
+ * 这样上下两个方向行为一致，又不丢掉「无水平滚轮时用垂直滚轮翻卡片行」的能力。
+ * Shift+滚轮 / 水平滚轮在事件层就是 `delta.x != 0`，由 `LazyRow` 原生消费，与本 modifier 无关。
  *
  * ## 只在「还能朝该方向滚」时才消费
  *
- * 滚到尽头就把滚轮**还给外层**纵向容器，页面能继续往下滚 —— 否则横向列表会成为
- * 鼠标滚轮的「死区」（悬停在它上面时页面永远滚不动）。判定用
- * `canScrollForward` / `canScrollBackward`，与 `LazyListState` 在动画中的实际状态同源。
+ * 横向行也到尽头时不消费，滚轮继续冒泡（虽然 `Final` 之后已没有消费者，但保持语义清晰）。
+ * 判定用 `canScrollForward` / `canScrollBackward`，与 `LazyListState` 在动画中的实际状态同源。
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -54,14 +58,13 @@ actual fun Modifier.desktopHorizontalWheelScroll(state: LazyListState): Modifier
     // ⚠️ 必须写 `by ... ` 取 `.value`，不能 `val latestState = rememberUpdatedState(state)`
     // 之后直接 `.canScrollForward` —— 拿到的是 `State<LazyListState>` 本身，不是 state。
     val latestState by rememberUpdatedState(state)
-    return this.onPointerEvent(PointerEventType.Scroll, PointerEventPass.Initial) { event ->
+    return this.onPointerEvent(PointerEventType.Scroll, PointerEventPass.Final) { event ->
+        // 外层纵向滚动容器已消费 ⇒ 滚轮归页面，横向行不抢。
+        if (event.changes.any { it.isConsumed }) return@onPointerEvent
         val change = event.changes.firstOrNull() ?: return@onPointerEvent
-        // 已经有人处理过（例如水平滚轮 / Shift+滚轮被 LazyRow 自己接走了）就别抢。
-        if (change.isConsumed) return@onPointerEvent
         val delta = change.scrollDelta
         // 水平滚轮（含 Shift+滚轮在多数驱动上的形态）交给 LazyRow 原生处理。
         if (delta.x != 0f || delta.y == 0f) return@onPointerEvent
-        // 滚到尽头就不消费，把滚轮还给外层纵向容器，页面能继续往下滚。
         val canScroll = if (delta.y > 0f) {
             latestState.canScrollForward
         } else {

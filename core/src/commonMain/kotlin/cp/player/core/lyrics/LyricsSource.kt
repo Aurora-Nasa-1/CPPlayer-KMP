@@ -119,10 +119,11 @@ object BuiltinLyricsSourceIds {
     const val SIDECAR = "builtin.sidecar"
     const val EMBEDDED = "builtin.embedded"
     const val AMLL = "builtin.amll"
+    const val LRCLIB = "builtin.lrclib"
     const val PROVIDER = "builtin.provider"
 
-    /** 默认顺序（首次安装 / 老配置迁移的兜底）：边车 -> 内嵌 -> AMLL -> 音源 */
-    val DEFAULT_ORDER = listOf(SIDECAR, EMBEDDED, AMLL, PROVIDER)
+    /** 默认顺序（首次安装 / 老配置迁移的兜底）：边车 -> 内嵌 -> AMLL -> LrcLib -> 音源 */
+    val DEFAULT_ORDER = listOf(SIDECAR, EMBEDDED, AMLL, LRCLIB, PROVIDER)
 
-    val ALL = setOf(SIDECAR, EMBEDDED, AMLL, PROVIDER)
+    val ALL = setOf(SIDECAR, EMBEDDED, AMLL, LRCLIB, PROVIDER)
 }

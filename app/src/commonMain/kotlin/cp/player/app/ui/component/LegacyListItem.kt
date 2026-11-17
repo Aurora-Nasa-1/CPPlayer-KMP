@@ -120,6 +120,35 @@ fun legacySegmentShape(index: Int, total: Int): Shape {
 }
 
 /**
+ * 网格版分段圆角：把 2×3 磁贴拼成一张 M3E list。
+ *
+ * 只有整组最外圈的四个角取 [SegmentOuterRadius]，其余相邻边角都收成
+ * [SegmentInnerRadius] —— 与 [legacySegmentShape] 的纵向分段同一套读数。
+ *
+ * @param row 当前行（0 起）
+ * @param rowCount 总行数
+ * @param column 当前列（0 起）
+ * @param rowSize 当前行实际磁贴数（末行可能不满）
+ */
+fun legacySegmentGridShape(
+    row: Int,
+    rowCount: Int,
+    column: Int,
+    rowSize: Int,
+): Shape {
+    val top = row == 0
+    val bottom = row == rowCount - 1
+    val start = column == 0
+    val end = column == rowSize - 1
+    return RoundedCornerShape(
+        topStart = if (top && start) SegmentOuterRadius else SegmentInnerRadius,
+        topEnd = if (top && end) SegmentOuterRadius else SegmentInnerRadius,
+        bottomEnd = if (bottom && end) SegmentOuterRadius else SegmentInnerRadius,
+        bottomStart = if (bottom && start) SegmentOuterRadius else SegmentInnerRadius,
+    )
+}
+
+/**
  * 会随按压或焦点高亮**变形**的分段圆角。
  *
  * 实现是"四角分别向目标圆角插值"，用**一条** `animateFloatAsState`

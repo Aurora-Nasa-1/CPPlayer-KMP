@@ -69,3 +69,4 @@ fun ColorSource.description(strings: CpStrings, platformAvailable: Boolean): Str
     ColorSource.COVER -> strings.appearance.colorSourceCoverNote
     ColorSource.FIXED -> strings.appearance.colorSourceFixedNote
 }
+

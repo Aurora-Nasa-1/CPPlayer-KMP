@@ -1,5 +1,6 @@
 package cp.player.core.playback
 
+import cp.player.core.music.DrmPlaybackInfo
 import cp.player.core.util.PlatformContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,7 +30,10 @@ data class SeekFailure(val targetMs: Long, val actualMs: Long)
 data class NativeTrackTransition(val mediaId: String, val previousMediaId: String?, val sequence: Long)
 
 internal fun isNativeQueuedTrackEnding(currentMediaId: String?, queuedMediaIds: Map<String, String>, path: String): Boolean {
-    val queued = queuedMediaIds[path] ?: return false
+    val queued = queuedMediaIds[path]
+        ?: queuedMediaIds[path.replace('\\', '/')]
+        ?: queuedMediaIds[path.replace('/', '\\')]
+        ?: return false
     return queued != currentMediaId
 }
 
@@ -114,12 +118,31 @@ interface PlatformMediaPlayer {
      */
     val supportsSeekableRemoteStreams: Boolean get() = false
 
+    /** 是否能播放受 DRM 保护的流。默认 false：Flick / Desktop / 测试替身都没有 CDM。 */
+    val supportsDrm: Boolean get() = false
+
     suspend fun load(
         url: String,
         startPositionMs: Long = 0L,
         headers: Map<String, String> = emptyMap(),
         metadata: PlaybackMetadata? = null,
     )
+
+    /**
+     * 装载受 DRM 保护的流。
+     *
+     * [drm.exchangeLicense] 由宿主 Provider 提供，平台只负责把 CDM 生成的 challenge
+     * 原样交给它，并把返回的 license 原样交给 CDM；不得记录、缓存或持久化任一方。
+     */
+    suspend fun loadDrm(
+        url: String,
+        drm: DrmPlaybackInfo,
+        startPositionMs: Long = 0L,
+        headers: Map<String, String> = emptyMap(),
+        metadata: PlaybackMetadata? = null,
+    ) {
+        throw UnsupportedOperationException("DRM playback is not supported on this platform")
+    }
     fun play()
     fun pause()
     fun seekTo(positionMs: Long)

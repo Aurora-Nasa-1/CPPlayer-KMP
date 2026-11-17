@@ -472,6 +472,8 @@ class DownloadEngine(
                 is BackendResult.Success -> {
                     val songUrl = result.data
                     when {
+                        songUrl.drm != null ->
+                            throw DownloadFailedException("DRM-protected streams cannot be downloaded")
                         songUrl.url.isBlank() -> lastError = "取直链失败：地址为空"
                         songUrl.expireAt == null ||
                             songUrl.expireAt > currentTimeMillis() + EXPIRE_GUARD_MS -> {

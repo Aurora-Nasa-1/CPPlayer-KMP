@@ -38,8 +38,10 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
 import cp.player.app.AppModel
+import cp.player.app.i18n.ProviderManagementStrings
+import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.rememberZipPicker
-import cp.player.core.ImportResult
+import cp.player.app.presentation.backenderror.BackendErrorPresenter
 import cp.player.core.provider.BackendProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -68,8 +70,9 @@ class BackendErrorScreen(private val message: String) : Screen {
         val providers by model.providers.collectAsState()
         val busy by model.busy.collectAsState()
         val actionMessage by model.actionMessage.collectAsState()
+        val p = cpStrings().providerManagement
 
-        val pickZip = rememberZipPicker(onPicked = { model.importModule(it) })
+        val pickZip = rememberZipPicker(onPicked = { model.importModule(it, p) })
         val active by AppModel.activeProviderFlow.collectAsState()
         // 「删除音源」的二次确认：删掉的是模块本体（含它的登录态与本地目录），
         // 这一步不可撤回。确认框挂在 Screen.Content 这一层 —— 内部的
@@ -86,16 +89,10 @@ class BackendErrorScreen(private val message: String) : Screen {
             onDelete = { id ->
                 val target = providers.firstOrNull { it.id == id }
                 confirm.request(
-                    title = "删除音源",
-                    message = buildString {
-                        append("确定删除「").append(target?.name ?: id).append("」吗？\n")
-                        append("模块文件与该音源下的登录态会被移除，需要重新导入才能使用。")
-                        if (id == active?.id) {
-                            append("\n它正是当前音源，删除后不会再有可用音源，需要重新导入。")
-                        }
-                    },
-                    confirmLabel = "删除",
-                    onConfirm = { model.delete(id) },
+                    title = p.deleteTitle,
+                    message = p.backendDeleteMessage(target?.name ?: id, id == active?.id),
+                    confirmLabel = p.deleteConfirm,
+                    onConfirm = { model.delete(id, p) },
                 )
             },
         )
@@ -105,41 +102,18 @@ class BackendErrorScreen(private val message: String) : Screen {
 }
 
 class BackendErrorScreenModel : ScreenModel {
-    val providers: StateFlow<List<BackendProvider>> = AppModel.backend.providersFlow
+    private val presenter = BackendErrorPresenter(scope = screenModelScope)
 
+    val providers = presenter.providers
     /** 非 null 时显示「正在处理」遮罩（导入 / 删除共用，文案随操作变化）。 */
-    val busy = MutableStateFlow<String?>(null)
-    val actionMessage = MutableStateFlow<String?>(null)
+    val busy = presenter.busy
+    val actionMessage = presenter.actionMessage
 
-    fun importModule(zipPath: String?) {
-        if (zipPath == null) { actionMessage.value = "未选择文件"; return }
-        screenModelScope.launch {
-            busy.value = "正在导入…"
-            val result = withContext(Dispatchers.IO) { AppModel.importModule(zipPath) }
-            busy.value = null
-            actionMessage.value = when (result) {
-                is ImportResult.Activated -> if (result.isUpdate) "已自动更新并激活 ${result.provider.name}" else "已导入并自动激活 ${result.provider.name}"
-                is ImportResult.Loaded -> if (result.isUpdate) "已自动更新 ${result.provider.name}（当前仍使用 ${AppModel.activeProvider()?.name ?: "无"}）" else "已导入 ${result.provider.name}（当前仍使用 ${AppModel.activeProvider()?.name ?: "无"}）"
-                is ImportResult.PendingRestart -> result.message
-                is ImportResult.Failed -> result.message
-            }
-        }
-    }
+    fun importModule(zipPath: String?, strings: ProviderManagementStrings) =
+        presenter.importModule(zipPath, strings)
 
-    fun delete(id: String) {
-        screenModelScope.launch {
-            busy.value = "正在删除 $id…"
-            val result = withContext(Dispatchers.IO) { AppModel.deleteProvider(id) }
-            busy.value = null
-            actionMessage.value = when (result) {
-                // 删除成功后状态流会自行迁移（切剩余 / NoProvider），多数情况下页面
-                // 直接被 App.kt 换走，这条提示只在删除非活跃模块时短暂可见。
-                is cp.player.core.BackendResult.Success -> "已删除模块 $id"
-                is cp.player.core.BackendResult.Error -> result.message
-                is cp.player.core.BackendResult.Unsupported -> result.message
-            }
-        }
-    }
+    fun delete(id: String, strings: ProviderManagementStrings) =
+        presenter.delete(id, strings)
 }
 
 // internal：离屏渲染预览测试（desktopTest）需要直接组合这个纯 composable。
@@ -153,6 +127,7 @@ internal fun BackendErrorContent(
     onImport: () -> Unit,
     onDelete: (String) -> Unit,
 ) {
+    val p = cpStrings().providerManagement
     Box(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         contentAlignment = Alignment.Center,
@@ -162,7 +137,7 @@ internal fun BackendErrorContent(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             CpText(
-                text = "后端初始化失败",
+                text = p.backendErrorTitle,
                 style = MaterialTheme.typography.headlineSmall,
             )
             CpText(
@@ -170,6 +145,9 @@ internal fun BackendErrorContent(
                 modifier = Modifier.padding(top = 12.dp),
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
+                // 这是音源后端起不来的**唯一**诊断信息（通常是一整段异常 / 缺符号的原因）。
+                // 页面本身可滚动，截成一行等于把用户的自救依据裁掉。
+                maxLines = Int.MAX_VALUE,
             )
             if (busy != null) {
                 Spacer(Modifier.height(20.dp))
@@ -182,24 +160,22 @@ internal fun BackendErrorContent(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Button(onClick = onRetry) {
-                        CpText("重试")
+                        CpText(p.retry)
                     }
                     OutlinedButton(onClick = onImport) {
                         Icon(Icons.Filled.FolderZip, null, Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
-                        CpText("导入新音源")
+                        CpText(p.importNewProvider)
                     }
                 }
             }
 
             actionMessage?.let {
                 Spacer(Modifier.height(12.dp))
-                val isError = it.contains("失败") || it.contains("错误") || it.contains("异常")
-                    || it.contains("不支持") || it.contains("无法") || it.contains("未就绪")
                 CpText(
                     it,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center,
                 )
             }
@@ -213,16 +189,18 @@ internal fun BackendErrorContent(
                 ) {
                     Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.Start) {
                         CpText(
-                            "已安装的音源",
+                            p.installedProviders,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         CpText(
-                            "若某个音源反复导致初始化失败，可在此删除后再重试",
+                            p.backendErrorHint,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 4.dp),
+                            // 这条是「删掉哪个模块 / 为什么起不来」的排查说明，多句组成。
+                            maxLines = Int.MAX_VALUE,
                         )
                         Spacer(Modifier.height(12.dp))
                         providers.forEach { provider ->
@@ -233,7 +211,7 @@ internal fun BackendErrorContent(
                                     IconButton(onClick = { onDelete(provider.id) }) {
                                         Icon(
                                             Icons.Filled.DeleteOutline,
-                                            contentDescription = "删除音源 ${provider.name}",
+                                            contentDescription = p.deleteProviderContentDesc(provider.name),
                                             tint = MaterialTheme.colorScheme.error,
                                         )
                                     }

@@ -18,6 +18,8 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,17 +31,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.i18n.cpStrings
-import cp.player.app.platform.downloadUpdate
+import cp.player.app.AppModel
+import cp.player.app.platform.downloadAndInstallUpdate
 import cp.player.app.platform.openUrl
 import cp.player.app.ui.component.CpIconSize
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpText
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.AppUpdateDialog
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
@@ -50,6 +51,8 @@ import cp.player.app.ui.component.SponsorInlineCard
 import cp.player.app.ui.component.SponsorPaymentType
 import cp.player.app.update.AppUpdateChecker
 import cp.player.app.version.AppVersion
+import cp.player.core.BackendResult
+import cp.player.core.provider.LegacyProviderModule
 import kotlinx.coroutines.launch
 
 /**
@@ -60,18 +63,20 @@ class AboutScreen : Screen {
     @Composable
     override fun Content() {
         val s = cpStrings().about
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val scope = rememberCoroutineScope()
 
         var isChecking by remember { mutableStateOf(false) }
         var updateResult by remember { mutableStateOf<AppUpdateChecker.UpdateResult?>(null) }
         var showUpdateDialog by remember { mutableStateOf(false) }
+        var showDestructiveConfirm by remember { mutableStateOf(false) }
+        var legacyModules by remember { mutableStateOf<List<LegacyProviderModule>>(emptyList()) }
         var showSponsorDialog by remember { mutableStateOf(false) }
         var sponsorDialogType by remember { mutableStateOf(SponsorPaymentType.WECHAT) }
 
         CpRouteScaffold(
             title = s.screenTitle,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier ->
             SettingsPage(pageModifier) {
                 AboutHero(s)
@@ -191,16 +196,79 @@ class AboutScreen : Screen {
                 onDismiss = { showUpdateDialog = false },
                 onDownload = {
                     updateResult?.let { result ->
-                        val url = result.downloadUrl
-                        if (url == null) {
-                            openUrl(result.releaseUrl)
+                        if (result.destructivePolicy != null) {
+                            legacyModules = if (result.destructivePolicy.removeLegacyProviders) {
+                                AppModel.legacyProviderModulesToRemove()
+                            } else emptyList()
+                            showDestructiveConfirm = true
                         } else {
-                            scope.launch {
-                                downloadUpdate(url, result.assetName ?: "CPPlayer-${result.versionName}")
+                            val url = result.downloadUrl
+                            if (url == null) openUrl(result.releaseUrl) else scope.launch {
+                                downloadAndInstallUpdate(
+                                    url = url,
+                                    fileName = result.assetName ?: "CPPlayer-${result.versionName}",
+                                    expectedSha256 = result.assetSha256,
+                                    expectedSize = result.assetSize,
+                                    beforeInstall = { true },
+                                )
                             }
                         }
                     }
                     showUpdateDialog = false
+                },
+            )
+        }
+
+        if (showDestructiveConfirm && updateResult?.destructivePolicy != null) {
+            val result = updateResult!!
+            val policy = result.destructivePolicy!!
+            AlertDialog(
+                onDismissRequest = { showDestructiveConfirm = false },
+                title = { CpText(policy.title) },
+                text = {
+                    Column {
+                        CpText(policy.message, maxLines = Int.MAX_VALUE)
+                        Spacer(Modifier.height(10.dp))
+                        if (legacyModules.isEmpty()) {
+                            CpText(
+                                s.legacyCleanupNone,
+                                maxLines = Int.MAX_VALUE,
+                            )
+                        } else {
+                            CpText(
+                                s.legacyCleanupHint,
+                                maxLines = Int.MAX_VALUE,
+                            )
+                            legacyModules.forEach {
+                                CpText(
+                                    "${it.name} · API V${it.apiVersion} · ${it.id}",
+                                    maxLines = Int.MAX_VALUE,
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        showDestructiveConfirm = false
+                        val ids = legacyModules.map { it.id }.toSet()
+                        val url = result.downloadUrl
+                        if (url == null) openUrl(result.releaseUrl) else scope.launch {
+                            downloadAndInstallUpdate(
+                                url = url,
+                                fileName = result.assetName ?: "CPPlayer-${result.versionName}",
+                                expectedSha256 = result.assetSha256,
+                                expectedSize = result.assetSize,
+                                beforeInstall = {
+                                    if (!policy.removeLegacyProviders || ids.isEmpty()) true
+                                    else AppModel.scheduleLegacyProviderCleanup(ids, result.versionName) is BackendResult.Success
+                                },
+                            )
+                        }
+                    }) { CpText(s.updateConfirmDownload) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDestructiveConfirm = false }) { CpText(cpStrings().common.dismiss) }
                 },
             )
         }

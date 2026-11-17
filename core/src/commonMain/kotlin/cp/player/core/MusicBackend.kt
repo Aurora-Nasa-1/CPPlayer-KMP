@@ -55,6 +55,7 @@ import cp.player.core.pluginrepo.createPluginRepositoryIO
 import cp.player.core.pluginrepo.currentPluginTarget
 import cp.player.core.pluginrepo.compatibility
 import cp.player.core.util.PlatformContext
+import cp.player.core.util.PlatformSupport
 import cp.player.core.util.SettingsStorage
 import cp.player.core.util.defaultSettingsStorage
 import kotlin.coroutines.ContinuationInterceptor
@@ -296,6 +297,9 @@ class MusicBackend private constructor(
      */
     private val amllClientLazy = lazy { AmllTtmlClient() }
 
+    /** LrcLib 兼容歌词（与 AMLL 同域）：TTML 未命中时提供行级同步词。同样需要显式关闭。 */
+    private val lrclibClientLazy = lazy { cp.player.core.api.LrclibLyricsClient() }
+
     /** 歌曲缓存（无损流落盘）的管理句柄：占用概览 + 条目列表 + 删除 / 清理。 */
     val songCache: StreamLocalizer by streamLocalizerLazy
 
@@ -462,6 +466,7 @@ class MusicBackend private constructor(
             context = context,
             plugins = lyricsPlugins,
             amllClient = amllClientLazy.value,
+            lrclibClient = lrclibClientLazy.value,
             legacySettings = settings,
             unifiedSource = unifiedSource,
         )
@@ -470,10 +475,14 @@ class MusicBackend private constructor(
     /**
      * 歌词源插件服务（前端「设置 → 歌词源插件」管理页使用）。
      *
-     * 惰性创建；插件目录落在 [PlatformSupport.dataDir] 下的 `lyrics-plugins/`。
+     * 惰性创建；插件目录落在 [PlatformSupport.dataDir] 下的 `lyrics-plugins/`，
+     * 脚本 key/value 缓存单独落在 `lyrics-plugin-cache/`，避免无目录时回退成无界堆内缓存。
      */
     val lyricsPlugins: cp.player.core.lyricsplugin.LyricsPluginService by lazy {
-        cp.player.core.lyricsplugin.createLyricsPluginService(context)
+        cp.player.core.lyricsplugin.createLyricsPluginService(
+            context = context,
+            cacheDir = PlatformSupport.dataDir(context) + "/lyrics-plugin-cache",
+        )
     }
 
     private val pluginRepositoriesLazy = lazy {
@@ -837,6 +846,9 @@ class MusicBackend private constructor(
         val level = playbackController.state.value.qualityLevel.ifBlank { "exhigh" }
         val songUrl = (unifiedSource.getSongUrl(targetId, level) as? BackendResult.Success)?.data
             ?: return null
+        // Encrypted streams cannot be relayed: the receiver has no CDM session
+        // and the local server must never expose ciphertext as a playable URL.
+        if (songUrl.drm != null) return null
         if (songUrl.url.isBlank()) return null
         return StreamTarget(url = songUrl.url, headers = songUrl.headers.orEmpty())
     }
@@ -992,6 +1004,15 @@ class MusicBackend private constructor(
         return BackendResult.Success(Unit)
     }
 
+    /** List removable non-SDK Provider API V1/V3 module folders for explicit confirmation. */
+    fun findLegacyProviderModules(): List<cp.player.core.provider.LegacyProviderModule> =
+        moduleManager.findLegacyProviderModules()
+
+    /** Queue an explicitly confirmed cleanup; deletion is deferred until the target app version starts. */
+    fun queueLegacyProviderCleanup(ids: Set<String>, targetVersionName: String): BackendResult<Unit> =
+        if (moduleManager.queueLegacyProviderCleanup(ids, targetVersionName)) BackendResult.Success(Unit)
+        else BackendResult.Error("旧版 Provider 清理未能排队；模块状态可能已变化")
+
     /** 所有已加载 Provider 的快照。 */
     fun getAvailableProviders(): List<BackendProvider> = moduleManager.getAvailableProviders()
 
@@ -1029,6 +1050,7 @@ class MusicBackend private constructor(
         // AMLL 歌词客户端同样持有 Ktor 客户端。仅当真装配过时才关 —— 否则 reset 会反向触发
         // 它的惰性创建（平白多一个请求 + 多一个连接池）。
         if (amllClientLazy.isInitialized()) runCatching { amllClientLazy.value.close() }
+        if (lrclibClientLazy.isInitialized()) runCatching { lrclibClientLazy.value.close() }
         // 歌词投放：true 时会解除渠道注册（词幕 unregister / SuperLyric 反注册 /
         // 收起超级岛与实时活动）。未装配过就不碰，避免反向触发惰性创建。
         if (lyricPusherLazy.isInitialized()) runCatching { lyricPusherLazy.value.close() }
@@ -1100,6 +1122,7 @@ class MusicBackend private constructor(
         fun init(
             context: PlatformContext,
             settings: SettingsStorage,
+            applicationVersionName: String? = null,
         ): MusicBackend {
             synchronized(COMPA) {
                 INSTANCE?.let { return it }
@@ -1133,7 +1156,7 @@ class MusicBackend private constructor(
 
                 // 多核并发并行加载：音源模块加载 与 本地媒体曲库装配/持久化输出配置读取并发执行
                 runBlocking(Dispatchers.IO) {
-                    val moduleJob = async { moduleManager.init(providerManager) }
+                    val moduleJob = async { moduleManager.init(providerManager, applicationVersionName) }
                     val localJob = async { backend.bootstrapLocalStack() }
                     val configJob = async { backend.activeOutputConfig = LocalServerConfigStore.read(settings) }
                     moduleJob.await()

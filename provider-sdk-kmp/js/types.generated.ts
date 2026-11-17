@@ -80,6 +80,68 @@ export interface MediaResource {
   readonly sizeBytes?: number | null;
 }
 
+/** DRM signaling and license acquisition metadata; never contains content keys or reusable license bytes. */
+export interface DrmDescriptor {
+  /** Canonical host DRM identifier: widevine, playready, fairplay or clearkey. */
+  readonly keySystem: string;
+  /** Absolute provider license endpoint when direct HTTP exchange is possible; null when exchangeLicense is required. */
+  readonly licenseUrl?: string | null;
+  /** Explicit headers; no implicit account Cookie or Authorization forwarding. */
+  readonly headers?: Header[];
+  /** DRM signaling scheme from the media manifest, such as an HLS KEYFORMAT or DASH schemeIdUri. */
+  readonly schemeIdUri?: string | null;
+  /** Opaque initialization data, at most 1048576 bytes; never a content key. */
+  readonly initData?: Binary | null;
+  /** Optional content key identifier; never key material. */
+  readonly keyId?: Binary | null;
+  /** Provider-specific key reference used during license exchange, such as an Apple skd URI or data URI. */
+  readonly keyUri?: string | null;
+  /** Optional certificate bytes, at most 1048576; never a private device key. */
+  readonly serverCertificate?: Binary | null;
+  /** Whether the provider supports a persistent license/session; the host may reject it when unsupported. */
+  readonly persistent: boolean;
+}
+
+/** DRM-aware audio resolution input. keySystems lists the host-supported identifiers in preference order. */
+export interface DrmResolveRequest {
+  /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
+  readonly id: string;
+  /** Provider-defined requested quality key; do not report it as actual quality without verification. */
+  readonly quality: string;
+  /** 1..8 distinct host-supported key systems; the provider must not return a descriptor outside this list. */
+  readonly keySystems?: string[];
+}
+
+/** One resolved media resource and its optional DRM descriptor; a null descriptor means the resource is clear. */
+export interface ResolvedMedia {
+  /** The resolved media resource. */
+  readonly resource: MediaResource;
+  /** Null only when the resource is clear; a protected resource requires a matching descriptor. */
+  readonly drm?: DrmDescriptor | null;
+}
+
+/** One host CDM challenge plus the opaque provider context needed to exchange it for a license. */
+export interface LicenseRequest {
+  /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
+  readonly id: string;
+  /** Canonical host DRM identifier: widevine, playready, fairplay or clearkey. */
+  readonly keySystem: string;
+  /** Raw host CDM challenge bytes, at most 1048576; the provider performs any required encoding. */
+  readonly challenge: Binary;
+  /** Absolute provider license endpoint when direct HTTP exchange is possible; null when exchangeLicense is required. */
+  readonly licenseUrl?: string | null;
+  /** Explicit headers; no implicit account Cookie or Authorization forwarding. */
+  readonly headers?: Header[];
+  /** Provider-specific key reference used during license exchange, such as an Apple skd URI or data URI. */
+  readonly keyUri?: string | null;
+}
+
+/** Opaque license bytes returned by the provider; never log, cache or expose them to UI code. */
+export interface LicenseResponse {
+  /** Opaque license response bytes; never a content key and never logged. */
+  readonly license: Binary;
+}
+
 /** Sanitized, categorized business failure; never include credentials or private request bodies. */
 export interface Failure {
   /** Unsupported, NotFound, Authentication, Network, RateLimit, Timeout, InvalidResponse or Runtime. */
@@ -512,7 +574,7 @@ export interface AccountSession {
   readonly avatarUrl?: string | null;
 }
 
-/** Named authentication workflow input; only fields relevant to action should be supplied. */
+/** Named authentication workflow input; only fields relevant to action should be supplied. Phone actions may specify a calling-country code; omission preserves the provider's existing default. */
 export interface AuthActionRequest {
   /** One of AuthAction's documented action names; required fields depend on the selected flow. */
   readonly action: string;
@@ -538,6 +600,8 @@ export interface AuthActionRequest {
   readonly verifyId?: string | null;
   /** Legacy authentication-only extension text, not a generic endpoint passthrough. */
   readonly extraJson?: string | null;
+  /** Optional digits-only calling-country code for login.phone or captcha.send, 1..4 digits without '+'. Omission preserves the provider default (86 for the existing NetEase flow). */
+  readonly countryCode?: string | null;
 }
 
 /** Authentication result/challenge. The host owns credential storage and session replacement. */
@@ -1148,7 +1212,41 @@ export interface CalendarPage {
   readonly items?: CalendarEntry[];
 }
 
-/** Social-feed entry with plain text and typed resource/image references. */
+/** Non-recursive snapshot of the original social event nested in a forward. */
+export interface EventOrigin {
+  /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
+  readonly id: string;
+  /** User attribution. */
+  readonly user: SocialUser;
+  /** Plain text, never an upstream JSON message envelope. */
+  readonly text: string;
+  /** Publication time in Unix epoch milliseconds. */
+  readonly publishedAtEpochMs: number;
+  /** Opaque associated resource identity. */
+  readonly resourceId?: string | null;
+  /** Associated resource kind, not an endpoint path. */
+  readonly resourceType?: string | null;
+  /** Display title of the associated resource snapshot; null means unavailable. */
+  readonly resourceTitle?: string | null;
+  /** Cover image URL for the associated resource snapshot. */
+  readonly resourceCoverUrl?: string | null;
+  /** Secondary display text of the associated resource snapshot, such as artists or a creator; null means unavailable. */
+  readonly resourceSubtitle?: string | null;
+  /** Ordered image URLs. */
+  readonly imageUrls?: string[];
+  /** Explicit desired/current liked state, not a toggle. */
+  readonly liked: boolean;
+  /** Known nonnegative like count. */
+  readonly likedCount: number;
+  /** Known nonnegative top-level comment count. */
+  readonly commentCount: number;
+  /** Known nonnegative forward/share count. */
+  readonly forwardCount: number;
+  /** Optional public location attribution text. */
+  readonly location?: string | null;
+}
+
+/** Social-feed entry with plain text, interaction counters, an optional typed resource snapshot and an optional non-recursive forwarded source. */
 export interface SocialEvent {
   /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
   readonly id: string;
@@ -1162,8 +1260,26 @@ export interface SocialEvent {
   readonly resourceId?: string | null;
   /** Associated resource kind, not an endpoint path. */
   readonly resourceType?: string | null;
+  /** Display title of the associated resource snapshot; null means unavailable. */
+  readonly resourceTitle?: string | null;
+  /** Cover image URL for the associated resource snapshot. */
+  readonly resourceCoverUrl?: string | null;
+  /** Secondary display text of the associated resource snapshot, such as artists or a creator; null means unavailable. */
+  readonly resourceSubtitle?: string | null;
   /** Ordered image URLs. */
   readonly imageUrls?: string[];
+  /** Explicit desired/current liked state, not a toggle. */
+  readonly liked: boolean;
+  /** Known nonnegative like count. */
+  readonly likedCount: number;
+  /** Known nonnegative top-level comment count. */
+  readonly commentCount: number;
+  /** Known nonnegative forward/share count. */
+  readonly forwardCount: number;
+  /** Original social event when this entry is a forward; null means original content. */
+  readonly forwardedFrom?: EventOrigin | null;
+  /** Optional public location attribution text. */
+  readonly location?: string | null;
 }
 
 /** Social events with opaque continuation metadata. */
@@ -1202,6 +1318,16 @@ export interface ForwardEventRequest {
   readonly userId: string;
   /** Plain text, never an upstream JSON message envelope. */
   readonly text: string;
+}
+
+/** Explicit desired liked state for one typed social resource. */
+export interface ResourceLikeRequest {
+  /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
+  readonly id: string;
+  /** Operation-specific discriminator; see the operation and record-specific constraints. */
+  readonly type: string;
+  /** Explicit desired/current liked state, not a toggle. */
+  readonly liked: boolean;
 }
 
 /** Typed resource sharing input with accompanying plain text. */
@@ -1810,7 +1936,10 @@ export type KnownCapability =
   | "media.qualities"
   | "messages.sendResource"
   | "comments.userHistory"
-  | "accounts.likes.page";
+  | "accounts.likes.page"
+  | "social.likeResource"
+  | "tracks.resolveDrm"
+  | "tracks.exchangeLicense";
 
 export interface Tracks {
   /** Search audio tracks using item-offset pagination. Capability: tracks.search. Tag: 2. Undeclared or unimplemented capabilities fail with Unsupported. */
@@ -1821,6 +1950,10 @@ export interface Tracks {
   getMany(request: BatchRequest, context: Context): Promise<TrackBatch>;
   /** Resolve playable audio with the actual quality and explicit resource headers, not the account credential. Capability: tracks.resolve. Tag: 5. Undeclared or unimplemented capabilities fail with Unsupported. */
   resolve(request: ResolveRequest, context: Context): Promise<MediaResource>;
+  /** Resolve audio for one of the host-supported DRM key systems and return its resource plus license descriptor; unsupported key systems must fail explicitly. Capability: tracks.resolveDrm. Tag: 168. Undeclared or unimplemented capabilities fail with Unsupported. */
+  resolveDrm(request: DrmResolveRequest, context: Context): Promise<ResolvedMedia>;
+  /** Exchange one host CDM challenge for a provider license. Treat challenge and license bytes as sensitive and never log or persist them. Capability: tracks.exchangeLicense. Tag: 169. Undeclared or unimplemented capabilities fail with Unsupported. */
+  exchangeLicense(request: LicenseRequest, context: Context): Promise<LicenseResponse>;
 }
 
 export interface LyricsProvider {
@@ -1981,6 +2114,8 @@ export interface SocialOperations {
   forwardEvent(request: ForwardEventRequest, context: Context): Promise<MutationResult>;
   /** Share a typed resource to the social feed; map resource types in the provider, not in a JSON envelope. Capability: social.share. Tag: 102. Undeclared or unimplemented capabilities fail with Unsupported. */
   shareResource(request: ShareResourceRequest, context: Context): Promise<MutationResult>;
+  /** Set the current account's liked state for one typed social resource, including an event. Capability: social.likeResource. Tag: 167. Undeclared or unimplemented capabilities fail with Unsupported. */
+  likeResource(request: ResourceLikeRequest, context: Context): Promise<MutationResult>;
 }
 
 export interface Messaging {

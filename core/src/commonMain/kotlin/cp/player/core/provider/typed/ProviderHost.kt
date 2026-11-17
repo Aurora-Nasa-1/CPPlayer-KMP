@@ -494,8 +494,9 @@ class ProviderHost(
         require(listOf(
             request.email, request.phone, request.password, request.captcha,
             request.imageCaptcha, request.challengeCookie, request.key, request.sessionId,
-            request.verifyId, request.extraJson,
+            request.verifyId, request.extraJson, request.countryCode,
         ).all { (it?.length ?: 0) <= 16_384 })
+        request.countryCode?.let { require(Regex("[0-9]{1,4}").matches(it)) }
         return call {
             requireCapability(Capability.AUTH_ACTIONS)
             adapter.authenticate(request).also {

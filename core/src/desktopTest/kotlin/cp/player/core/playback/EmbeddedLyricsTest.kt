@@ -59,6 +59,36 @@ class EmbeddedLyricsTest {
     }
 
     @Test
+    fun `parse embedded ttml`() {
+        val ttml = """
+            <tt xmlns="http://www.w3.org/ns/ttml"><body><div>
+              <p begin="1.0" end="2.0"><span begin="1.0" end="1.5">Hel</span><span begin="1.5" end="2.0">lo</span></p>
+            </div></body></tt>
+        """.trimIndent()
+
+        val result = EmbeddedLyricLoader.parseLyricsText(ttml)
+        assertNotNull(result)
+        val (lines, info) = result
+        assertEquals("Hello", lines.single().text)
+        assertEquals("TTML", info.format)
+        assertTrue(info.hasWordLevel)
+    }
+
+    @Test
+    fun `parse ttml whose p has no end`() {
+        val ttml = """
+            <tt><body><div>
+              <p begin="1.0">第一句</p>
+              <p begin="3.0">第二句</p>
+            </div></body></tt>
+        """.trimIndent()
+
+        val result = EmbeddedLyricLoader.parseLyricsText(ttml)
+        assertNotNull(result)
+        assertEquals(listOf("第一句", "第二句"), result.first.map { it.text })
+    }
+
+    @Test
     fun `blank text returns null`() {
         assertNull(EmbeddedLyricLoader.parseLyricsText("   \n\n  "))
     }

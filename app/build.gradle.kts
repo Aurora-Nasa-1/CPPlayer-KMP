@@ -7,7 +7,8 @@ import org.gradle.api.file.RegularFile
 import org.gradle.jvm.toolchain.JavaInstallationMetadata
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaLauncher
-import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.dsl.NativeImageGarbageCollector
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -17,6 +18,12 @@ plugins {
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.nucleus)
+}
+
+compose {
+    dependencyCompatibility {
+        exclude("io.coil-kt.coil3")
+    }
 }
 
 // 版本元数据只有一处实现：根 build.gradle.kts。这里只做取值，**不要再自己算**。
@@ -295,6 +302,9 @@ group = "cp.player"
 version = appVersionName
 
 kotlin {
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
     android {
         namespace = "cp.player.app.lib"
         // 与 app-android 对齐：material-kolor 5.x 要求 compileSdk ≥ 37。
@@ -319,10 +329,16 @@ kotlin {
     }
     jvm("desktop") {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_21) }
+        @OptIn(org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi::class)
         mainRun {
             mainClass = "cp.player.app.MainKt"
         }
     }
+
+tasks.withType<JavaCompile>().configureEach {
+    options.release.set(21)
+}
+
 
     sourceSets {
         val commonMain by getting {
@@ -355,19 +371,23 @@ kotlin {
                 implementation(libs.ktor.serialization.json)
                 implementation(libs.accompanist.lyrics.ui)
                 implementation(libs.accompanist.lyrics.core)
-                // 播放页流体背景：SkSL 运行时着色器 → Modifier.shaderBackground。
-                // ⚠️ 只有 core 模块是 MIT；`hypnoticcanvas-shaders` 里多数着色器是
-                // CC-BY-NC-SA（非商用），**别加**。版本联动关系见 libs.versions.toml。
-                implementation(libs.hypnoticcanvas)
                 // 跨平台 Material You：seed 色 → M3 ColorScheme（含逐角色过渡动画）
                 implementation(libs.materialkolor)
                 // 封面 / 壁纸取色：Material You 官方的量化 + 打分算法（与系统 Monet 同源）
                 implementation(libs.material.color.utilities)
+                // A2UI：协议解析、数据绑定与 Material 3 基础目录都由社区 KMP 移植提供。
+                implementation(libs.a2ui.material3.kmp)
+                implementation(libs.a2ui.compose.runtime.kmp)
+                implementation(libs.a2ui.model.kmp)
             }
         }
         val androidMain by getting {
             dependencies {
                 implementation(libs.androidx.activity.compose)
+                // FileProvider（本地歌曲「在文件管理器中打开」的私有目录兜底）。
+                // core 的 androidMain 虽然也引了它，但那是 `implementation`，不会传递到 :app，
+                // 在 :app 里直接 import 会编译不过。
+                implementation(libs.androidx.core.ktx)
                 implementation(libs.androidx.media.compat)
                 implementation(libs.kotlinx.coroutines.android)
                 implementation(libs.ktor.client.okhttp)
@@ -379,14 +399,27 @@ kotlin {
                 implementation(libs.nucleus.application)
                 implementation(libs.nucleus.decorated.window.tao)
                 implementation(libs.nucleus.graalvm.runtime)
+                // 无 AWT 托盘与原生系统通知。通知模块按平台分支，两者都只在对应 OS 上加载
+                // 自己的 JNI 库（`isAvailable` 为假时是纯 no-op），所以可以同时挂在类路径上。
+                implementation(libs.composenativetray)
+                implementation(libs.nucleus.notification.windows)
+                implementation(libs.nucleus.notification.linux)
                 implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.ktor.client.okhttp)
                 implementation(libs.sentry.core)
+                // ICU4J BreakIterator & ULocale 的 GraalVM Substitution 支持：
+                // 仅以 runtimeOnly 挂载预编译 JAR，对普通 JVM 编译期零侵入（无需 svm 符号）；
+                // Windows Native Image 构建时由 Nucleus 纳入运行时 classpath 并由 GraalVM
+                // 自动识别 @TargetClass，彻底消除 BreakIteratorFactory 反射。
+                runtimeOnly(files("graalvm/substitutions/icu-substitutions.jar"))
             }
         }
         val desktopTest by getting {
             dependencies {
                 implementation(kotlin("test"))
+                // Compose UI 测试（`runComposeUiTest`）：语义层级令牌需要在真实
+                // 组合里读 `MaterialTheme`，纯 JVM 断言拿不到配色。
+                implementation(compose.desktop.uiTestJUnit4)
             }
         }
     }
@@ -398,6 +431,12 @@ kotlin {
 compose.resources {
     packageOfResClass = "cp.player.app.resources"
 }
+
+// compose.dependencyCompatibility 在 Compose 1.13 中非标准 DSL，已注释避免编译配置中断
+// compose.dependencyCompatibility {
+//     exclude("io.coil-kt.coil3")
+// }
+
 
 // ---------------------------------------------------------------------------
 // 桌面端现代 GC、JDK 25 与运行时极致调优策略
@@ -413,8 +452,10 @@ compose.resources {
 //    - 针对海量 SongItem / LyricLine / State 对象，全应用堆物理占用立减 15%~25%，大幅提升 CPU L1/L2 缓存行命中率；
 //    - JDK 25 下正式晋升为 Product 特性（非默认开启，需显式传入 -XX:+UseCompactObjectHeaders；Gradle 构建自动嗅探运行时并在支持时注入，无需 Experimental 标志）。
 // 4. 双轨执行架构 (Dual-Execution Strategy):
-//    - 本地开发/调试测试：采用标准 JVM（JetBrains Runtime / OpenJDK），支持快速增量编译与热重载；
-//    - Windows 生产发布：采用最新高版本 GraalVM Native Image 与 G1GC（--gc=G1），实现零 JIT/零解释器瞬时冷启动与极低内存驻留；
+//    - 本地开发/调试测试：标准 JVM（JetBrains Runtime / OpenJDK）+ **Serial GC**
+//      （与下面 Windows Native Image 的 collector 一致，见 afterEvaluate 里的 run 家族配置），
+//      支持快速增量编译与热重载；
+//    - Windows 生产发布：采用 GraalVM Native Image 与跨平台 Serial GC，生成无需 JIT 的独立原生机器码；
 //    - Linux 生产发布：保持高兼容性与高稳定性标准 JVM（DEB / Tar.gz 交付）。
 // ---------------------------------------------------------------------------
 val isJdk25OrNewer: Boolean = runCatching {
@@ -430,8 +471,14 @@ val isJdk25OrNewer: Boolean = runCatching {
     major >= 25 || ((findProperty("cp.jdk25") ?: rootProject.findProperty("cp.jdk25")) as String?) == "true"
 }.getOrDefault(false)
 
-val chosenGc: String = ((rootProject.findProperty("cp.gc") ?: findProperty("cp.gc")) as String?)?.lowercase() ?: "shenandoah"
-val gcJvmArgs: List<String> = when (chosenGc) {
+/**
+ * 把 `cp.gc` 取值映射成 JVM 参数。
+ *
+ * 独立成函数是为了让本地 run 家族能**强制**换一套 collector（见 afterEvaluate），
+ * 而不是对 `desktopCommonJvmArgs` 做字符串减法 —— 后者漏掉一个参数就会变成
+ * "Multiple garbage collectors selected" 直接启动失败。
+ */
+fun gcJvmArgsFor(raw: String): List<String> = when (raw.lowercase()) {
     "shenandoah", "gen-shenandoah", "generational-shenandoah" -> listOf(
         "-XX:+UnlockExperimentalVMOptions",
         "-XX:+UseShenandoahGC",
@@ -478,10 +525,40 @@ val gcJvmArgs: List<String> = when (chosenGc) {
         "-XX:G1PeriodicGCInterval=60000",
         "-XX:+UseStringDeduplication",
     )
+    // 本地 run 家族用的分支：与 Windows Native Image 的 collector 保持一致。
+    "serial", "serialgc" -> listOf("-XX:+UseSerialGC")
     else -> throw GradleException(
-        "cp.gc 不支持的取值：'$chosenGc'。可选：shenandoah（默认）/ shenandoah-iu / zgc / g1",
+        "cp.gc 不支持的取值：'$raw'。可选：shenandoah（默认）/ shenandoah-iu / zgc / g1 / serial",
     )
 }
+
+val chosenGc: String = ((rootProject.findProperty("cp.gc") ?: findProperty("cp.gc")) as String?)?.lowercase() ?: "shenandoah"
+val gcJvmArgs: List<String> = gcJvmArgsFor(chosenGc)
+
+/**
+ * 所有 GC 选择 / 调参参数（不含 `-XX:+UnlockExperimentalVMOptions`，它只是开关）。
+ *
+ * run 家族要换成 Serial 时必须先把这组摘干净：JVM 同时看到
+ * `-XX:+UseShenandoahGC` 与 `-XX:+UseSerialGC` 会拒绝启动。
+ */
+val gcSelectionFlags: Set<String> = setOf(
+    "-XX:+UseShenandoahGC",
+    "-XX:ShenandoahGCMode=generational",
+    "-XX:ShenandoahGCMode=iu",
+    "-XX:+ShenandoahUncommit",
+    "-XX:ShenandoahUncommitDelay=30000",
+    "-XX:ShenandoahUncommitDelay=60000",
+    "-XX:+UseZGC",
+    "-XX:ZAllocationSpikeTolerance=5",
+    "-XX:+ZGenerational",
+    "-XX:+UseG1GC",
+    "-XX:SoftMaxHeapSize=192m",
+    "-XX:MinHeapFreeRatio=10",
+    "-XX:MaxHeapFreeRatio=30",
+    "-XX:G1PeriodicGCInterval=60000",
+    "-XX:+UseStringDeduplication",
+    "-XX:+UseSerialGC",
+)
 
 val enableCompactHeaders: Boolean = ((rootProject.findProperty("cp.compactHeaders") ?: findProperty("cp.compactHeaders")) as String?) == "true" ||
     isJdk25OrNewer
@@ -508,7 +585,18 @@ val desktopCommonJvmArgs = (listOf(
     "-Dcp.player.gitSha=$gitSha",
 ) + previewJvmArgs + gcJvmArgs + compactHeadersArgs).distinct()
 
-compose.desktop {
+/**
+ * 本地 run 家族的堆参数（打包产物仍用 `desktopCommonJvmArgs` 的 64/256）。
+ *
+ * - `-Xmx150m`：本地开发用更窄的堆，尽早暴露窄堆下的 GC 行为；
+ * - `-Xmn24m`：Serial GC 的 minor GC 是 STW，年轻代越大单次停顿越长。24m 对应
+ *   eden 约 16~19m，把单次 minor 压在几毫秒内，避免 120/144Hz 下整帧掉队；
+ * - `-Xms64m` 沿用原值：实测存活集 55~60m，再低会在启动后立刻触发老年代
+ *   扩容/Full GC。若还要压 RSS，必须连同峰值路径一起压测后再动。
+ */
+val desktopRunHeapArgs = listOf("-Xms64m", "-Xmx150m", "-Xmn24m")
+
+nucleus {
     application {
         mainClass = "cp.player.app.MainKt"
         logger.lifecycle("CPPlayer: 桌面端 JVM 调优模式: GC=$chosenGc, CompactHeaders=$enableCompactHeaders, JDK25+=$isJdk25OrNewer")
@@ -594,16 +682,11 @@ compose.desktop {
             // ⚠️ **增删依赖后要重跑 `:app:suggestModules` 并同步这一行**，否则又是「本地能跑、
             // 安装包缺类」——而且缺在类初始化期的话，表现是启动器只打一句
             // `Failed to launch JVM`，栈里连模块名都看不到（就是 1.4.3 的死法）。
-            //   - `jdk.unsupported`：`JbrWindowChrome` 要用 `sun.misc.Unsafe` 翻
-            //     `AccessibleObject.override` 位来突破 Jigsaw 的访问检查。**缺它 = JBR 自定义
-            //     标题栏装不上**（会回退自绘无边框），所以这一行是功能性的，不是保险。
-            //     1.4.3 正是缺它死的 —— 但死法比「功能失效」严重得多：那时代码把 `Unsafe`
-            //     当**静态类型**用，缺类在 `JbrWindowChrome.<clinit>` 期就要解析
-            //     ⇒ `NoClassDefFoundError: sun/misc/Unsafe` ⇒ `main()` 直接退出。
-            //     代码侧已改成 `Class.forName("sun.misc.Unsafe")` 纯反射（该类型不再出现在
-            //     任何签名/常量池里），把「硬崩」降级回「功能失效 + 走兜底」。
-            //     ⚠️ 所以别因为「现在有反射兜底了」就把这一行删掉：真正让 JBR 标题栏可用的
-            //     是它，反射只是保证缺模块时应用还能起来。
+            //   - `jdk.unsupported`：jlink 默认模块集不含它，而 Kotlin / Skiko 等运行时依赖
+            //     会用到 `sun.misc.Unsafe`。1.4.3 的死法就是缺模块 + 把 `Unsafe` 当静态类型用
+            //     ⇒ `NoClassDefFoundError: sun/misc/Unsafe` 在类初始化期直接退出。
+            //     ⚠️ 原先 JBR 文件对话框桥也要用它，那座桥已随「去 AWT」删除；但别因此
+            //     删掉这一行——先重跑 `:app:suggestModules` 确认再动。
             //   - `java.instrument` / `java.management` / `jdk.security.auth` / `jdk.httpserver`：jdeps 从运行时
             //     类路径里量出来的缺口，目前没有触发崩溃，但迟早会在某条分支上炸。
             modules("java.instrument", "java.management", "jdk.security.auth", "jdk.unsupported", "jdk.httpserver")
@@ -615,6 +698,7 @@ compose.desktop {
             // 注意：值来自上面的 appDescription，那里写了为什么必须是 ASCII。
             description = appDescription
             vendor = "CPPlayer"
+            homepage = "https://github.com/Aurora-Nasa-1/CPPlayer-KMP"
             // ⚠️ 不能直接写 `java.time.Year.now()`：Kotlin 默认只导入 java.lang/io/util，
             // 而 `java` 在这个脚本作用域里被 Gradle 的属性遮蔽了，会报
             // "Unresolved reference 'time'"。所以走文件顶部的 import。
@@ -648,44 +732,189 @@ compose.desktop {
                 iconFile.set(project.file("desktop-icons/icon.png"))
                 shortcut = true
                 appCategory = "Audio"
-                // ⚠️ 别在这儿填 debMaintainer：deb 的 Maintainer 字段必须是
-                // "Name <email>" 形式，填错 dpkg-deb 直接失败；不填 jpackage 有默认值。
+                // electron-builder 生成 .deb 时需要明确的 maintainer 元数据。
+                debMaintainer = "CPPlayer <noreply@github.com>"
             }
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Nucleus 2.x & GraalVM Native Image 构建与运行配置
+// Nucleus 3.x & GraalVM Native Image 构建与运行配置
 // 路线划分：
 // 1. 本地开发与测试：走标准 JVM（支持 desktopRun / desktopRunMobile / desktopTest，快速迭代与热重载）
 // 2. 生产发版：
-//    - Windows：采用最新高性能 GraalVM Native Image 与 G1GC 编译为原生机器码（最佳冷启动、最佳常驻内存与流畅度）
-//    - Linux：保持为通用 JVM 产物（deb 与 tar.gz 分发）
+//    - Windows：采用 Oracle GraalVM Native Image 与 Serial GC 编译为原生机器码；
+//    - Linux：保持为通用 JVM 产物（deb 与 tar.gz 分发），不注册 Native Image 构建。
 // ---------------------------------------------------------------------------
 nucleus {
     application {
         mainClass = "cp.player.app.MainKt"
         graalvm {
-            isEnabled.set(true)
+            isEnabled.set(System.getProperty("os.name").startsWith("Windows", ignoreCase = true))
             imageName.set(cpPackageName)
+            toolchain {
+                distribution.set(dev.nucleusframework.desktop.application.dsl.GraalvmDistribution.ORACLE)
+                // 3.0 的 Oracle 下载器把带点版本当“归档 patch”拼 URL
+                // （download.oracle.com/.../archive/graalvm-jdk-25.3.4.1_...zip → 404）。
+                // 25i3 走 GDS 创新版通道，实际内容仍是 GraalVM 25.3.4.1，
+                // 与 CI 里固定的 GDS 归档一致；CI 的 GRAALVM_HOME 会优先命中，不重复下载。
+                version.set("25i3")
+            }
+            // 无应用 PGO profile 时使用 Oracle 的 ML Profile Inference；应用 PGO 时 Native Image 会自动停用它。
+            mlProfileInference.set(true)
+            // ── GraalVM Native Image 反射 / 可达性元数据三级管理（Nucleus 3.0）────────
+            // L1 通用跨平台：`nucleus.graalvm-runtime` JAR 自带的 reachability-metadata.json
+            //   （300+ 常用类型、JNI 回调、资源 glob）随 desktopMain 依赖自动进镜像；
+            //   .svg/.ttf/.otf、composeResources、META-INF/services 也由它登记，不再手抄。
+            // L2 Oracle GraalVM Reachability Metadata Repository：按 runtimeClasspath
+            //   自动解析第三方库元数据（Nucleus 3.0 默认开启）。显式钉住仓库版本，
+            //   避免插件默认值升级时镜像内容悄悄变化；新增依赖无需再手写 reflection 条目。
+            metadataRepository {
+                enabled.set(true)
+                version.set("1.1.4")
+            }
+            // L3 平台特定：插件 JAR 内 nucleus/graalvm/platform-metadata/windows-*.json
+            //   （Java2D / 字体等 GUI 元数据）在 native-image 任务中自动注入，覆盖
+            //   Skiko 字体回退可能触及的 java.desktop 类。项目自身代码已不再引用 AWT，
+            //   但 GUI 应用仍必须保持 headless = false，否则插件会连同 L3 GUI 元数据
+            //   与 Skiko 原生库一起跳过，镜像启动时才炸。
+            //
+            // L4 本项目：`nativeImageConfigBaseDir` 默认就是 <项目>/graalvm，整个目录以
+            //   `-H:ConfigurationFileDirectories=...\app\graalvm` 传给 native-image，
+            //   所以 `app/graalvm/reachability-metadata.json` 是「L1~L3 都没覆盖到」时
+            //   唯一该动手的地方（现已通过 graalvm/substitutions 消除 ICU4J 的 Locale 与
+            //   BreakIterator 反射；资源 glob 已扩充完整 icudata；保留 Win32 COM / 剪贴板 /
+            //   显示设置的 foreign.downcalls 等）。AWT FileDialog 的 JNI 字段/方法 ID 条目已随「去 AWT」删除。来历、探针验证法见
+            //   app/graalvm/README.md。
+            headless.set(false)
+            // 项目自身资源按 resource roots 自动登记：动态 getResourceAsStream(computedPath)
+            // 无法被 native-image 静态发现，漏登记就是运行时静默少文件。
+            autoIncludeResources.set(true)
+            // 注解处理器按命名约定产出的类（Room *_Impl、Dagger/Hilt *_Factory 等）
+            // 静态分析看不见，由插件补 public no-arg <init> 注册。
+            detectOrphanProjectClasses.set(true)
+            // 这是成品运行时 Java heap 上限（Nucleus 映射为 Native Image runtime 参数），不限制构建器 -Xmx。
+            maxHeapSize.set("128m")
+            val pgoProfile = layout.projectDirectory.file("graalvm/pgo/default.iprof")
+            pgo {
+                // 保留 runWithPgoInstrument 训练任务；Nucleus 仅在 profile 文件存在时给正式构建传 --pgo。
+                enabled.set(true)
+                profile.set(pgoProfile)
+            }
+            // Windows Native Image 使用 Serial；Windows 不支持 G1 Native Image collector。
+            garbageCollector.set(NativeImageGarbageCollector.SERIAL)
+            // instrumented 镜像只用于收集 PGO profile，不参与分发。
+            // 采用 Quick Build Mode (-Ob) 加快 instrumented 构建并降低编译内存占用；
+            // 生产正式镜像仍使用 -O3。
+            val pgoInstrumenting: Boolean =
+                (findProperty("nucleus.graalvm.pgo") as String?)?.equals("instrument", ignoreCase = true) == true ||
+                    gradle.startParameter.taskNames.any {
+                        val name = it.substringAfterLast(':')
+                        name == "runWithPgoInstrument" || name.endsWith("WithPgoInstrument")
+                    }
+            if (pgoInstrumenting) {
+                optimization.set(dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.QUICK_BUILD)
+            } else {
+                // Oracle-only 最高优化级别；25.3.4.1 对符合条件的数组算术循环默认执行 SIMD 向量化。
+                optimization.set(dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.LEVEL_3)
+            }
             buildArgs.addAll(
-                // 启用 GraalVM G1 垃圾收集器：并发分代回收，极低停顿，适配 120/144Hz 高刷界面
-                "--gc=G1",
-                // 启用 -O3 最高优化级别，激活深度内联与向量化
-                "-O3",
                 "-H:+UnlockExperimentalVMOptions",
+                "-H:+CompactingOldGen",
+                // ── Serial GC 的帧率优先参数（Compose / Skiko）──────────────────
+                // Native Image 的 Serial GC 只有 STW 的 minor / major 两种停顿：
+                // 年轻代越大，单次 minor 的复制量越大；120/144Hz 的帧预算只有
+                // 8.3/6.9ms，超过预算就是肉眼可见的掉帧。
+                // 24m 年轻代（eden 约 16~18m）让 minor 更频繁但每次更短；
+                // 老年代仍有 ~104m，相对 55~60m 的存活集有足够晋升余量，
+                // 减少必须做整堆 compaction 的 Full GC。`-Xmx` 仍由上面的
+                // `maxHeapSize=128m` 写进镜像（Nucleus -> -R:MaxHeapSize=128m）。
+                "-R:MaxNewSize=24m",
+                // 显式钉住 25.3 的默认策略 Adaptive2，避免升级 GraalVM 时
+                // 默认 collector 策略漂移导致停顿曲线悄悄变化。
+                "-R:InitialCollectionPolicy=Adaptive2",
+                // Oracle Native Image 默认启用 32 位压缩引用；显式固定以保持运行时对象引用占用。
+                "-H:+UseCompressedReferences",
                 // 引入所有字符集编码支持
                 "-H:+AddAllCharsets",
-                // 构建期类元数据预初始化：跳过全部运行时类加载开销，达到极致初始化速度与更低内存占用
-                "--initialize-at-build-time",
-                // ⚠️ 运行时必须延迟初始化的动态/原生状态类（避免烘焙构建期静态状态/OS句柄/协程单例导致崩溃）
-                "--initialize-at-run-time=kotlin.coroutines.intrinsics.CoroutineSingletons,kotlinx.coroutines.internal.FastServiceLoader,kotlinx.coroutines.EventLoopImplBase,io.ktor.utils.io.jvm.javaio.Pollers,cp.player.core.playback.flick.FlickNativeEngine,cp.player.core.playback.DesktopHiResEngine,cp.player.core.provider.typed.QuickJsWarmup,cp.player.app.platform.DesktopTray,cp.player.app.platform.DesktopWindowPlacement",
+                // 不强制第三方 GUI/native 类在构建期初始化；使用 GraalVM 对安全类的默认判定，
+                // 避免把宿主机 Skia、Win32、X11 或字体状态写入镜像。
+                // Native state/OS handles stay runtime-initialized. Skiko/Skia must not load
+                // during analysis; Win32 JNA needs target OS libraries.
+                // ⚠️ 末尾的 sun.font 不是 AWT 依赖：项目代码已彻底不引用 java.desktop，
+                //   sun.awt.windows 也随之从这串里删掉（WToolkit 不再可达）。但 L3 平台
+                //   元数据与 Skiko 字体回退仍可能把 sun.font 带进镜像，留 run-time 初始化
+                //   可避免构建期写入宿主机字体状态。别把整串一起删。
+                "--initialize-at-run-time=kotlin.coroutines.intrinsics.CoroutineSingletons,kotlinx.coroutines.internal.FastServiceLoader,kotlinx.coroutines.EventLoopImplBase,io.ktor.utils.io.jvm.javaio.Pollers,cp.player.core.playback.flick.FlickNativeEngine,cp.player.core.playback.DesktopHiResEngine,cp.player.core.provider.typed.QuickJsWarmup,dev.nucleusframework.composenativetray,dev.nucleusframework.notification,org.jetbrains.skiko,org.jetbrains.skia,org.jetbrains.skia.impl,com.sun.jna.platform.win32,sun.font",
                 // 确保生成 100% 独立原生机器码产物，禁止任何回落 JVM 依赖
                 "--no-fallback",
                 "-H:+ReportExceptionStackTraces",
                 "--enable-native-access=ALL-UNNAMED",
             )
+            // ── 还能不能再压：堆参数这边的实测边界（2026-11-14）────────────────
+            // 用一个 `-Ob` 迷你镜像（同样的 `-R:MaxHeapSize=128m -R:MaxNewSize=24m`）
+            // 每 1s 采一次工作集，触达 60MB 存活集后 System.gc()：
+            //   | 时点                    | 工作集  |
+            //   | 启动后空闲              | 10.9MB  |
+            //   | 触达 60MB 存活集        | 72.9MB  |
+            //   | System.gc() 之后         | 11.2MB  |
+            // 结论：Serial GC **会把空闲堆还给 OS**，RSS 跟着存活集走、不跟着 `-Xmx` 走。所以：
+            //   - `-XX:MaxHeapFree=…`（堆收缩阈值）：实测 RSS 无变化 ⇒ 不加（默认已经缩回去）；
+            //   - `-XX:MinHeapSize=…`（初始堆）：实测 RSS 无变化（堆整块预留、按页提交）⇒ 不加；
+            //   - 继续压 `maxHeapSize`：只压峰值不动稳态，而 128m 对 55~60MB 存活集留得已经不多，
+            //     再往下必须先压测「批量歌单 / 大 provider 响应 / Base64 歌词」三条峰值路径。
+            // 剩余常驻的大头在堆外：skia 位图、29MB 内置字体（misans_vf 20MB + noto_sans_jp 9.6MB，
+            // 第一段中日文本就会整份读进内存）、字体与 Win32 图形栈。唯一验证过有效的手段是换软件渲染
+            // （实测省 ~120MB，设置页已有「软件渲染」后端；牺牲动画流畅度，故不做默认）。
+            buildArgs.addAll(
+                // 关掉 jvmstat 的 perf data：原生镜像默认开着，每次启动都会往
+                // `%TEMP%\hsperfdata_<user>\` 写一个计数文件并映射一小块缓冲。应用自己不用它，
+                // 用户机器上却是每个版本一份残留；镜像内没有 attach 的入口，关掉没有副作用。
+                "-R:-UsePerfData",
+            )
+            // ── 版本元数据：原生镜像没有 .cfg，`-D` 只作用于构建期 ────────────────
+            // 上面 `desktopCommonJvmArgs` 里那四个 `-Dcp.player.*` 是给 jpackage 启动器
+            // （`app/CPPlayer.cfg`）与 `desktopRun` 用的。原生镜像没有启动器，
+            // `System.getProperty` 里根本没有这四个键 ⇒ `BuildInfo` 回落到默认值，
+            // 于是 v1.9.0 / v1.9.1 的 Windows 原生包里「关于」页写着 `1.0.0 (1)`，
+            // 更新检查也拿它当本机版本。两件事缺一不可：
+            //
+            //   1. `-D<name>=<value>`：native-image 的 `-D` **只在构建期有效**
+            //      （`native-image --help` 原文：「set a system property for image build time only」）。
+            //      写成运行期参数没有对应的键 —— 实测镜像里 `System.getProperties()`
+            //      只剩 46 个标准项，自定义键一个都不在。
+            //   2. `--initialize-at-build-time=cp.player.app.BuildInfo`：把这个 object 的
+            //      `<clinit>` 挪到构建期执行，四个 val 随对象一起写进镜像堆。
+            //      不钉这一行就只能靠 GraalVM 的类初始化启发式，版本号会在某次升级后悄悄变回默认。
+            //
+            // 验证（同一份 GraalVM 25.3.4.1，`-Ob` 迷你镜像，同法钉住一个静态字段）：
+            // 钉初始化的镜像输出 `NAME=9.9.9`；不钉、在 `main` 里读同一属性则输出 `NAME=DEFAULT`。
+            //
+            // ⚠️ 因此 `BuildInfo` 的默认值刻意改成 `0.0.0 (0)`：这条链再断一次时，
+            // 「关于」页会明显不对，而不是继续伪装成一个像样的版本号。
+            buildArgs.addAll(
+                "-Dcp.player.versionName=$appVersionName",
+                "-Dcp.player.versionCode=$appVersionCode",
+                "-Dcp.player.releaseChannel=$appReleaseChannel",
+                "-Dcp.player.gitSha=$gitSha",
+                "--initialize-at-build-time=cp.player.app.BuildInfo",
+            )
+            if (pgoInstrumenting) {
+                // 实测 Oracle GraalVM 在 --pgo-instrument 下强制使用 level 2 优化（218k 方法），
+                // 忽略 -Ob 降级；若无包前缀限制则全量插桩 JDK/第三方全部 218k 方法，极度消耗内存与编译时间。
+                // 1. 限制只对应用业务、UI 渲染与核心协程进行插桩剖析；
+                // 2. 限制并发编译线程为 1，将 IR 图编译内存峰值砍半（稳态约 3.5~4.5G），防止最后几个巨型方法瞬时 OOM；
+                // 3. 搭配 12g 虚拟内存上限与默认 G1GC，留足动态 Region 缓冲；
+                // 4. 关闭看门狗超时中断，防止低配 CI 机器在元数据编码期被误杀。
+                buildArgs.addAll(
+                    "-J-Xmx12g",
+                    "-H:NumberOfThreads=1",
+                    "-H:DeadlockWatchdogInterval=0",
+                    "-H:-DeadlockWatchdogExitOnTimeout",
+                    "-H:ProfilingPackagePrefixes=cp.player,dev.nucleusframework,androidx.compose,org.jetbrains.skia,org.jetbrains.skiko,kotlinx.coroutines",
+                )
+            }
         }
     }
 }
@@ -695,7 +924,7 @@ nucleus {
 // 默认情况下 jlink 不开启压缩与字节码符号剥离，导致 lib/modules 达 55.6MB。
 // 启用 --compress=zip-6、--strip-debug、--no-header-files、--no-man-pages
 // 可直接把 modules 压至 25.3MB（骤减 54.5%），分发包全目录仅 57.3MB。
-tasks.withType<org.jetbrains.compose.desktop.application.tasks.AbstractJLinkTask>().configureEach {
+tasks.withType<dev.nucleusframework.desktop.application.tasks.AbstractJLinkTask>().configureEach {
     freeArgs.addAll(
         "--compress=zip-6",
         "--strip-debug",
@@ -897,39 +1126,79 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
         check(icoFile.isFile) { "缺图标文件：${icoFile.absolutePath}（先跑 scripts/gen_app_icon.py）" }
         val appDir = appImageDir.get().asFile
 
-        // 生产发版（Windows）：优先采用 GraalVM Native Image G1GC 编译产出的独立原生可执行文件
-        val nativeCandidates = listOf(
-            layout.buildDirectory.file("nucleus/binaries/main/$cpPackageName.exe").get().asFile,
-            layout.buildDirectory.file("compose/tmp/main/graalvm/output/$cpPackageName.exe").get().asFile,
-            layout.buildDirectory.file("native/nativeCompile/$cpPackageName.exe").get().asFile,
-        )
-        val foundNativeExe = nativeCandidates.firstOrNull { it.isFile }
-        if (foundNativeExe != null) {
+        // 生产发版（Windows）：优先采用 GraalVM Native Image 编译产出的独立原生应用镜像
+        val graalvmAppDir = layout.buildDirectory.dir("compose/binaries/main/graalvm-app/$cpPackageName").get().asFile
+        if (graalvmAppDir.resolve("$cpPackageName.exe").isFile) {
             appDir.mkdirs()
-            val destExe = appDir.resolve("$cpPackageName.exe")
-            foundNativeExe.copyTo(destExe, overwrite = true)
-            logger.lifecycle("已装配 GraalVM Native Image (G1GC) 原生可执行文件: ${foundNativeExe.absolutePath} -> ${destExe.absolutePath}")
+            graalvmAppDir.copyRecursively(appDir, overwrite = true)
+            logger.lifecycle("已装配 GraalVM Native Image 原生应用镜像: ${graalvmAppDir.absolutePath} -> ${appDir.absolutePath}")
+        } else {
+            val nativeCandidates = listOf(
+                layout.buildDirectory.file("compose/binaries/main/graalvm-app/$cpPackageName/$cpPackageName.exe").get().asFile,
+                layout.buildDirectory.file("compose/tmp/main/graalvm/nativeCompile/$cpPackageName.exe").get().asFile,
+                layout.buildDirectory.file("compose/tmp/main/graalvm/output/$cpPackageName.exe").get().asFile,
+                layout.buildDirectory.file("nucleus/binaries/main/$cpPackageName.exe").get().asFile,
+                layout.buildDirectory.file("native/nativeCompile/$cpPackageName.exe").get().asFile,
+            )
+            val foundNativeExe = nativeCandidates.firstOrNull { it.isFile }
+            if (foundNativeExe != null) {
+                appDir.mkdirs()
+                val destExe = appDir.resolve("$cpPackageName.exe")
+                foundNativeExe.copyTo(destExe, overwrite = true)
+                logger.lifecycle("已装配 GraalVM Native Image 原生可执行文件: ${foundNativeExe.absolutePath} -> ${destExe.absolutePath}")
+            }
         }
 
         check(appDir.resolve("$cpPackageName.exe").isFile) {
             "未找到主程序 $cpPackageName.exe（路径：${appDir.absolutePath}）。"
         }
 
-        // 打包前将预编译原生动态库（如 rust_lib_flick_player.dll）注入到 app-image 多重关键位置（exe 同级、app 目录、JRE bin 目录）
-        val nativeDir = project.file("native")
-        if (nativeDir.isDirectory) {
+        // 打包前将预编译原生动态库（如 rust_lib_flick_player.dll）注入到 app-image 多重关键位置（exe 同级、app 目录、native 目录、JRE bin 目录）
+        val nativeFiles = listOf(
+            project.file("native"),
+            rootProject.file("native"),
+        ).filter { it.isDirectory }
+            .flatMap { it.listFiles()?.filter { f -> f.isFile }?.toList() ?: emptyList() }
+            .associateBy { it.name }
+            .values
+
+        if (nativeFiles.isNotEmpty()) {
             val targets = listOf(
                 appDir,
+                appDir.resolve("native"),
                 appDir.resolve("app"),
                 appDir.resolve("runtime/bin"),
             )
-            nativeDir.listFiles()?.filter { it.isFile }?.forEach { f ->
+            nativeFiles.forEach { f ->
                 targets.forEach { targetDir ->
-                    if (targetDir.isDirectory) {
-                        val dest = targetDir.resolve(f.name)
-                        f.copyTo(dest, overwrite = true)
-                        logger.lifecycle("已注入原生动态库至安装镜像: ${f.name} -> ${dest.absolutePath}")
-                    }
+                    targetDir.mkdirs()
+                    val dest = targetDir.resolve(f.name)
+                    f.copyTo(dest, overwrite = true)
+                    logger.lifecycle("已注入原生动态库至安装镜像: ${f.name} -> ${dest.absolutePath}")
+                }
+            }
+        }
+
+        // 打包前将内置字体注入到安装镜像（fonts/ 与 resources/fonts/）
+        val fontFiles = listOf(
+            project.file("src/desktopMain/resources/fonts"),
+            project.file("src/commonMain/composeResources/font"),
+        ).filter { it.isDirectory }
+            .flatMap { it.listFiles()?.filter { f -> f.isFile && (f.name.endsWith(".ttf") || f.name.endsWith(".otf")) }?.toList() ?: emptyList() }
+            .associateBy { it.name }
+            .values
+
+        if (fontFiles.isNotEmpty()) {
+            val fontTargets = listOf(
+                appDir.resolve("fonts"),
+                appDir.resolve("resources/fonts"),
+            )
+            fontFiles.forEach { fontFile ->
+                fontTargets.forEach { targetDir ->
+                    targetDir.mkdirs()
+                    val dest = targetDir.resolve(fontFile.name)
+                    fontFile.copyTo(dest, overwrite = true)
+                    logger.lifecycle("已注入内置字体至安装镜像: ${fontFile.name} -> ${dest.absolutePath}")
                 }
             }
         }
@@ -1003,9 +1272,9 @@ afterEvaluate {
     //   `compose.desktop.application.javaHome`（.jbr）——不用管；
     // - `:app:desktopRun`（**Kotlin KMP 的 KotlinJvmRun**，不是 compose 的任务）：
     //   javaLauncher 默认 = Gradle 守护进程的 JDK（本机 Zulu 25）。
-    //   而 JBR 的 `WindowDecorations`（自定义标题栏 / 原生贴边吸附的前提）只在 JBR 里有，
-    //   于是 desktopRun 下 `JbrWindowChrome.isSupported` 恒为 false，窗口永远走
-    //   `Undecorated` 模拟路 —— 「跑了 JBR 还是没吸附」就是这么来的。
+    //   发行版固定跑 JBR；开发态若用别的 JDK，字体回退与 Skia 渲染
+    //   都会和用户机器不一致，问题只能等打包后才暴露。
+    //   （文件选择器已改走 Win32 COM，与运行时无关，不再是理由。）
     //
     // KotlinJvmRun 继承 JavaExec：javaLauncher 非 null 时**优先于** executable，
     // 所以必须先把它清空再设 executable，否则赋值被无声忽略。
@@ -1013,7 +1282,7 @@ afterEvaluate {
         ?.let { File(it, if (hostJbrPlatform == "windows") "bin/java.exe" else "bin/java") }
         ?.takeIf { it.isFile }
     if (resolvedJbrHome != null && runOnJbrJava == null) {
-        logger.warn("CPPlayer: JBR 目录里找不到 bin/java，desktopRun 家族将退回守护进程 JDK（窗口走自绘无边框模拟路）")
+        logger.warn("CPPlayer: JBR 目录里找不到 bin/java，desktopRun 家族将退回守护进程 JDK（字体/渲染可能与发行版不一致）")
     }
     val runFamilyTaskNames = listOf(
         "run",
@@ -1027,9 +1296,29 @@ afterEvaluate {
     )
     val configureRunTask: (JavaExec) -> Unit = { task ->
         val existing = task.jvmArgs ?: emptyList()
+        // 本地 run 家族固定 Serial GC：与 Windows 生产 Native Image 的 collector 一致，
+        // 少几个 GC 线程、启动更直接，也不会让 Shenandoah 的低延迟调参掩盖问题。
+        // ⚠️ 必须先把 `desktopCommonJvmArgs` 里那套 GC 参数摘掉再追加，否则 JVM 同时看到
+        // 两个 collector 会直接报 "Multiple garbage collectors selected" 起不来。
         val merged = (listOf("-XX:+UnlockExperimentalVMOptions") + existing + desktopCommonJvmArgs)
             .filterNot { it.startsWith("-Dcp.player.releaseChannel=") }
-            .plus(listOf("-Dcp.player.releaseChannel=debug", "-Dcp.player.isDesktopRun=true"))
+            .filterNot { it in gcSelectionFlags }
+            // 堆参数由 run 家族自己拥有：避免共享的 256m 与本地的 150m 同时出现。
+            .filterNot { it.startsWith("-Xms") || it.startsWith("-Xmx") || it.startsWith("-Xmn") }
+            .plus(gcJvmArgsFor("serial"))
+            .plus(desktopRunHeapArgs)
+            .plus(
+                listOf(
+                    "-Dcp.player.releaseChannel=debug",
+                    "-Dcp.player.isDesktopRun=true",
+                    // GC 日志直接打到终端（刻意不带 `file=`）：本地排查停顿 / 堆曲线只看
+                    // 运行窗口这一处，不用再去翻日志文件。留出 uptime 便于和 Skiko 帧率对照。
+                    "-Xlog:gc:stdout:time,uptime,level,tags",
+                    // Skiko 每帧统计（FPS / 帧耗时）走 stdout，和上面的 GC 日志同屏，
+                    // 用来判断掉帧是不是 GC 停顿造成的。
+                    "-Dskiko.fps.enabled=true",
+                ),
+            )
             .distinct()
         task.setJvmArgs(merged)
     }

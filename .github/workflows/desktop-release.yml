@@ -1,6 +1,6 @@
 name: Desktop Release
 
-# 桌面产物：Windows `.exe`（Velopack，由 jpackage 的 app-image 打）/ Linux `.deb`
+# 桌面产物：Windows GraalVM Native Image `.exe`（Velopack 安装器/更新源）/ Linux JVM `.deb`
 # + 通用 `.tar.gz`，在各自原生 runner 上构建。
 # stable 渠道还会把 tar.gz 发布到 AUR（cpplayer-bin）。
 # 与 release.yml（稳定版 Android） / debug-release.yml（预发布 Android）共用同一个
@@ -20,6 +20,23 @@ on:
           - debug
           - stable
         default: debug
+      publish_aur:
+        description: "手动触发时是否同步发布到 AUR（默认否）。"
+        type: boolean
+        required: false
+        default: false
+      source_ref:
+        description: "构建源码 ref；补发已有版本时可指定原 tag。留空使用当前 ref。"
+        required: false
+        default: ""
+      platform:
+        description: "手动触发时只构建所选平台；push tag 始终构建全部平台。"
+        type: choice
+        options:
+          - all
+          - windows
+          - linux
+        default: all
   push:
     tags:
       - "debug-v*"
@@ -45,6 +62,8 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
       channel: ${{ steps.meta.outputs.channel }}
+      source_ref: ${{ steps.meta.outputs.source_ref }}
+      matrix: ${{ steps.meta.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,9 +72,12 @@ jobs:
       - name: Resolve version
         id: meta
         shell: bash
+        env:
+          BUILD_PLATFORM: ${{ github.event.inputs.platform }}
         run: |
           set -euo pipefail
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            source_ref="${GITHUB_REF_NAME}"
             # ⚠️ 旧实现写的是 `if [[ "$tag" == "$GITHUB_SHA" ]]` —— GITHUB_REF_NAME
             # 永远不等于 SHA，该条件恒为假，于是手动触发时版本号 = 分支名。
             if [[ "${GITHUB_REF_NAME}" == debug-v* ]]; then
@@ -70,6 +92,8 @@ jobs:
             # github.event.inputs 在非 dispatch 事件里稳定为空，不影响 workflow 解析。
             channel="${{ github.event.inputs.channel }}"
             version="${{ github.event.inputs.version }}"
+            source_ref="${{ github.event.inputs.source_ref }}"
+            if [[ -z "$source_ref" ]]; then source_ref="${GITHUB_REF_NAME}"; fi
             if [[ -z "$version" ]]; then
               version="$(grep -E '^app\.versionName=' gradle.properties | head -1 | cut -d= -f2- | tr -d '[:space:]')"
             fi
@@ -83,47 +107,98 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=${tag_prefix}v$version" >> "$GITHUB_OUTPUT"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "source_ref=$source_ref" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+
+          windows = {
+              "os": "windows-latest",
+              "platform": "windows",
+              "gradleTasks": ":app:packageGraalvmNative :app:packageWindowsVelopack",
+              "assetPaths": "app/build/compose/binaries/main/velopack/*",
+          }
+          # ⚠️ Linux 侧**必须带扩展名**，不能写 `deb/*` / `targz/*`：jpackage 与
+          # Nucleus 的 deb/tar.gz 任务会在同一层留下打包中间件 —— 图标集
+          # （16x16.png … 512x512.png）、`after-install-nucleus.tpl`、以及 electron
+          # 风格的 `package.json` / `latest-linux.yml`。用目录通配会把它们一起封进
+          # artifact（v1.9.0 实测 12 个文件里有 10 个是这种垃圾），再被 publish
+          # 全量传成 release 资产。收窄到扩展名是最省事的第一道闸。
+          linux = {
+              "os": "ubuntu-latest",
+              "platform": "linux",
+              "gradleTasks": ":app:packageDeb :app:packageLinuxTarGz",
+              "assetPaths": "app/build/compose/binaries/main/deb/*.deb\napp/build/compose/binaries/main/targz/*.tar.gz",
+          }
+          selected = (os.environ.get("BUILD_PLATFORM") or "all").strip()
+          choices = {"all": [windows, linux], "windows": [windows], "linux": [linux]}
+          if selected not in choices:
+              raise SystemExit(f"Unsupported platform selection: {selected}")
+          print("matrix=" + json.dumps({"include": choices[selected]}, separators=(",", ":")))
+          PY
 
   desktop:
     needs: meta
     strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            platform: windows
-            # Windows 生产发布：采用 GraalVM Native Image (G1GC) 构建原生可执行文件并由 Velopack 打包
-            # `Setup.exe` + 更新源（`*.nupkg` / `RELEASES`）+ 便携 zip。
-            gradleTasks: ":app:packageGraalvmNative :app:packageWindowsVelopack"
-            assetPaths: |
-              app/build/compose/binaries/main/velopack/*
-          - os: ubuntu-latest
-            platform: linux
-            # Linux 生产发布：保持通用高兼容性 JVM 产物（deb 与 tar.gz）
-            gradleTasks: ":app:packageDeb :app:packageLinuxTarGz"
-            assetPaths: |
-              app/build/compose/binaries/main/deb/*
-              app/build/compose/binaries/main/targz/*
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.meta.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Setup Java (Linux JVM)
-        if: matrix.platform == 'linux'
-        uses: actions/setup-java@v4
+          ref: ${{ needs.meta.outputs.source_ref }}
+      - name: Apply v1.8.9 Linux deb metadata fix
+        if: matrix.platform == 'linux' && needs.meta.outputs.tag == 'v1.8.9' && needs.meta.outputs.source_ref == 'v1.8.9'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git diff v1.8.9..3776d9c -- app/build.gradle.kts > "$RUNNER_TEMP/deb-metadata.patch"
+          grep -q 'debMaintainer' "$RUNNER_TEMP/deb-metadata.patch"
+          git apply --check "$RUNNER_TEMP/deb-metadata.patch"
+          git apply "$RUNNER_TEMP/deb-metadata.patch"
+          git diff --check
+      # Gradle/Kotlin 构建统一使用 JDK 25；Native Image 工具链由 Nucleus
+      # 按 app/build.gradle.kts 中固定的 Oracle GraalVM 25.3.4.1 配置获取。
+      - uses: actions/setup-java@v4
         with:
           distribution: zulu
           java-version: ${{ env.JAVA_VERSION }}
-      - name: Setup GraalVM (Windows Native Image with G1GC)
-        if: matrix.platform == 'windows'
-        uses: graalvm/setup-graalvm@v1
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: 'graalvm'
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          native-image-job-reports: 'true'
       - name: Setup Gradle
+        # 与两个 Android 工作流对齐：缓存命中 + 守护进程复用，否则桌面包每次全量冷启动。
         uses: gradle/actions/setup-gradle@v3
+
+      - name: Install Oracle GraalVM 25.3.4.1 from GDS archive
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://gds.oracle.com/download/graal/25i3/archive/graalvm-jdk-25i3-25.0.4.1_windows-x64_bin.zip'
+          $archive = Join-Path $env:RUNNER_TEMP 'graalvm-25.3.4.1-windows-x64.zip'
+          $destination = Join-Path $env:RUNNER_TEMP 'graalvm-25.3.4.1'
+          curl.exe --fail --location --retry 3 --progress-bar --output $archive $url
+          # Pinned from the verified Oracle GDS archive; this is not the Community Edition hash.
+          $expectedSha256 = '5ad639be17b91a994eab49221698155513c26818df65f65a08139b2997f02c71'
+          $actualSha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualSha256 -ne $expectedSha256) { throw "GraalVM archive SHA-256 mismatch: $actualSha256" }
+          Expand-Archive -LiteralPath $archive -DestinationPath $destination -Force
+          $graalvmHome = $null
+          foreach ($directory in Get-ChildItem -LiteralPath $destination -Directory) {
+            if (Test-Path (Join-Path $directory.FullName 'bin\native-image.cmd')) {
+              $graalvmHome = $directory.FullName
+              break
+            }
+          }
+          if (-not $graalvmHome) { throw 'Oracle GraalVM archive did not contain bin/native-image.cmd.' }
+          $release = Get-Content -LiteralPath (Join-Path $graalvmHome 'release')
+          $versionLine = $release | Where-Object { $_ -like 'GRAALVM_VERSION=*' } | Select-Object -First 1
+          $vendorLine = $release | Where-Object { $_ -match '^(IMPLEMENTOR|VENDOR)=' } | Select-Object -First 1
+          if ($versionLine -ne 'GRAALVM_VERSION="25.3.4.1"') { throw "Unexpected GraalVM version: $versionLine" }
+          if ($vendorLine -notmatch 'Oracle') { throw "Expected Oracle GraalVM, got: $vendorLine" }
+          & (Join-Path $graalvmHome 'bin\native-image.cmd') --version
+          if ($LASTEXITCODE -ne 0) { throw 'Oracle native-image version check failed.' }
+          "GRAALVM_HOME=$graalvmHome" >> $env:GITHUB_ENV
+          Remove-Item -LiteralPath $archive
 
       # Velopack 的 CLI 是 .NET global tool。装到工作区内的 `.tools/` 而不是默认的
       # `~/.dotnet/tools` —— 后者**不保证在 runner 的 PATH 上**，而 Gradle 侧只认
@@ -136,29 +211,97 @@ jobs:
           set -euo pipefail
           dotnet tool install --tool-path .tools vpk
           test -f .tools/vpk.exe || { echo "::error::vpk 没装成（.tools/vpk.exe 不存在）"; exit 1; }
+          # ⚠️ **不能写 `vpk --version`**：vpk 用 Oakton 解析参数，没有 `--version` 这个
+          # 选项，会报 "Required command was not provided. Unrecognized command or
+          # argument '--version'" 并以非零退出 —— 这一步就把 job 弄红了。
+          # `vpk pack -H` 打印扩展帮助（含全部参数与默认值），既能验证二进制可执行，
+          # 也是核对命令行参数的唯一权威来源。
           .tools/vpk.exe pack -H | head -40
+
+      # PGO 是「文件在就生效」的隐式接线（Nucleus 只在 profile 存在时追加 --pgo），
+      # 所以文件被误删/被 LFS 指针替换时，构建照样成功、发出去的却是 ML 推断版。
+      # 发版 job 里先断言文件本身。
+      - name: Verify PGO profile present
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          profile="app/graalvm/pgo/default.iprof"
+          test -s "$profile" || {
+            echo "::error::$profile 缺失或为空 —— 发行包会静默退化成 ML Profile Inference"
+            exit 1
+          }
+          echo "PGO profile: $(stat -c%s "$profile") bytes"
+          sha256sum "$profile"
 
       - name: Build desktop package
         shell: bash
         run: |
-          ./gradlew ${{ matrix.gradleTasks }} --no-daemon \
-            -Pcp.jbrHome="$JAVA_HOME" \
-            -Pcp.vpkPath="${{ github.workspace }}/.tools/vpk.exe" \
-            -Papp.versionName="${{ needs.meta.outputs.version }}" \
-            -Papp.releaseChannel="${{ needs.meta.outputs.channel }}" \
-            -Pcp.gc=shenandoah \
-            -Pcp.compactHeaders=true \
-            -Pcp.jdk25=true
-      - name: Verify Windows Velopack Package
+          set -euo pipefail
+          gradle_args=(
+            "-Papp.versionName=${{ needs.meta.outputs.version }}"
+            "-Papp.releaseChannel=${{ needs.meta.outputs.channel }}"
+          )
+          if [[ "${{ matrix.platform }}" == "windows" ]]; then
+            # Windows native build uses GraalVM's Serial GC / Native Image options,
+            # not JVM GC flags or a JVM AOT Cache.
+            gradle_args+=("-Pcp.vpkPath=${{ github.workspace }}/.tools/vpk.exe")
+          else
+            # Linux JVM runtime settings; AOT Cache generation was removed from the app.
+            gradle_args+=(
+              "-Pcp.jbrHome=$JAVA_HOME"
+              "-Pcp.gc=shenandoah"
+              "-Pcp.compactHeaders=true"
+              "-Pcp.jdk25=true"
+            )
+          fi
+          ./gradlew ${{ matrix.gradleTasks }} --no-daemon "${gradle_args[@]}"
+
+      # 构建成功 ≠ PGO 生效。Nucleus 把真正传给 native-image 的参数落在
+      # native-image-args.txt 里，这是唯一能事后核对的物证（日志会被 --quiet / 分级吞掉）。
+      - name: Verify PGO profile applied
         if: matrix.platform == 'windows'
-        shell: pwsh
+        shell: bash
         run: |
-          $setupExe = Get-ChildItem -Path "app/build/compose/binaries/main/velopack" -Filter "*-Setup.exe" | Select-Object -First 1
-          if ($null -eq $setupExe) {
-            Write-Error "Windows Velopack package missing *-Setup.exe!"
+          set -euo pipefail
+          args="app/build/compose/tmp/main/graalvm/nativeCompile/native-image-args.txt"
+          test -f "$args" || {
+            echo "::error::找不到 $args，无法确认 PGO 是否真的生效"
             exit 1
           }
-          Write-Host "Verified Windows Velopack package: $($setupExe.FullName)" -ForegroundColor Green
+          if grep -q -- '"--pgo-instrument"' "$args"; then
+            echo "::error::发行构建带上了 --pgo-instrument（插桩镜像）—— 采集版绝不能发版"
+            grep -n 'pgo' "$args" || true
+            exit 1
+          fi
+          grep -q -- '"--pgo=' "$args" || {
+            echo "::error::发行构建没有带上 --pgo，PGO 未生效"
+            grep -n 'pgo' "$args" || true
+            exit 1
+          }
+          grep -n 'pgo' "$args"
+
+      # 版本号同样是「不接就静默降级」：原生镜像没有 .cfg，`-Dcp.player.*` 只在
+      # 构建期有效，必须配合 `--initialize-at-build-time=cp.player.app.BuildInfo`
+      # 才能把值写进镜像堆。v1.9.0 / v1.9.1 两样都缺，「关于」页显示 1.0.0 (1)，
+      # 而构建日志一路是绿的 —— 这条断言就是补这个盲区。
+      - name: Verify version metadata args
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          args="app/build/compose/tmp/main/graalvm/nativeCompile/native-image-args.txt"
+          ver="${{ needs.meta.outputs.version }}"
+          grep -qF -- "\"-Dcp.player.versionName=$ver\"" "$args" || {
+            echo "::error::native-image 参数里没有 -Dcp.player.versionName=$ver（原生包会显示默认版本）"
+            grep -n 'cp.player' "$args" || true
+            exit 1
+          }
+          grep -qF -- '"--initialize-at-build-time=cp.player.app.BuildInfo"' "$args" || {
+            echo "::error::缺 --initialize-at-build-time=cp.player.app.BuildInfo，版本号进不了镜像"
+            exit 1
+          }
+          grep -n 'cp.player' "$args"
 
       # tar.gz 的执行位全靠打包时原样保留，这里只做布局断言（缺关键文件立刻失败，
       # 别等到用户解压才发现）。执行位无法从 tar 列表读出，AUR 的 package() 里有
@@ -171,7 +314,7 @@ jobs:
           f="$(ls app/build/compose/binaries/main/targz/CPPlayer-*-linux-x64.tar.gz)"
           echo "tar.gz: $f"
           # ⚠️ **不能**写成 `tar -tzf "$f" | grep -qx '...'`：`grep -q` 命中即退出、
-          # 关掉管道读端，而内置 JBR 运行时的清单（几千条）远超 64 KiB 管道缓冲，此刻
+          # 关掉管道读端，而内置 JVM 运行时的清单（几千条）远超 64 KiB 管道缓冲，此刻
           # tar 还在写 ⇒ 被 SIGPIPE 杀死（实测 `PIPESTATUS=141 0`；部分 tar 版本改报
           # `tar: stdout: write error` 后以 2 退出）。`set -o pipefail` 会把这个**假的**
           # 非零当成断言失败 —— 于是**文件在不在都红**，报的却是「缺启动器」，把排查
@@ -207,11 +350,12 @@ jobs:
             }
           done
           # 运行时模块清单断言（2026-10-05）：`nativeDistributions.modules(...)` 里少一个模块
-          # **本地永远看不出来** —— `desktopRun` 跑在完整的 JBR SDK 上，模块一个不缺；
+          # **本地永远看不出来** —— `desktopRun` 跑在完整的 JDK 上，模块一个不缺；
           # 只有 jpackage 出的安装包才按这份清单裁剪。而它在用户机器上的表现是启动器只打一句
           # `Failed to launch JVM`：缺类若发生在**类初始化期**，栈里连模块名都不出现。
           # 1.4.3 就是这么死的 —— 缺 `jdk.unsupported` ⇒ `JbrWindowChrome.<clinit>` 抛
           # `NoClassDefFoundError: sun/misc/Unsafe` ⇒ `main()` 直接退出。
+          # （`JbrWindowChrome` 已随 TAO 迁移删除；当前 `JbrFileDialogBridge` 仍依赖该模块。）
           # 真值在 jlink 写出的 `release` 里，直接读它，别去猜插件会带哪些模块
           # （`suggestModules` 只打日志、不参与打包，见 app/build.gradle.kts 的说明）。
           # ⚠️ 增删依赖后重跑 `./gradlew :app:suggestModules`，把输出同步进
@@ -230,11 +374,40 @@ jobs:
             }
           done
           echo "tar.gz 布局 OK"
+      - name: Stage release artifacts
+        # 把匹配到的安装包**平铺**到一个目录再上传。upload-artifact 会保留匹配路径的
+        # 公共父目录结构：Linux 的 deb/*.deb 与 targz/*.tar.gz 没有共同文件层，
+        # 封出来就是 deb/ 与 targz/ 两层目录，publish 清理中间件时会把它们整包删掉。
+        shell: bash
+        env:
+          ASSET_PATHS: ${{ matrix.assetPaths }}
+        run: |
+          set -euo pipefail
+          out=build/release-stage
+          rm -rf "$out"
+          mkdir -p "$out"
+          shopt -s nullglob
+          while IFS= read -r pattern; do
+            [ -z "$pattern" ] && continue
+            for f in $pattern; do
+              cp -f "$f" "$out/"
+            done
+          done <<< "$ASSET_PATHS"
+          staged=$(find "$out" -maxdepth 1 -type f | wc -l)
+          echo "staged $staged file(s):"
+          ls -la "$out"
+          test "$staged" -gt 0
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
           name: CPPlayer-${{ needs.meta.outputs.version }}-${{ matrix.platform }}
-          path: ${{ matrix.assetPaths }}
+          path: build/release-stage/*
+          # ⚠️ 必须扁平化：Linux 的两条通配（deb/*.deb、targz/*.tar.gz）没有共同的文件层，
+          # upload-artifact 会把公共父目录以上的结构原样封进去，下载后变成
+          # `deb/xxx.deb` + `targz/xxx.tar.gz`，然后被 publish 的「清理中间件」当成
+          # 目录整包删掉 —— v1.9.2 的真实事故：Linux 包 missing，AUR 哈希 404。
+          # Windows 只有一层目录，扁平化同样安全。
+          if-no-files-found: error
       # jpackage 失败时只给 exit code，真正原因在 compose 日志里。
       # 直接 cat 到 job 日志 + 传 artifact，下次失败不用再猜。
       - name: Dump jpackage logs on failure
@@ -261,16 +434,64 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ needs.meta.outputs.source_ref }}
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
           pattern: CPPlayer-*
           merge-multiple: true
-      - name: Generate release notes
+      - name: Prune non-release assets
+        # ⚠️ **release 资产列表是给人看的，别把打包中间件混进去**（v1.9.0 的真实事故：
+        # 资产里多出 `16x16.png` … `512x512.png`、`after-install-nucleus.tpl`、
+        # `package.json`、`latest-linux.yml` 共 10 个文件 —— 都是打包目录里的中间件，
+        # 被 `dir/*` 通配封进 artifact，再被下面的 `release-assets/**/*` 原样上传）。
+        # 这里用**白名单**筛一遍，而不是按名字拉黑名单：以后上游多出一种中间件，
+        # 也不需要回来改这里；真产物要是被筛掉，下面的断言会立刻红。
         shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          shopt -s nullglob
+          keep=()
+          drop=()
+          for f in *; do
+            case "$f" in
+              # Velopack 的更新源元数据：应用侧靠它判断有没有新版，必须留。
+              RELEASES|releases.*.json|assets.*.json) keep+=("$f") ;;
+              # 安装包 / 便携包 / 更新包 / 校验值。这里**只认扩展名**，
+              # 所以 `package.json`（electron 风格中间件）不会命中。
+              *.exe|*.msi|*.zip|*.nupkg|*.deb|*.rpm|*.dmg|*.pkg|*.apk) keep+=("$f") ;;
+              *.tar.gz|*.tgz|*.sha256|*.sha512) keep+=("$f") ;;
+              *) drop+=("$f") ;;
+            esac
+          done
+          if (( ${#drop[@]} > 0 )); then
+            echo "::notice::丢掉 ${#drop[@]} 个非发布文件（打包中间件）"
+            printf '  - %s\n' "${drop[@]}"
+            rm -rf -- "${drop[@]}"
+          fi
+          # 白名单写错了要先炸在这里，而不是发一个「除了图标什么都没有」的 release。
+          installable=( *.exe *.deb *.tar.gz *.apk )
+          if (( ${#installable[@]} == 0 )); then
+            echo "::error::筛完没有任何安装包（*.exe / *.deb / *.tar.gz / *.apk）—— 检查白名单"
+            ls -la
+            exit 1
+          fi
+          echo "--- 将发布 ${#keep[@]} 个文件 ---"
+          printf '  %s\n' "${keep[@]}"
+      - name: Generate release notes
+        if: github.event_name != 'workflow_dispatch'
+        shell: bash
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || secrets.OPENAI_MODEL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL }}
         run: |
           bash scripts/generate_release_notes.sh "${{ needs.meta.outputs.tag }}" "${{ runner.temp }}/RELEASE_NOTES.md"
       - name: Publish desktop assets
+        if: github.event_name != 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           # 用 meta 解析出来的 tag，不用 github.ref_name（手动触发时那是分支名）。
@@ -279,6 +500,22 @@ jobs:
           prerelease: ${{ needs.meta.outputs.channel != 'stable' }}
           body_path: ${{ runner.temp }}/RELEASE_NOTES.md
           files: release-assets/**/*
+      - name: Attach assets to existing release only
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.meta.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" >/dev/null
+          mapfile -d '' assets < <(find release-assets -type f -print0)
+          if (( ${#assets[@]} == 0 )); then
+            echo "::error::No desktop assets were downloaded."
+            exit 1
+          fi
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
 
   # ---------------------------------------------------------------------------
   # AUR 自动发布（cpplayer-bin）：仅 stable 渠道。
@@ -290,7 +527,9 @@ jobs:
   # ---------------------------------------------------------------------------
   aur:
     needs: [meta, publish]
-    if: needs.meta.outputs.channel == 'stable'
+    if: >-
+      needs.meta.outputs.channel == 'stable' &&
+      (github.event_name != 'workflow_dispatch' || inputs.publish_aur == true)
     runs-on: ubuntu-latest
     container:
       image: archlinux:base-devel
@@ -317,6 +556,8 @@ jobs:
           id builder
 
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.source_ref }}
 
       - name: Check AUR key configured
         id: guard

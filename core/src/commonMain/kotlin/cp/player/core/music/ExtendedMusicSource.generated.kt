@@ -325,6 +325,15 @@ interface ExtendedMusicSource {
     /** Page liked track IDs with item offsets and explicit continuation; self addresses the current account. Use this operation for collections larger than 500 IDs. Capability: accounts.likes.page. Tag: 166. Undeclared or unimplemented capabilities fail with Unsupported. */
     suspend fun getLikeListPage(request: cp.player.sdk.PagedIdRequest): BackendResult<cp.player.sdk.IdPage> =
         BackendResult.Unsupported("accounts.likes.page is not supported")
+    /** Set the current account's liked state for one typed social resource, including an event. Capability: social.likeResource. Tag: 167. Undeclared or unimplemented capabilities fail with Unsupported. */
+    suspend fun likeResource(request: cp.player.sdk.ResourceLikeRequest): BackendResult<cp.player.sdk.MutationResult> =
+        BackendResult.Unsupported("social.likeResource is not supported")
+    /** Resolve audio for one of the host-supported DRM key systems and return its resource plus license descriptor; unsupported key systems must fail explicitly. Capability: tracks.resolveDrm. Tag: 168. Undeclared or unimplemented capabilities fail with Unsupported. */
+    suspend fun resolveDrm(request: cp.player.sdk.DrmResolveRequest): BackendResult<cp.player.sdk.ResolvedMedia> =
+        BackendResult.Unsupported("tracks.resolveDrm is not supported")
+    /** Exchange one host CDM challenge for a provider license. Treat challenge and license bytes as sensitive and never log or persist them. Capability: tracks.exchangeLicense. Tag: 169. Undeclared or unimplemented capabilities fail with Unsupported. */
+    suspend fun exchangeLicense(request: cp.player.sdk.LicenseRequest): BackendResult<cp.player.sdk.LicenseResponse> =
+        BackendResult.Unsupported("tracks.exchangeLicense is not supported")
 }
 
 abstract class ExtendedMusicSourceBase : ExtendedMusicSource {
@@ -541,4 +550,10 @@ abstract class ExtendedMusicSourceBase : ExtendedMusicSource {
         extendedOperation { it.getUserCommentHistory(request) }
     override suspend fun getLikeListPage(request: cp.player.sdk.PagedIdRequest): BackendResult<cp.player.sdk.IdPage> =
         extendedOperation { it.getLikeListPage(request) }
+    override suspend fun likeResource(request: cp.player.sdk.ResourceLikeRequest): BackendResult<cp.player.sdk.MutationResult> =
+        extendedOperation { it.likeResource(request) }
+    override suspend fun resolveDrm(request: cp.player.sdk.DrmResolveRequest): BackendResult<cp.player.sdk.ResolvedMedia> =
+        extendedOperation { it.resolveDrm(request) }
+    override suspend fun exchangeLicense(request: cp.player.sdk.LicenseRequest): BackendResult<cp.player.sdk.LicenseResponse> =
+        extendedOperation { it.exchangeLicense(request) }
 }

@@ -69,6 +69,10 @@ internal fun validateExtendedRequest(request: Any) {
             require(request.userIds.size in 1..100)
             require(request.type in setOf("song", "album", "playlist"))
         }
+        is ResourceLikeRequest -> request.values().also {
+            require(request.id.isNotBlank() && request.id.length <= 512)
+            require(request.type.isNotBlank() && request.type.length <= 64)
+        }
         is DeleteCommentRequest -> request.values().also { require(request.commentId > 0) }
         is MessageHistoryRequest -> request.values()
         is SendMessageRequest -> request.values().also {
@@ -118,6 +122,21 @@ internal fun validateExtendedRequest(request: Any) {
             require(Regex("\\d{4}-\\d{2}-\\d{2}").matches(request.date))
         }
         is TrackAvailabilityRequest -> request.values().also { require(request.bitrate > 0) }
+        is DrmResolveRequest -> request.values().also {
+            validateId(request.id)
+            require(request.quality.isNotBlank() && request.quality.length <= 128)
+            require(request.keySystems.size in 1..8)
+            require(request.keySystems.distinct().size == request.keySystems.size)
+            require(request.keySystems.all(::isDrmKeySystem))
+        }
+        is LicenseRequest -> request.values().also {
+            validateId(request.id)
+            require(isDrmKeySystem(request.keySystem))
+            require(request.challenge.size in 1..MAX_DRM_BYTES)
+            request.licenseUrl?.let(::validateHttpUrl)
+            validateDrmHeaders(request.headers)
+            request.keyUri?.let { require(it.length <= 16_384) }
+        }
         else -> error("Unknown typed request")
     }
     validateExtendedValues(values)
@@ -126,6 +145,11 @@ internal fun validateExtendedRequest(request: Any) {
 }
 
 internal const val MAX_UPLOAD_CHUNK_BYTES = 1024 * 1024
+internal const val MAX_DRM_BYTES = 1024 * 1024
+
+private val DRM_KEY_SYSTEMS = setOf("widevine", "playready", "fairplay", "clearkey")
+
+private fun isDrmKeySystem(value: String): Boolean = value in DRM_KEY_SYSTEMS
 
 private fun validateOrder(ids: List<String>) {
     require(ids.size in 1..MAX_ITEMS && ids.distinct().size == ids.size)
@@ -182,6 +206,28 @@ internal fun validateExtendedResult(values: Map<String, Any?>, request: Map<Stri
     if (items?.firstOrNull().let { it is Map<*, *> && "available" in it && "label" in it }) {
         val ids = items!!.map { (it as Map<*, *>)["id"] }
         require(ids.distinct().size == ids.size)
+    }
+    if ("resource" in values) {
+        val resource = MediaResource.fromValues(valueObject(values["resource"]))
+        validateMediaResource(resource)
+        val drm = (values["drm"] as? Map<*, *>)?.let { DrmDescriptor.fromValues(valueObject(it)) }
+        if (drm != null) {
+            require(isDrmKeySystem(drm.keySystem))
+            require(drm.keySystem in (request["keySystems"] as? List<*>)?.filterIsInstance<String>().orEmpty())
+            require(
+                drm.licenseUrl != null || drm.keyUri != null || drm.initData != null ||
+                    drm.serverCertificate != null,
+            ) { "A DRM descriptor must contain a license or initialization reference" }
+            drm.licenseUrl?.let(::validateHttpUrl)
+            validateDrmHeaders(drm.headers)
+            require((drm.initData?.size ?: 0) <= MAX_DRM_BYTES)
+            require((drm.keyId?.size ?: 0) <= 16)
+            require((drm.serverCertificate?.size ?: 0) <= MAX_DRM_BYTES)
+        }
+    }
+    if ("license" in values) {
+        val license = values["license"] as? ByteArray ?: error("License response is not bytes")
+        require(license.size in 1..MAX_DRM_BYTES)
     }
 }
 
@@ -249,4 +295,13 @@ private fun validateMediaResource(value: MediaResource) {
     }
     require(value.headers.map { it.name.lowercase() }.distinct().size == value.headers.size)
     value.bitrate?.let { require(it > 0) }
+}
+
+private fun validateDrmHeaders(headers: List<Header>) {
+    require(headers.size <= 64)
+    headers.forEach {
+        require(it.name.matches(Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+")))
+        require(it.value.length <= 8192 && it.value.none { c -> c == '\r' || c == '\n' || c == '\u0000' })
+    }
+    require(headers.map { it.name.lowercase() }.distinct().size == headers.size)
 }

@@ -1,9 +1,6 @@
 package cp.player.app.ui.component
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,18 +9,24 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.BookmarkRemove
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
@@ -33,14 +36,11 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material3.Icon
@@ -51,42 +51,56 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.resized
 
 /** Playlist sort order shared by the playlist options sheet and screen models. */
-enum class PlaylistSortType { DEFAULT, NAME, ARTIST }
+typealias PlaylistSortType = cp.player.app.presentation.playlistdetail.PlaylistSortType
+
+/**
+ * 弹层统一边距。与设置页的 16dp、筛选区的 20dp 刻意分开：弹层内容自带圆角容器，
+ * 左右 20dp 才能让封面、主胶囊、分段列表的**外缘**落在同一条竖线上。
+ */
+private val SheetHorizontalPadding = 20.dp
+
+/** 头部缩略图边长。与设置列表的 60dp 接近，但弹层里要压住标题，取 72dp。 */
+private val SheetHeroSize = 72.dp
+
+/** 分段列表行高下限。图标块 36dp 加上下内边距后要留出稳定的触控高度。 */
+private val SheetRowMinHeight = 58.dp
 
 /**
  * 歌曲「更多」弹层 —— 手机端**唯一**一份。
  *
- * ## 动线（三排，顺序与 [songContextMenuItems] 的桌面右键菜单逐项对齐）
+ * ## 版式（M3 Expressive）
  *
  * ```
- * 第一排  [播放 磁贴]  [收藏 圆钮]  [分享 圆钮]      ← 88dp 高，主命令 + 两个图标钮
- * 第二排  [下一首播放] [添加到队列]                 ← 64dp 胶囊
- * 第三排  [下载]      [歌单]      [歌曲信息 圆钮]   ← 64dp 胶囊 + 64dp 圆钮
+ * 封面 + 歌名 / 歌手
+ * [ 播放（主胶囊） ] [收藏] [分享]     ← 72dp 等高，主命令独占一半以上
+ * ┌ 下一首播放 ┐
+ * │ 添加到队列 │
+ * │ 下载       │  ← 同一组 segmented list，行高 58dp、缝宽 2dp
+ * │ 添加到歌单 │
+ * │ 歌曲信息   │
+ * └────────────┘
+ * [ 移除 / 删除 ]                      ← 独立错误色组
  * ```
+ *
+ * 动作顺序与 [songContextMenuItems] 的桌面右键菜单逐项对齐；组内行是**同一张**
+ * M3E 列表（`legacySegmentShape`），不再用每行一张独立胶囊 —— 那会让 8 个动作
+ * 看起来像 5 张互不相干的卡片，滚动时边界不断打断视线。
  *
  * ## ⚠️ 八个动作全部**必填**，别再改回 `= null`
  *
  * 曾经它们都是可选的，调用方「有什么给什么」⇒ 首页只给了 6 项、歌单详情给了 8 项，
- * 于是**同一个「歌曲更多」在不同页面长得不一样**（首页少一个分享圆钮、少一个
- * 歌曲信息圆钮，第一排从三格变两格、播放磁贴变宽）。这类漂移靠自觉维护不住，
- * 所以改成必填：任何页面想用它，就得先把分享与歌曲信息也接上 —— 漏了直接编译不过。
- *
- * 「分享」与「歌曲信息」对**任何一首歌**都成立（前者是固定形状的网易云链接，
- * 见 [songShareText]；后者是 `song/detail` 元数据，见 [SongDetailInfoDialog]），
- * 没有「这一页给不了」的合法理由。
- *
- * [isDownloaded] 为 true 时下载格显示「已下载」且不可点；其余状态由调用方给。
+ * 于是**同一个「歌曲更多」在不同页面长得不一样**。改成必填后，任何页面想用它，
+ * 就得先把分享与歌曲信息也接上 —— 漏了直接编译不过。
  */
 @Composable
 fun SongOptionsSheet(
@@ -113,202 +127,168 @@ fun SongOptionsSheet(
     onDelete: (() -> Unit)? = null,
     deleteLabel: String? = null,
 ) {
+    val s = cpStrings()
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Column(
                 Modifier.widthIn(max = 640.dp).fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp).padding(bottom = 32.dp),
+                    .padding(horizontal = SheetHorizontalPadding)
+                    .padding(top = 4.dp, bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                // 头部：圆形封面 + 歌名 + 歌手（与 PlaylistOptionsSheet 一致）
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.size(72.dp).clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (!coverUrl.isNullOrBlank()) {
-                            AsyncImage(
-                                model = coverUrl.resized(200),
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                contentScale = ContentScale.Crop,
-                            )
+                SheetHeader(
+                    title = songName,
+                    subtitle = artistName,
+                    coverUrl = coverUrl,
+                    circleCover = true,
+                )
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SheetHeroButton(
+                        label = s.player.play,
+                        icon = Icons.Filled.PlayArrow,
+                        onClick = { onPlay(); onDismiss() },
+                        modifier = Modifier.weight(1f),
+                    )
+                    SheetIconButton(
+                        icon = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        label = if (isFavorite) s.contextMenu.unfavorite else s.contextMenu.favorite,
+                        onClick = { onToggleFavorite(); onDismiss() },
+                        containerColor = if (isFavorite) {
+                            MaterialTheme.colorScheme.primary
                         } else {
-                            CpCoverPlaceholder(
-                                modifier = Modifier.fillMaxSize(),
-                                corner = 36.dp,
-                                animated = false,
+                            MaterialTheme.colorScheme.secondaryContainer
+                        },
+                        contentColor = if (isFavorite) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        },
+                    )
+                    SheetIconButton(
+                        icon = Icons.Filled.Share,
+                        label = s.player.share,
+                        onClick = { onShare(); onDismiss() },
+                        shape = CircleShape,
+                    )
+                }
+
+                val actionRows = buildList {
+                    add(
+                        SheetAction(
+                            label = s.contextMenu.playNext,
+                            icon = Icons.Filled.SkipNext,
+                            onClick = { onPlayNext(); onDismiss() },
+                        )
+                    )
+                    add(
+                        SheetAction(
+                            label = s.contextMenu.addToQueue,
+                            icon = Icons.AutoMirrored.Filled.QueueMusic,
+                            onClick = { onAddToQueue(); onDismiss() },
+                        )
+                    )
+                    add(
+                        SheetAction(
+                            label = if (isDownloaded) s.player.downloaded else s.player.download,
+                            icon = if (isDownloaded) Icons.Filled.DownloadDone else Icons.Filled.Download,
+                            enabled = !isDownloaded,
+                            onClick = { if (!isDownloaded) onDownload(); onDismiss() },
+                        )
+                    )
+                    add(
+                        SheetAction(
+                            label = s.contextMenu.playlist,
+                            icon = Icons.AutoMirrored.Filled.PlaylistAdd,
+                            onClick = { onAddToPlaylist(); onDismiss() },
+                        )
+                    )
+                    add(
+                        SheetAction(
+                            label = s.player.songInfo,
+                            icon = Icons.Filled.Info,
+                            onClick = { onShowInfo(); onDismiss() },
+                        )
+                    )
+                    if (onPlayMv != null) {
+                        add(
+                            SheetAction(
+                                label = s.contextMenu.playMv,
+                                icon = Icons.Filled.SmartDisplay,
+                                onClick = { onPlayMv(); onDismiss() },
                             )
-                        }
-                    }
-                    Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f)) {
-                        CpText(
-                            songName,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
                         )
-                        CpText(
-                            artistName,
-                            fontSize = 18.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
+                    }
+                    if (onAddToLocalPlaylist != null) {
+                        add(
+                            SheetAction(
+                                label = s.contextMenu.addToLocalPlaylist,
+                                icon = Icons.Filled.AddCircleOutline,
+                                onClick = { onAddToLocalPlaylist(); onDismiss() },
+                            )
+                        )
+                    }
+                    if (onOpenInFileManager != null) {
+                        add(
+                            SheetAction(
+                                label = s.contextMenu.openInFileManager,
+                                icon = Icons.Filled.FolderOpen,
+                                onClick = { onOpenInFileManager(); onDismiss() },
+                            )
                         )
                     }
                 }
-            // 第一排：主命令 + 两个图标钮。三格宽度固定，不随调用方给不给动作变化。
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                ActionTile(
-                    label = "播放",
-                    icon = Icons.Filled.PlayArrow,
-                    modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    onClick = { onPlay(); onDismiss() },
-                )
-                CircleAction(
-                    icon = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                    label = if (isFavorite) "取消收藏" else "收藏",
-                    onClick = { onToggleFavorite(); onDismiss() },
-                )
-                CircleAction(
-                    icon = Icons.Filled.Share,
-                    label = "分享",
-                    onClick = { onShare(); onDismiss() },
-                )
-            }
-            // 第二排：两个等宽胶囊。
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                ActionPill(
-                    label = "下一首播放",
-                    icon = Icons.Filled.SkipNext,
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onPlayNext(); onDismiss() },
-                )
-                ActionPill(
-                    label = "添加到队列",
-                    icon = Icons.Filled.QueueMusic,
-                    color = MaterialTheme.colorScheme.tertiaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onAddToQueue(); onDismiss() },
-                )
-            }
-            // 第三排：两个胶囊 + 一个图标钮。
-            // ⚠️ 「歌曲信息」这个圆钮必须与同排胶囊**等高**（[ActionPill] 是 64dp）——
-            // 它此前沿用了第一排的 88dp（对齐 [ActionTile] 的高度），单独杵在两个
-            // 64dp 胶囊旁边明显大一圈，整排看着像错位。
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                ActionPill(
-                    label = if (isDownloaded) "已下载" else "下载",
-                    icon = if (isDownloaded) Icons.Filled.DownloadDone else Icons.Filled.Download,
-                    modifier = Modifier.weight(1f),
-                    onClick = { if (!isDownloaded) onDownload(); onDismiss() },
-                )
-                ActionPill(
-                    label = "歌单",
-                    icon = Icons.Filled.AddCircleOutline,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onAddToPlaylist(); onDismiss() },
-                )
-                CircleAction(
-                    icon = Icons.Filled.Info,
-                    label = "歌曲信息",
-                    size = ActionPillHeight,
-                    onClick = { onShowInfo(); onDismiss() },
-                )
-            }
-            if (onPlayMv != null) {
-                ActionPill(
-                    label = "播放 MV",
-                    icon = Icons.Filled.SmartDisplay,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { onPlayMv(); onDismiss() },
-                )
-            }
-            if (onAddToLocalPlaylist != null) {
-                ActionPill(
-                    label = "添加到本地歌单",
-                    icon = Icons.Filled.AddCircleOutline,
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { onAddToLocalPlaylist(); onDismiss() },
-                )
-            }
-            if (onOpenInFileManager != null || onRemoveFromLibrary != null || onRemoveFromPlaylist != null) {
-                val removeAction = onRemoveFromPlaylist ?: onRemoveFromLibrary
-                val removeLabel = if (onRemoveFromPlaylist != null) "从歌单移除" else "从曲库移除"
-                if (onOpenInFileManager != null && removeAction != null) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        ActionPill(
-                            label = "在文件管理器中打开",
-                            icon = Icons.Filled.FolderOpen,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onOpenInFileManager(); onDismiss() },
-                        )
-                        ActionPill(
-                            label = removeLabel,
-                            icon = Icons.Filled.Close,
-                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f),
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.weight(1f),
-                            onClick = { removeAction(); onDismiss() },
+                if (actionRows.isNotEmpty()) {
+                    SheetActionGroup(actionRows)
+                }
+
+                val dangerRows = buildList {
+                    val removeAction = onRemoveFromPlaylist ?: onRemoveFromLibrary
+                    if (removeAction != null) {
+                        add(
+                            SheetAction(
+                                label = if (onRemoveFromPlaylist != null) {
+                                    s.library.removeFromPlaylist
+                                } else {
+                                    s.contextMenu.removeFromLibrary
+                                },
+                                icon = Icons.Filled.Close,
+                                danger = true,
+                                onClick = { removeAction(); onDismiss() },
+                            )
                         )
                     }
-                } else if (onOpenInFileManager != null) {
-                    ActionPill(
-                        label = "在文件管理器中打开",
-                        icon = Icons.Filled.FolderOpen,
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = { onOpenInFileManager(); onDismiss() },
-                    )
-                } else if (removeAction != null) {
-                    ActionPill(
-                        label = removeLabel,
-                        icon = Icons.Filled.Close,
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f),
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = { removeAction(); onDismiss() },
-                    )
+                    if (onDelete != null) {
+                        add(
+                            SheetAction(
+                                label = deleteLabel ?: s.contextMenu.deleteLocalFile,
+                                icon = Icons.Filled.Delete,
+                                danger = true,
+                                onClick = { onDelete(); onDismiss() },
+                            )
+                        )
+                    }
                 }
-            }
-            if (onDelete != null) {
-                ActionPill(
-                    label = deleteLabel ?: "彻底删除本地文件",
-                    icon = Icons.Filled.Delete,
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { onDelete(); onDismiss() },
-                )
+                if (dangerRows.isNotEmpty()) {
+                    SheetActionGroup(dangerRows)
+                }
             }
         }
     }
 }
-}
 
+/**
+ * 歌单「更多」弹层 —— 手机 / 触屏形态。
+ *
+ * 与 [SongOptionsSheet] 共用同一套构件：头部（封面 + 名称 + 状态徽章）、
+ * 主命令行（播放 + 队列 / 分享圆钮）、分段动作组、排序组、危险动作组。
+ * 桌面端的对应物是 `playlistContextMenuItems`，两边的动作集合与顺序一致。
+ */
 @Composable
 fun PlaylistOptionsSheet(
     playlistName: String,
@@ -321,347 +301,357 @@ fun PlaylistOptionsSheet(
     onShare: (() -> Unit)? = null,
     /** 仅 owner 提供：打开重命名对话框。 */
     onRename: (() -> Unit)? = null,
+    onDownload: (() -> Unit)? = null,
     coverUrl: String? = null,
     isFavorite: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
     currentSort: PlaylistSortType? = null,
     onSortChange: ((PlaylistSortType) -> Unit)? = null,
     onConvertToPlaylist: (() -> Unit)? = null,
+    /** 覆盖头部状态文案（云盘这类借用歌单弹层的场景）。 */
+    statusOverride: String? = null,
 ) {
+    val s = cpStrings()
+    val statusText = statusOverride ?: when {
+        isOwner -> s.contextMenu.ownedPlaylist
+        onConvertToPlaylist != null ->
+            if (isFavorite) s.contextMenu.convertedPlaylist else s.contextMenu.dailyRecommendation
+        isFavorite -> s.contextMenu.favoritedPlaylist
+        else -> s.contextMenu.publicPlaylist
+    }
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Column(
                 Modifier.widthIn(max = 640.dp).fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp).padding(bottom = 32.dp),
+                    .padding(horizontal = SheetHorizontalPadding)
+                    .padding(top = 4.dp, bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                // 头部：M3E 圆角封面 + 歌单名 + 右侧快捷分享圆形胶囊
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        modifier = Modifier.size(72.dp),
-                        shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shadowElevation = 4.dp,
-                    ) {
-                        if (!coverUrl.isNullOrBlank()) {
-                            AsyncImage(
-                                model = coverUrl.resized(220),
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop,
-                            )
-                        } else {
-                            CpCoverPlaceholder(
-                                modifier = Modifier.fillMaxSize(),
-                                corner = 20.dp,
-                                animated = false,
-                            )
-                        }
-                    }
-                    Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f)) {
-                        CpText(
-                            playlistName,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Surface(
+                SheetHeader(
+                    title = playlistName,
+                    subtitle = statusText,
+                    coverUrl = coverUrl,
+                    circleCover = false,
+                )
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SheetHeroButton(
+                        label = s.library.playAll,
+                        icon = Icons.Filled.PlayArrow,
+                        onClick = { onPlay(); onDismiss() },
+                        modifier = Modifier.weight(1f),
+                    )
+                    SheetIconButton(
+                        icon = Icons.AutoMirrored.Filled.QueueMusic,
+                        label = s.library.addToQueue,
+                        onClick = { onAddToQueue(); onDismiss() },
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                    if (onShare != null) {
+                        SheetIconButton(
+                            icon = Icons.Filled.Share,
+                            label = s.contextMenu.sharePlaylist,
+                            onClick = { onShare(); onDismiss() },
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        ) {
-                            CpText(
-                                if (isOwner) "我创建的歌单" else if (onConvertToPlaylist != null) (if (isFavorite) "已转为歌单" else "每日推荐") else if (isFavorite) "已收藏歌单" else "公开歌单",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                        )
+                    }
+                }
+
+                val actionRows = buildList {
+                    if (onRefresh != null) {
+                        add(
+                            SheetAction(
+                                label = s.contextMenu.refreshPlaylist,
+                                icon = Icons.Filled.Refresh,
+                                onClick = { onRefresh(); onDismiss() },
                             )
-                        }
+                        )
+                    }
+                    if (onDownload != null) {
+                        add(
+                            SheetAction(
+                                label = s.library.downloadAll,
+                                icon = Icons.Filled.Download,
+                                onClick = { onDownload(); onDismiss() },
+                            )
+                        )
                     }
                     if (onRename != null) {
-                        Spacer(Modifier.width(10.dp))
-                        CircleAction(
-                            icon = Icons.Filled.Edit,
-                            label = cpStrings().library.renamePlaylist,
-                            size = 48.dp,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                            onClick = { onRename(); onDismiss() },
-                        )
-                    }
-                    if (onShare != null) {
-                        Spacer(Modifier.width(10.dp))
-                        CircleAction(
-                            icon = Icons.Filled.Share,
-                            label = "分享歌单",
-                            size = 48.dp,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                            onClick = { onShare(); onDismiss() },
+                        add(
+                            SheetAction(
+                                label = s.library.renamePlaylist,
+                                icon = Icons.Filled.Edit,
+                                onClick = { onRename(); onDismiss() },
+                            )
                         )
                     }
                 }
+                if (actionRows.isNotEmpty()) {
+                    SheetActionGroup(actionRows)
+                }
 
-                // 第一排：全部播放 + 全部加入队列（等宽大胶囊）
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    ActionPill(
-                        label = "全部播放",
-                        icon = Icons.Filled.PlayArrow,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onPlay(); onDismiss() },
-                    )
-                    ActionPill(
-                        label = "加入队列",
-                        icon = Icons.Filled.QueueMusic,
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onAddToQueue(); onDismiss() },
+                if (currentSort != null) {
+                    SheetSectionLabel(s.contextMenu.sortBy)
+                    SheetActionGroup(
+                        listOf(
+                            SheetAction(
+                                label = s.contextMenu.sortDefaultShort,
+                                icon = Icons.AutoMirrored.Filled.List,
+                                selected = currentSort == PlaylistSortType.DEFAULT,
+                                onClick = { onSortChange?.invoke(PlaylistSortType.DEFAULT) },
+                            ),
+                            SheetAction(
+                                label = s.library.sortByName,
+                                icon = Icons.Filled.SortByAlpha,
+                                selected = currentSort == PlaylistSortType.NAME,
+                                onClick = { onSortChange?.invoke(PlaylistSortType.NAME) },
+                            ),
+                            SheetAction(
+                                label = s.library.sortByArtist,
+                                icon = Icons.Filled.Person,
+                                selected = currentSort == PlaylistSortType.ARTIST,
+                                onClick = { onSortChange?.invoke(PlaylistSortType.ARTIST) },
+                            ),
+                        )
                     )
                 }
 
-                // 第二排：关键操作胶囊（删除 / 取消收藏 / 收藏 / 刷新 / 分享）
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    if (isOwner && onDelete != null) {
-                        // 创建者：删除歌单大胶囊（醒目红底）
-                        ActionPill(
-                            label = "删除歌单",
-                            icon = Icons.Filled.Delete,
-                            color = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onDelete(); onDismiss() },
-                        )
-                    } else if (onConvertToPlaylist != null) {
-                        ActionPill(
-                            label = if (isFavorite) "已转歌单" else "一键转歌单",
-                            icon = if (isFavorite) Icons.Filled.Bookmark else Icons.Filled.BookmarkAdd,
-                            color = if (isFavorite) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.tertiaryContainer,
-                            contentColor = if (isFavorite) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onTertiaryContainer,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onConvertToPlaylist(); onDismiss() },
+                val dangerRows = buildList {
+                    if (onConvertToPlaylist != null) {
+                        add(
+                            SheetAction(
+                                label = if (isFavorite) s.contextMenu.alreadyConverted else s.contextMenu.convertToPlaylist,
+                                icon = if (isFavorite) Icons.Filled.Bookmark else Icons.Filled.BookmarkAdd,
+                                onClick = { onConvertToPlaylist(); onDismiss() },
+                            )
                         )
                     } else if (onToggleFavorite != null) {
-                        // 非创建者：取消收藏 / 收藏歌单
-                        if (isFavorite) {
-                            ActionPill(
-                                label = "取消收藏",
-                                icon = Icons.Filled.BookmarkRemove,
-                                color = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.weight(1f),
+                        add(
+                            SheetAction(
+                                label = if (isFavorite) s.library.unfavoritePlaylist else s.library.favoritePlaylist,
+                                icon = if (isFavorite) Icons.Filled.BookmarkRemove else Icons.Filled.BookmarkAdd,
+                                danger = isFavorite,
                                 onClick = { onToggleFavorite(); onDismiss() },
                             )
-                        } else {
-                            ActionPill(
-                                label = "收藏歌单",
-                                icon = Icons.Filled.BookmarkAdd,
-                                color = MaterialTheme.colorScheme.tertiaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                                modifier = Modifier.weight(1f),
-                                onClick = { onToggleFavorite(); onDismiss() },
-                            )
-                        }
-                    }
-
-                    if (onShare != null) {
-                        ActionPill(
-                            label = "分享歌单",
-                            icon = Icons.Filled.Share,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onShare(); onDismiss() },
                         )
                     }
-
-                    if (onRefresh != null) {
-                        CircleAction(
-                            icon = Icons.Filled.Refresh,
-                            label = "刷新歌单",
-                            size = ActionPillHeight,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                            onClick = { onRefresh(); onDismiss() },
+                    if (isOwner && onDelete != null) {
+                        add(
+                            SheetAction(
+                                label = s.library.deletePlaylist,
+                                icon = Icons.Filled.Delete,
+                                danger = true,
+                                onClick = { onDelete(); onDismiss() },
+                            )
                         )
                     }
                 }
-
-                // 排序选项
-                if (currentSort != null) {
-                    CpText(
-                        "排序方式",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SortPill(
-                            label = "默认",
-                            icon = Icons.AutoMirrored.Filled.List,
-                            isSelected = currentSort == PlaylistSortType.DEFAULT,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onSortChange?.invoke(PlaylistSortType.DEFAULT) },
-                        )
-                        SortPill(
-                            label = "按名称",
-                            icon = Icons.Filled.SortByAlpha,
-                            isSelected = currentSort == PlaylistSortType.NAME,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onSortChange?.invoke(PlaylistSortType.NAME) },
-                        )
-                        SortPill(
-                            label = "按歌手",
-                            icon = Icons.Filled.Person,
-                            isSelected = currentSort == PlaylistSortType.ARTIST,
-                            modifier = Modifier.weight(1f),
-                            onClick = { onSortChange?.invoke(PlaylistSortType.ARTIST) },
-                        )
-                    }
+                if (dangerRows.isNotEmpty()) {
+                    SheetActionGroup(dangerRows)
                 }
             }
         }
     }
 }
 
-/**
- * 第一排（主命令磁贴 / 图标钮）的高度。
- *
- * 磁贴与圆钮共用，两者并排时等高。
- */
-private val ActionTileHeight = 88.dp
+// ============================================================
+// M3E 动作弹层构件
+// ============================================================
 
-/**
- * 第二、三排（胶囊 / 图标钮）的高度。
- *
- * 胶囊与圆钮共用同一个值 —— 第三排的「歌曲信息」圆钮曾沿用了第一排的 88dp，
- * 与同排 64dp 的胶囊差出一圈，是「INFO 按钮过大」的成因。
- */
-private val ActionPillHeight = 64.dp
+/** 分段动作行的数据。只描述「长什么样 + 点了做什么」，不持有 Sheet 状态。 */
+private data class SheetAction(
+    val label: String,
+    val icon: ImageVector,
+    val onClick: () -> Unit,
+    val enabled: Boolean = true,
+    val danger: Boolean = false,
+    val selected: Boolean = false,
+)
 
 @Composable
-private fun ActionTile(
-    label: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.secondaryContainer,
-    contentColor: Color = MaterialTheme.colorScheme.onSecondaryContainer,
+private fun SheetHeader(
+    title: String,
+    subtitle: String,
+    coverUrl: String?,
+    circleCover: Boolean,
 ) {
-    Surface(
-        modifier = modifier.fillMaxWidth().height(ActionTileHeight),
-        shape = MaterialTheme.shapes.large,
-        color = color,
-        onClick = onClick,
-    ) {
-        Row(
-            Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Surface(
+            modifier = Modifier.size(SheetHeroSize),
+            shape = if (circleCover) CircleShape else RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
         ) {
-            Icon(icon, null, tint = contentColor, modifier = Modifier.size(28.dp))
-            Spacer(Modifier.width(8.dp))
-            CpText(label, color = contentColor, style = MaterialTheme.typography.titleMedium)
+            if (!coverUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = coverUrl.resized(220),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                CpCoverPlaceholder(
+                    modifier = Modifier.fillMaxSize(),
+                    corner = if (circleCover) 36.dp else 18.dp,
+                    animated = false,
+                )
+            }
+        }
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            CpText(
+                title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+            )
+            CpText(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
         }
     }
 }
 
+/** 主命令胶囊：与右侧两个方形 / 圆形图标钮同高（[SheetHeroSize]）。 */
 @Composable
-private fun CircleAction(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    color: Color = MaterialTheme.colorScheme.secondaryContainer,
-    contentColor: Color = MaterialTheme.colorScheme.onSecondaryContainer,
-    /** 直径。缺省对齐第一排的 [ActionTileHeight]；与胶囊同排时必须传 [ActionPillHeight]。 */
-    size: Dp = ActionTileHeight,
-) {
-    Surface(
-        modifier = Modifier.size(size),
-        shape = CircleShape,
-        color = color,
-        onClick = onClick,
-    ) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Icon(icon, label, tint = contentColor, modifier = Modifier.size(30.dp))
-        }
-    }
-}
-
-@Composable
-private fun ActionPill(
+private fun SheetHeroButton(
     label: String,
     icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.surfaceVariant,
-    contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     Surface(
-        modifier = modifier.height(ActionPillHeight),
-        shape = RoundedCornerShape(percent = 50),
-        color = color,
         onClick = onClick,
+        modifier = modifier.height(SheetHeroSize),
+        shape = RoundedCornerShape(percent = 50),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
     ) {
         Row(
             Modifier.fillMaxSize().padding(horizontal = 20.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(icon, null, tint = contentColor, modifier = Modifier.size(22.dp))
+            Icon(icon, null, modifier = Modifier.size(26.dp))
             Spacer(Modifier.width(8.dp))
-            CpText(label, color = contentColor, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            CpText(
+                label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
         }
     }
 }
 
 @Composable
-private fun SortPill(
-    label: String,
+private fun SheetIconButton(
     icon: ImageVector,
-    isSelected: Boolean,
+    label: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    shape: Shape = RoundedCornerShape(24.dp),
 ) {
     Surface(
-        modifier = modifier.height(56.dp),
-        shape = RoundedCornerShape(32.dp),
-        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.surfaceVariant,
         onClick = onClick,
+        modifier = Modifier.size(SheetHeroSize),
+        shape = shape,
+        color = containerColor,
+        contentColor = contentColor,
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Icon(icon, label, modifier = Modifier.size(26.dp))
+        }
+    }
+}
+
+@Composable
+private fun SheetSectionLabel(text: String) {
+    CpText(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 8.dp),
+    )
+}
+
+/**
+ * 一组 M3E segmented list：外圈 20dp 圆角、组内相邻角 4dp、缝宽 2dp。
+ * 直接把 `Arrangement.spacedBy(2.dp)` 交给列容器，行的圆角由 [legacySegmentShape]
+ * 按 index/total 计算 —— 与设置页的分组列表同一套读数。
+ */
+@Composable
+private fun SheetActionGroup(actions: List<SheetAction>) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        actions.forEachIndexed { index, action ->
+            SheetActionRow(action, index, actions.size)
+        }
+    }
+}
+
+@Composable
+private fun SheetActionRow(action: SheetAction, index: Int, total: Int) {
+    val contentColor = when {
+        !action.enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        action.danger -> MaterialTheme.colorScheme.error
+        action.selected -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    Surface(
+        onClick = action.onClick,
+        enabled = action.enabled,
+        modifier = Modifier.fillMaxWidth().heightIn(min = SheetRowMinHeight),
+        shape = legacySegmentShape(index, total),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
         Row(
-            Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.Center,
+            Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                icon,
-                label,
-                tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(6.dp))
+            Box(
+                Modifier.size(36.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        if (action.danger) MaterialTheme.colorScheme.errorContainer
+                        else MaterialTheme.colorScheme.secondaryContainer
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    action.icon,
+                    null,
+                    tint = if (action.danger) MaterialTheme.colorScheme.onErrorContainer
+                    else MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Spacer(Modifier.width(14.dp))
             CpText(
-                label,
-                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 14.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                action.label,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (action.selected) FontWeight.SemiBold else FontWeight.Medium,
+                color = contentColor,
                 maxLines = 1,
+                modifier = Modifier.weight(1f),
             )
+            if (action.selected) {
+                Icon(
+                    Icons.Filled.Check,
+                    null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }

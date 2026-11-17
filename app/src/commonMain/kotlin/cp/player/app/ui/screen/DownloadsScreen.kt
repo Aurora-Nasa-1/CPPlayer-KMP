@@ -61,12 +61,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.BackHandler
+import cp.player.app.presentation.navigation.AppRoute
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.AddToLocalPlaylistDialog
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.ContentState
@@ -92,7 +93,6 @@ import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpShapes
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatBytes
-import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.util.resized
 import cp.player.core.media.MediaType
 import cp.player.core.model.DownloadStatus
@@ -114,12 +114,12 @@ import kotlin.math.roundToInt
 class DownloadsScreen(private val embedded: Boolean = false) : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.current
+        val navigator = LocalAppNavigator.current
         // rememberScreenModel 是 Screen 的扩展函数，只能在 Content() 里调用（见 AGENTS.md）。
         val model = rememberScreenModel { DownloadsScreenModel() }
         CpRouteScaffold(
             title = cpStrings().downloads.screenTitle,
-            onBack = { navigator?.popOrNotify() },
+            onBack = { navigator.pop() },
             embedded = embedded,
         ) { pageModifier ->
             DownloadsScreenContent(model, pageModifier)
@@ -150,13 +150,16 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel, modifier: Modifi
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
     val s = cpStrings()
+    // 这些派生属性会过滤并排序全量任务；只在原始任务快照变化时重算。
+    val activeTasks = remember(state.tasks) { state.activeTasks }
+    val completedTasks = remember(state.tasks) { state.completedTasks }
 
     // Tab 上带计数：不切页也能看到「下载中还有几个 / 已完成多少」，
     // 这是下载管理最常被问的一件事，藏进分页里就得逐个点开数。
     // 「下载中 / 已完成」复用媒体库那两个词（同一条文案不翻两种）。
     val tabs = listOf(
-        DownloadsTab(s.library.downloading, Icons.Filled.Download, state.activeTasks.size),
-        DownloadsTab(s.library.completed, Icons.Filled.DownloadDone, state.completedTasks.size),
+        DownloadsTab(s.library.downloading, Icons.Filled.Download, activeTasks.size),
+        DownloadsTab(s.library.completed, Icons.Filled.DownloadDone, completedTasks.size),
         DownloadsTab(s.downloads.tabLocalLibrary, Icons.Filled.FolderOpen, state.localItems.size),
     )
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { tabs.size })
@@ -190,12 +193,11 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel, modifier: Modifi
             Modifier.fillMaxSize(),
             // 同 LegacyScaffold：底部弹窗形状统一取 `CpShapes.sheet`。
             shape = CpShapes.sheet,
-            // ⚠️ 底色必须是**页面底色**（`background`）而不是 `surfaceContainerLow`。
-            // 卡片取 `settingsRowContainer()`，它在浅色下正是 `surfaceContainerLow` ——
-            // 面板若也用同一档，浅色主题里卡片与面板**完全同色**，整列任务糊成一片
-            // （离屏渲图实测：卡片边界只剩进度条那一根线）。深色下两边恰好不同（Highest vs Low），
-            // 所以这个缺陷只在浅色下出现，单看深色截图是发现不了的。
-            color = MaterialTheme.colorScheme.background,
+            // 面板底 = 页面层；卡片取 `settingsRowContainer()`（= 卡片层）。
+            // ⚠️ 两者**必须**分属不同层：曾经面板与卡片都用 `surfaceContainerLow`，
+            // 浅色下完全同色、整列任务糊成一片（离屏渲图实测：卡片边界只剩进度条那一根线），
+            // 而且单看深色截图发现不了。层级定义见 `cpPageSurface`。
+            color = cp.player.app.ui.theme.cpPageSurface(),
         ) {
             HorizontalPager(
                 state = pagerState,
@@ -221,8 +223,8 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel, modifier: Modifi
                 beyondViewportPageCount = 1,
             ) { page ->
                 when (page) {
-                    0 -> ActiveDownloadsTab(state = state, model = model)
-                    1 -> CompletedDownloadsTab(state = state, model = model)
+                    0 -> ActiveDownloadsTab(tasks = activeTasks, model = model)
+                    1 -> CompletedDownloadsTab(tasks = completedTasks, model = model)
                     2 -> LocalLibraryTab(state = state, model = model, strings = s)
                 }
             }
@@ -233,8 +235,7 @@ private fun DownloadsScreenContent(model: DownloadsScreenModel, modifier: Modifi
 // ============ Tab 1：下载中 ============
 
 @Composable
-private fun ActiveDownloadsTab(state: DownloadsUiState, model: DownloadsScreenModel) {
-    val tasks = state.activeTasks
+private fun ActiveDownloadsTab(tasks: List<DownloadTask>, model: DownloadsScreenModel) {
     val s = cpStrings()
     // 破坏性操作（取消任务会丢掉未完成的临时文件）只认 CpConfirmHost：
     // 单条取消与「全部取消」共用同一个挂起态，文案不会漂成两套（见 AGENTS.md §6）。
@@ -776,7 +777,9 @@ private fun ActiveTaskCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = if (failed) MaterialTheme.colorScheme.error
                     else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    // 失败时这一行带的是**失败原因**（可能很长，含 URL / 状态码）：
+                    // 截成一行等于让用户无从判断是断网、403 还是磁盘满。
+                    maxLines = if (failed) 4 else 1,
                     modifier = Modifier.weight(1f),
                 )
                 if (!failed && task.status != DownloadStatus.PENDING) {
@@ -867,8 +870,7 @@ private fun TaskActions(
 // ============ Tab 2：已完成 ============
 
 @Composable
-private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScreenModel) {
-    val tasks = state.completedTasks
+private fun CompletedDownloadsTab(tasks: List<DownloadTask>, model: DownloadsScreenModel) {
     // 「删除文件与记录」的二次确认：删掉的是已下载的本体文件，重新下要花流量与时间。
     // 挂起态放在 tab 层而不是每张卡片一份 —— 卡片可能有几十张。
     val confirm = rememberConfirmState()
@@ -918,7 +920,9 @@ private fun CompletedDownloadsTab(state: DownloadsUiState, model: DownloadsScree
             contentWidth < 1350.dp -> 2
             else -> 3
         }
-        val rows = if (columns == 1) tasks.map { listOf(it) } else tasks.chunked(columns)
+        val rows = remember(tasks, columns) {
+            if (columns == 1) tasks.map { listOf(it) } else tasks.chunked(columns)
+        }
         LazyScrollColumn(
             pageContentModifier(),
             contentPadding = PaddingValues(
@@ -1054,7 +1058,7 @@ private fun CompletedTaskCard(
     onAddToCloudPlaylist: (String) -> Unit = {},
     onAddToLocalPlaylist: (String) -> Unit = {},
 ) {
-    val navigator = LocalNavigator.current
+    val navigator = LocalAppNavigator.current
     var menuExpanded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val s = strings.downloads
@@ -1072,7 +1076,7 @@ private fun CompletedTaskCard(
     val handlePlay: () -> Unit = {
         if (isVideo) {
             task.localPath?.let { path ->
-                navigator?.push(VideoPlayerScreen("local://video/$path", title = task.title))
+                navigator.push(AppRoute.VideoPlayer("local://video/$path", title = task.title))
             }
         } else {
             mediaId?.let { id ->
@@ -1118,7 +1122,7 @@ private fun CompletedTaskCard(
                 { onAddToLocalPlaylist(path) }
             },
             onOpenInFileManager = task.localPath?.let { path ->
-                { cp.player.app.platform.openInFileManager(path) }
+                { cp.player.app.ui.util.revealInFileManager(path, s) }
             },
             onDelete = onDelete,
             deleteLabel = s.deleteFileAndRecord,

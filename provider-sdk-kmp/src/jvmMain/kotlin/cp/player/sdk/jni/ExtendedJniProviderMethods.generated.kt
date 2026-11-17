@@ -217,4 +217,10 @@ abstract class ExtendedJniProviderMethods : MusicProvider {
         dispatch(ProviderProtocol.GETUSERCOMMENTHISTORY, request) as CommentPage
     override suspend fun getLikeListPage(request: PagedIdRequest): IdPage =
         dispatch(ProviderProtocol.GETLIKELISTPAGE, request) as IdPage
+    override suspend fun likeResource(request: ResourceLikeRequest): MutationResult =
+        dispatch(ProviderProtocol.LIKERESOURCE, request) as MutationResult
+    override suspend fun resolveDrm(request: DrmResolveRequest): ResolvedMedia =
+        dispatch(ProviderProtocol.RESOLVEDRM, request) as ResolvedMedia
+    override suspend fun exchangeLicense(request: LicenseRequest): LicenseResponse =
+        dispatch(ProviderProtocol.EXCHANGELICENSE, request) as LicenseResponse
 }

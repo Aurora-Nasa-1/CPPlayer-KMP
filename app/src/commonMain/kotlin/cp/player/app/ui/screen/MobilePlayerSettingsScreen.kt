@@ -2,8 +2,9 @@ package cp.player.app.ui.screen
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -12,134 +13,244 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.isAndroidPlatform
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsButtonItem
+import cp.player.app.ui.navigation.LocalAppNavigator
+import cp.player.app.ui.component.SettingsClickItem
+import cp.player.app.ui.component.SettingsHeroCard
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
+import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSliderItem
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.settingsSearchTarget
 import cp.player.app.ui.feedback.CpHaptic
 import cp.player.app.ui.feedback.LocalCpHaptics
-import cp.player.app.ui.util.popOrNotify
 import kotlin.math.roundToInt
 
-/** Behaviour and reading preferences; visual proportions are owned by the layout. */
+/**
+ * 播放器设置：两种手机播放器共用同一份偏好。
+ *
+ * 歌词设置（翻译 / 注音 / 分词 / 逐字 / 来源）原先散在「播放与音质」，
+ * 但它只影响播放页的呈现，跟着播放器样式走更符合用户心智；这里集中后
+ * 三段式与标准播放器都能拿到同一组开关。
+ */
 class MobilePlayerSettingsScreen(private val targetSettingId: String? = null) : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val haptics = LocalCpHaptics.current
+        val s = cpStrings()
         val config by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
-        var draggingSize by remember { mutableIntStateOf(-1) }
-        val size = if (draggingSize >= 0) draggingSize else config.lyricsFontSizeSp
+        val showMiniPlayerLyrics by AppModel.showMiniPlayerLyricsFlow.collectAsState()
+        val showRuby by AppModel.showRubyLyricsFlow.collectAsState()
+        val wordSeg by AppModel.lyricsWordSegmentationFlow.collectAsState()
+        val smartKaraoke by AppModel.smartKaraokeLrcFlow.collectAsState()
+        var draggingTimeout by remember { mutableIntStateOf(-1) }
+        val timeout = if (draggingTimeout >= 0) draggingTimeout else config.lyricsImmersiveTimeoutSeconds
 
-        CpRouteScaffold(title = "手机播放界面", onBack = { navigator.popOrNotify() }) { modifier ->
+        CpRouteScaffold(title = s.appearance.playerSettingsTitle, onBack = { navigator.pop() }) { modifier ->
             SettingsPage(modifier) {
-                SettingsSection("播放器") {
-                    SettingsSwitchItem(
-                        title = "单页播放布局",
-                        subtitle = "封面优先，轻触歌词切换沉浸阅读",
-                        icon = Icons.Filled.PhoneAndroid,
-                        checked = config.enabled,
-                        onCheckedChange = AppModel::setModernMobilePlayerEnabled,
-                        index = 0, total = 2,
-                        modifier = Modifier.settingsSearchTarget("appearance_modern_mobile_player", targetSettingId),
-                    )
-                    SettingsSwitchItem(
-                        title = "封面左右滑动切歌",
-                        subtitle = "向左下一首，向右上一首",
-                        checked = config.coverSwipeGesture,
-                        onCheckedChange = {
-                            haptics.perform(CpHaptic.Tick)
-                            AppModel.updateMobilePlayerCustomConfig { c -> c.copy(coverSwipeGesture = it) }
+                val isAndroid = isAndroidPlatform()
+                if (isAndroid) {
+                    SettingsHeroCard(
+                        title = if (config.enabled) s.appearance.playerStyleStandard else s.appearance.playerStyleThreePane,
+                        subtitle = if (config.enabled) {
+                            s.appearance.playerStyleStandardNote
+                        } else {
+                            s.appearance.playerStyleThreePaneNote
                         },
-                        index = 1, total = 2,
-                        modifier = Modifier.settingsSearchTarget("mobile_player_cover_swipe", targetSettingId),
+                        icon = Icons.Filled.Tune,
+                        badgeText = s.appearance.playerSettingsHeroNote,
                     )
-                }
-                SettingsSection("歌词") {
-                    val lyricsTotal = if (config.lyricsImmersiveEnabled) 5 else 4
-                    SettingsSwitchItem(
-                        title = "歌词沉浸模式",
-                        subtitle = "在完整歌词界面无操作几秒后自动隐藏顶部和底部控制栏，轻触屏幕任意位置恢复",
-                        icon = Icons.Filled.Fullscreen,
-                        checked = config.lyricsImmersiveEnabled,
-                        onCheckedChange = {
-                            haptics.perform(CpHaptic.Tick)
-                            AppModel.updateMobilePlayerCustomConfig { c -> c.copy(lyricsImmersiveEnabled = it) }
-                        },
-                        index = 0, total = lyricsTotal,
-                        modifier = Modifier.settingsSearchTarget("mobile_player_lyrics_immersive", targetSettingId),
-                    )
-                    if (config.lyricsImmersiveEnabled) {
-                        SettingsSliderItem(
-                            title = "沉浸等待时间",
-                            subtitle = "无触控操作后自动收起控制栏的等待时长",
-                            value = config.lyricsImmersiveTimeoutSeconds.toFloat(),
-                            onValueChange = {
-                                val s = it.roundToInt().coerceIn(2, 10)
-                                if (s != config.lyricsImmersiveTimeoutSeconds) {
-                                    AppModel.updateMobilePlayerCustomConfig { c -> c.copy(lyricsImmersiveTimeoutSeconds = s) }
-                                }
+
+                    SettingsSection(s.appearance.playerStyle) {
+                        SettingsSegmentedItem(
+                            title = s.appearance.playerStyle,
+                            subtitle = if (config.enabled) {
+                                s.appearance.playerStyleStandardNote
+                            } else {
+                                s.appearance.playerStyleThreePaneNote
                             },
-                            valueRange = 2f..10f, steps = 7,
-                            valueLabel = "${config.lyricsImmersiveTimeoutSeconds} 秒",
-                            index = 1, total = lyricsTotal,
-                            modifier = Modifier.settingsSearchTarget("mobile_player_lyrics_timeout", targetSettingId),
+                            options = listOf(
+                                s.appearance.playerStyleThreePane,
+                                s.appearance.playerStyleStandard,
+                            ),
+                            selectedIndex = if (config.enabled) 1 else 0,
+                            onSelect = { index ->
+                                haptics.perform(CpHaptic.Tick)
+                                AppModel.setModernMobilePlayerEnabled(index == 1)
+                            },
+                            index = 0,
+                            total = 1,
+                            modifier = Modifier.settingsSearchTarget(
+                                "appearance_modern_mobile_player",
+                                targetSettingId,
+                            ),
                         )
                     }
-                    SettingsSliderItem(
-                        title = "歌词预览字号",
-                        subtitle = "仅调整封面下方的当前歌词",
-                        value = size.toFloat(),
-                        onValueChange = { draggingSize = it.roundToInt() },
-                        valueRange = 14f..22f, steps = 7,
-                        onValueChangeFinished = {
-                            AppModel.updateMobilePlayerCustomConfig { it.copy(lyricsFontSizeSp = size) }
-                            draggingSize = -1
-                        },
-                        valueLabel = "$size sp",
-                        index = if (config.lyricsImmersiveEnabled) 2 else 1, total = lyricsTotal,
-                        modifier = Modifier.settingsSearchTarget("mobile_player_lyrics_size", targetSettingId),
-                    )
-                    SettingsSwitchItem(
-                        title = "预览逐字高亮",
-                        subtitle = "歌词含逐字时间时显示演唱进度",
-                        checked = config.karaokeEnabled,
-                        onCheckedChange = {
-                            AppModel.updateMobilePlayerCustomConfig { c -> c.copy(karaokeEnabled = it) }
-                        },
-                        index = if (config.lyricsImmersiveEnabled) 3 else 2, total = lyricsTotal,
-                        modifier = Modifier.settingsSearchTarget("mobile_player_karaoke", targetSettingId),
-                    )
-                    SettingsSwitchItem(
-                        title = "显示歌词翻译",
-                        subtitle = "同步应用于歌词预览和完整歌词",
-                        checked = config.showTranslation,
-                        onCheckedChange = {
-                            AppModel.updateMobilePlayerCustomConfig { c -> c.copy(showTranslation = it) }
-                        },
-                        index = if (config.lyricsImmersiveEnabled) 4 else 3, total = lyricsTotal,
-                        modifier = Modifier.settingsSearchTarget("mobile_player_translation", targetSettingId),
-                    )
                 }
-                SettingsSection("重置") {
+
+                PlayerLyricsPresentationSection(
+                    targetSettingId = targetSettingId,
+                    onNavigateLyricsPlugin = { navigator.push(AppRoute.LyricsPluginSettings) },
+                )
+
+                if (isAndroid) {
+                    SettingsSection(s.appearance.playerLyricsImmersive) {
+                        SettingsSwitchItem(
+                            title = s.appearance.playerLyricsImmersiveToggle,
+                            subtitle = s.appearance.playerLyricsImmersiveNote,
+                            icon = Icons.Filled.Fullscreen,
+                            checked = config.lyricsImmersiveEnabled,
+                            onCheckedChange = { checked ->
+                                haptics.perform(CpHaptic.Tick)
+                                AppModel.updateMobilePlayerCustomConfig {
+                                    it.copy(lyricsImmersiveEnabled = checked)
+                                }
+                            },
+                            index = 0,
+                            total = 2,
+                            modifier = Modifier.settingsSearchTarget(
+                                "mobile_player_lyrics_immersive",
+                                targetSettingId,
+                            ),
+                        )
+                        SettingsSliderItem(
+                            title = s.appearance.playerLyricsImmersiveTimeout,
+                            subtitle = s.appearance.playerLyricsImmersiveTimeoutNote,
+                            value = timeout.toFloat(),
+                            onValueChange = { draggingTimeout = it.roundToInt() },
+                            onValueChangeFinished = {
+                                AppModel.updateMobilePlayerCustomConfig {
+                                    it.copy(lyricsImmersiveTimeoutSeconds = timeout.coerceIn(2, 15))
+                                }
+                                draggingTimeout = -1
+                            },
+                            valueRange = 2f..15f,
+                            steps = 12,
+                            valueLabel = s.appearance.playerLyricsImmersiveSeconds(timeout),
+                            enabled = config.lyricsImmersiveEnabled,
+                            index = 1,
+                            total = 2,
+                            modifier = Modifier.settingsSearchTarget(
+                                "mobile_player_lyrics_timeout",
+                                targetSettingId,
+                            ),
+                        )
+                    }
+                }
+
+                SettingsSection(s.appearance.playerResetSection) {
                     SettingsButtonItem(
-                        text = "恢复播放器默认设置",
+                        text = s.appearance.playerReset,
+                        subtitle = s.appearance.playerResetNote,
                         icon = Icons.Filled.Refresh,
                         onClick = {
                             haptics.perform(CpHaptic.Confirm)
                             AppModel.resetMobilePlayerCustomConfig()
                         },
-                        index = 0, total = 1,
+                        index = 0,
+                        total = 1,
                         modifier = Modifier.settingsSearchTarget("mobile_player_reset", targetSettingId),
                     )
                 }
             }
         }
+    }
+}
+
+/**
+ * 歌词呈现设置分区：全平台通用（桌面端与移动端共享）。
+ */
+@Composable
+fun PlayerLyricsPresentationSection(
+    targetSettingId: String? = null,
+    onNavigateLyricsPlugin: () -> Unit,
+) {
+    val s = cpStrings()
+    val config by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
+    val showMiniPlayerLyrics by AppModel.showMiniPlayerLyricsFlow.collectAsState()
+    val showRuby by AppModel.showRubyLyricsFlow.collectAsState()
+    val wordSeg by AppModel.lyricsWordSegmentationFlow.collectAsState()
+    val smartKaraoke by AppModel.smartKaraokeLrcFlow.collectAsState()
+
+    SettingsSection(s.appearance.playerLyricsPresentation) {
+        SettingsSwitchItem(
+            title = s.appearance.playerLyricsTranslation,
+            subtitle = s.appearance.playerLyricsTranslationNote,
+            checked = config.showTranslation,
+            onCheckedChange = { checked ->
+                AppModel.updateMobilePlayerCustomConfig { it.copy(showTranslation = checked) }
+            },
+            index = 0,
+            total = 6,
+            modifier = Modifier.settingsSearchTarget("mobile_player_translation", targetSettingId),
+        )
+        SettingsSwitchItem(
+            title = s.playback.showMiniPlayerLyrics,
+            subtitle = s.playback.showMiniPlayerLyricsSubtitle,
+            checked = showMiniPlayerLyrics,
+            onCheckedChange = { AppModel.setShowMiniPlayerLyrics(it) },
+            index = 1,
+            total = 6,
+            modifier = Modifier.settingsSearchTarget(
+                "mobile_player_lyrics_mini",
+                targetSettingId,
+            ),
+        )
+        SettingsSwitchItem(
+            title = s.playback.showRubyLyrics,
+            subtitle = s.playback.showRubyLyricsSubtitle,
+            checked = showRuby,
+            onCheckedChange = { AppModel.setShowRubyLyrics(it) },
+            index = 2,
+            total = 6,
+            modifier = Modifier.settingsSearchTarget(
+                "mobile_player_lyrics_ruby",
+                targetSettingId,
+            ),
+        )
+        SettingsSwitchItem(
+            title = s.playback.lyricsWordSegmentation,
+            subtitle = s.playback.lyricsWordSegmentationSubtitle,
+            checked = wordSeg,
+            onCheckedChange = { AppModel.setLyricsWordSegmentation(it) },
+            index = 3,
+            total = 6,
+            modifier = Modifier.settingsSearchTarget(
+                "mobile_player_lyrics_segmentation",
+                targetSettingId,
+            ),
+        )
+        SettingsSwitchItem(
+            title = s.playback.smartKaraokeLrc,
+            subtitle = s.playback.smartKaraokeLrcSubtitle,
+            checked = smartKaraoke,
+            onCheckedChange = { AppModel.setSmartKaraokeLrc(it) },
+            index = 4,
+            total = 6,
+            modifier = Modifier.settingsSearchTarget(
+                "mobile_player_lyrics_karaoke",
+                targetSettingId,
+            ),
+        )
+        SettingsClickItem(
+            title = s.playback.lyricsSource,
+            subtitle = s.playback.lyricsSourceNote,
+            icon = Icons.Filled.Lyrics,
+            index = 5,
+            total = 6,
+            onClick = onNavigateLyricsPlugin,
+            showChevron = true,
+            modifier = Modifier.settingsSearchTarget(
+                "mobile_player_lyrics_source",
+                targetSettingId,
+            ),
+        )
     }
 }

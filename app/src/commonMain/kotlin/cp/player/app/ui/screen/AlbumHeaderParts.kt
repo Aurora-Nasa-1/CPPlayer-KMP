@@ -23,11 +23,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.AlbumCoverThumb
 import cp.player.app.ui.component.CpActionButtonGroup
 import cp.player.app.ui.component.CpActionGroupItem
+import cp.player.app.ui.component.CpAutoSizeText
 import cp.player.app.ui.component.CpText
+import cp.player.app.ui.component.CpExpandableText
 import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.epochMillisToYear
 import cp.player.app.ui.util.formatTimeMs
@@ -122,7 +125,7 @@ internal fun AlbumHeader(
             AlbumTitle(detail.name, MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))
             AlbumMetaLine(metaLine)
-            AlbumDescriptionBlock(detail.description, maxLines = 5)
+            AlbumDescriptionBlock(detail.description, maxLines = 6)
             Spacer(Modifier.height(16.dp))
             CpActionButtonGroup(actions, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(10.dp))
@@ -161,15 +164,17 @@ internal fun AlbumFavoriteChip(
  *
  * 宽度（`headlineMedium` / `headlineSmall`）由调用方按宽窄屏选：同一个值在手机上
  * 会一行只放得下三四个字，专辑名普遍偏长，会立刻折成三行把封面挤下去。
+ * 超过三行时先在 16sp 以内向下缩字，仍放不下才退回省略号。
  */
 @Composable
 private fun AlbumTitle(name: String, style: TextStyle) {
-    CpText(
+    CpAutoSizeText(
         name,
         style = style,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.primary,
         maxLines = 3,
+        minFontSize = 16.sp,
     )
 }
 
@@ -189,11 +194,12 @@ private fun AlbumMetaLine(text: String) {
 private fun AlbumDescriptionBlock(text: String?, maxLines: Int) {
     val desc = text?.takeIf { it.isNotBlank() } ?: return
     Spacer(Modifier.height(12.dp))
-    CpText(
-        desc,
-        style = MaterialTheme.typography.bodyMedium,
+    // 专辑说明是上游写的介绍（可能几百字），6 行之外必须能展开读全 ——
+    // 原来第 7 行起直接消失，没有任何入口。
+    CpExpandableText(
+        text = desc,
+        collapsedMaxLines = maxLines,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = maxLines,
     )
 }
 

@@ -353,12 +353,14 @@ fun SharedTransitionScope.MiniPlayer(
             )
             val errorText = state.error
             if (!errorText.isNullOrBlank()) {
+                // 底栏主播放器的报错是用户能看到的唯一失败原因，截成一行会丢掉
+                // 后半段（通常是具体的 HTTP 状态 / 解码器名）。两行仍能贴住底栏高度。
                 CpText(
                     errorText,
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error,
-                    maxLines = 1,
+                    maxLines = 2,
                 )
             }
         }
@@ -378,7 +380,7 @@ fun SharedTransitionScope.MiniPlayer(
                 onPlayAt = { index -> scope.launch { controller.playAt(index) } },
                 onRemove = { index -> scope.launch { controller.removeQueueItem(index) } },
                 onMove = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
-                onClear = { controller.clearQueue() },
+                onClear = { scope.launch { controller.clearQueue() } },
                 onClose = { showQueueSheet = false },
             )
         }

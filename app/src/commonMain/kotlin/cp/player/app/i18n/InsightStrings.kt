@@ -27,6 +27,18 @@ interface InsightStrings {
     /** @param count 最近播放的曲目数。 */
     fun recentCount(count: Int): String
 
+    /** 最近播放里不属于当前音源的行尾徽标。 */
+    val recentOtherSourceBadge: String
+
+    /** 最近播放顶部关于「其他音源不可播」的说明。 */
+    val recentOtherSourceNote: String
+
+    /** 尝试播放 / 入队其他音源曲目时的提示。 */
+    val recentOtherSourceBlocked: String
+
+    /** 本地文件在最近播放里的音源名。 */
+    val recentLocalSource: String
+
     val metricToday: String
     val metricWeek: String
     val metricTotal: String
@@ -167,6 +179,10 @@ object InsightStringsZh : InsightStrings {
     override val recentEmptyTitle = "还没有最近播放"
     override val recentEmptyNote = "播放歌曲后会显示在这里"
     override fun recentCount(count: Int) = "完整历史列表 · 共 $count 首"
+    override val recentOtherSourceBadge = "其他音源"
+    override val recentOtherSourceNote = "其他音源的歌曲已置灰，切换音源后可播放"
+    override val recentOtherSourceBlocked = "其他音源的歌曲不可播放或加入队列"
+    override val recentLocalSource = "本地"
 
     override val metricToday = "今日"
     override val metricWeek = "本周"
@@ -274,6 +290,10 @@ object InsightStringsEn : InsightStrings {
     override val recentEmptyNote = "Tracks you play will show up here"
     override fun recentCount(count: Int) =
         "Full history · $count ${if (count == 1) "track" else "tracks"}"
+    override val recentOtherSourceBadge = "Other source"
+    override val recentOtherSourceNote = "Tracks from other sources are dimmed. Switch source to play them."
+    override val recentOtherSourceBlocked = "Tracks from other sources can't be played or queued."
+    override val recentLocalSource = "Local"
 
     override val metricToday = "Today"
     override val metricWeek = "This week"

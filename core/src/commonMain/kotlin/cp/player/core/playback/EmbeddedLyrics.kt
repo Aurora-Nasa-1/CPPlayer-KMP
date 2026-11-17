@@ -21,6 +21,21 @@ internal object EmbeddedLyricLoader {
         val trimmed = raw.trim()
         if (trimmed.isBlank()) return null
 
+        // 0. 内嵌 TTML（AMLL / Apple Music 的逐字歌词常整份塞进 USLT 或 ©lyr）。
+        //    必须先于 LRC 分支判断：TTML 正文里也可能出现看起来像时间戳的文本。
+        if (isTtml(trimmed)) {
+            val ttmlLines = LyricsParser.parseTtml(trimmed)
+            if (ttmlLines.isNotEmpty()) {
+                return ttmlLines to LyricsInfo(
+                    source = "Embedded lyrics",
+                    format = "TTML",
+                    hasWordLevel = ttmlLines.any { it.words.isNotEmpty() },
+                    hasTranslation = ttmlLines.any { !it.translation.isNullOrBlank() },
+                    hasPhonetic = ttmlLines.any { !it.romanization.isNullOrBlank() },
+                )
+            }
+        }
+
         // 1. 若内嵌文本包含 LRC 时间戳，使用 parseEnhancedLrc 提取逐行/逐字歌词
         val synced = LyricsParser.parseEnhancedLrc(trimmed)
         if (synced.isNotEmpty()) {
@@ -49,5 +64,11 @@ internal object EmbeddedLyricLoader {
             hasTranslation = false,
             hasPhonetic = false,
         )
+    }
+
+    private fun isTtml(text: String): Boolean {
+        val head = text.take(512)
+        return head.contains("<tt ") || head.contains("<tt>") ||
+            head.contains(":tt ") || head.contains(":tt>")
     }
 }

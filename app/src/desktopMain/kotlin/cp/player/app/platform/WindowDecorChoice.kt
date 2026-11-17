@@ -12,9 +12,8 @@ import cp.player.core.util.defaultSettingsStorage
  * 2. 环境变量 `CPPLAYER_WINDOW_DECOR`（JavaExec / 打包产物都继承环境，等价于 1）；
  * 3. 持久化项 `~/.cpplayer/cp_player_prefs.properties` 的 `window_decor`
  *    （目前没有设置页入口，手工编辑即可；一旦写死，auto 的自动探测不再生效）；
- * 4. [Mode.AUTO]：JBR 可用（Windows/macOS + `WindowDecorations`，见 [JbrWindowChrome]）
- *    ⇒ JBR 路（系统边框 + 客户区盖过标题栏，原生贴边吸附 / Snap Layouts / 圆角白拿）；
- *    否则 ⇒ 无边框自绘路（`Undecorated` 纯 `WS_POPUP` + 手补圆角 / 最大化）。
+ * 4. [Mode.AUTO]：Windows 默认保留系统边框；JBR 可用时使用 JBR 客户区标题栏，
+ *    否则使用标准 Win32 标题栏。其它平台仍按原逻辑自动选择。
  *
  * 取值只认 `auto` / `jbr` / `undecorated`（大小写不敏感，`jbr` 别名 `system`/`native`，
  * `undecorated` 别名 `borderless`/`off`）；非法值按 [Mode.AUTO] 处理并打日志。
@@ -26,6 +25,13 @@ object WindowDecorChoice {
 
     /** 三种路线。 */
     enum class Mode { AUTO, JBR, UNDECORATED }
+
+    /**
+     * 纯决策函数：返回窗口是否保留系统装饰。Windows 上无 JBR 时回退标准 Win32 窗口，
+     * 但显式 UNDECORATED 始终尊重；非 Windows 保持原有 JBR/无边框选择行为。
+     */
+    fun useSystemDecorations(mode: Mode, isWindows: Boolean, jbrSupported: Boolean): Boolean =
+        mode != Mode.UNDECORATED && (jbrSupported || isWindows)
 
     /** 自救通道：JVM 系统属性与环境变量名。 */
     const val PROP: String = "cp.player.windowDecor"

@@ -18,9 +18,11 @@ import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.UiEvents
+import cp.player.app.ui.util.formatBytes
 import cp.player.app.ui.util.formatPublishDate
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.core.BackendResult
+import cp.player.core.media.LocalMediaItem
 import cp.player.core.music.SongDetailInfo
 import cp.player.core.music.TrackSummary
 import cp.player.core.util.localDateTimeOf
@@ -49,6 +51,14 @@ import kotlinx.coroutines.withContext
  * **播放链路**信息（编码 / 采样率 / 位深 / 码率 / 声道 / 歌词源 / MIME），
  * 数据来自正在播放的会话；这一份展示的是**曲库元数据**（发行时间 / 评论数 /
  * MV / 付费类型）。两者数据源不同，别合并。
+ *
+ * ## 本地曲目
+ *
+ * `local://` 条目没有在线 `song/detail`，此前与在线曲目走同一条路径 ⇒ 请求必然
+ * 失败 ⇒ 弹窗先转圈、再弹「获取歌曲信息失败」并自动关闭（用户看到的正是
+ * 「Info 打不开」）。现在本地曲目**不发网络请求**，直接展示 [LocalMediaItem] 里
+ * 的文件信息（大小 / 格式 / 路径 / 来源）；索引里找不到时也退化为列表已知字段，
+ * **不会**因为查不到而关闭弹窗。
  */
 @Composable
 fun SongDetailInfoDialog(
@@ -56,8 +66,19 @@ fun SongDetailInfoDialog(
     onDismiss: () -> Unit,
 ) {
     val s = cpStrings()
+    val localPath = remember(track.id) { localTrackPath(track.id) }
+    val isLocal = localPath != null
+    val localItem = remember(track.id) {
+        localPath?.let { path ->
+            runCatching {
+                cp.player.app.AppModel.localMedia.items().value.firstOrNull { it.path == path }
+            }.getOrNull()
+        }
+    }
     var info by remember(track.id) { mutableStateOf<SongDetailInfo?>(null) }
     LaunchedEffect(track.id) {
+        // 本地曲目没有在线元数据可查：直接渲染本地文件信息，别去网上撞一次必然失败。
+        if (isLocal) return@LaunchedEffect
         info = withContext(Dispatchers.IO) {
             val fallback = SongDetailInfo(
                 songId = track.id,
@@ -79,7 +100,13 @@ fun SongDetailInfoDialog(
         title = { CpText(s.library.songDetails, maxLines = 1) },
         text = {
             val current = info
-            if (current == null) {
+            if (isLocal) {
+                // 整段多行文本：CpText 默认 maxLines=1 会只剩第一行（歌曲名），必须放开。
+                CpText(
+                    buildLocalTrackInfoText(track, localItem, localPath.orEmpty()),
+                    maxLines = Int.MAX_VALUE,
+                )
+            } else if (current == null) {
                 Box(
                     Modifier.fillMaxWidth().padding(vertical = 16.dp),
                     contentAlignment = Alignment.Center,
@@ -148,5 +175,62 @@ fun SongDetailInfoDialog(
             TextButton(onClick = onDismiss) { CpText(s.common.dismiss) }
         },
     )
+}
+
+/** `local://audio/<path>` / `local://video/<path>` → 文件路径；非本地返回 null。 */
+private fun localTrackPath(mediaId: String): String? {
+    if (!mediaId.startsWith("local://")) return null
+    return mediaId.removePrefix("local://audio/").removePrefix("local://video/")
+        .takeIf { it.isNotBlank() }
+}
+
+/**
+ * 本地曲目的信息正文。
+ *
+ * [item] 为 null（列表条目还没进索引 / 路径已失效）时只渲染列表已知字段，
+ * 仍然保留路径 —— 那正是用户点「信息」最想确认的东西。
+ */
+@Composable
+private fun buildLocalTrackInfoText(
+    track: TrackSummary,
+    item: LocalMediaItem?,
+    path: String,
+): String {
+    val s = cpStrings()
+    val metadata = item?.metadata
+    return buildString {
+        append(
+            s.library.shareTrack(
+                name = track.name,
+                artist = track.artist,
+                album = track.album?.takeIf { it.isNotBlank() } ?: s.player.unknownAlbum,
+                duration = formatTimeMs(track.durationMs.takeIf { it > 0 } ?: item?.durationMs ?: 0L),
+                extra = buildString {
+                    item?.let { media ->
+                        append(
+                            s.library.songShareLine(
+                                s.player.infoSource,
+                                if (media.source == cp.player.core.media.LocalMediaOrigin.DOWNLOADED) {
+                                    s.player.downloaded
+                                } else {
+                                    s.downloads.localImported
+                                },
+                            ),
+                        )
+                        if (media.sizeBytes > 0L) {
+                            append(s.library.songShareLine(s.player.infoSize, formatBytes(media.sizeBytes)))
+                        }
+                    }
+                    // 质量标签（`FLAC 24/96` / `320k MP3`）优先用已解析的元数据；
+                    // 未解析时退回扩展名，至少不是空白。
+                    val quality = metadata?.qualityLabel
+                        ?: path.substringAfterLast('.', "").takeIf { it.isNotBlank() }?.uppercase()
+                    quality?.let { append(s.library.songShareLine(s.player.infoFormat, it)) }
+                },
+            ),
+        )
+        // 文件路径是标识符式数据，不翻译标签以外的内容。
+        append(s.library.songShareLine(s.player.infoPath, path))
+    }
 }
 

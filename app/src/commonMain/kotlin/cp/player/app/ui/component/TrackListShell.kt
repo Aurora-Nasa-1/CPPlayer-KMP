@@ -33,7 +33,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Shuffle
@@ -489,14 +489,16 @@ private fun EmptyBlock(empty: TrackEmptySpec) {
                 text = empty.title,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
+                // 空态说明是这一页唯一的解释来源，title 也会带上查询词等动态内容，
+                // 固定 2 行会在窄屏直接吃掉后半句。
+                maxLines = Int.MAX_VALUE,
             )
             if (!empty.message.isNullOrBlank()) {
                 CpText(
                     text = empty.message,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
+                    maxLines = Int.MAX_VALUE,
                 )
             }
             if (empty.actionLabel != null && empty.onAction != null) {
@@ -555,6 +557,7 @@ private fun LoadMoreError(message: String, onRetry: (() -> Unit)?) {
  */
 @Composable
 fun TrackSecondaryActionRow(spec: TrackSecondarySpec) {
+    val s = cpStrings()
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -562,9 +565,9 @@ fun TrackSecondaryActionRow(spec: TrackSecondarySpec) {
     ) {
         spec.actions.forEach { action ->
             val (label, icon) = when (action) {
-                TrackSecondaryAction.Add -> "添加" to Icons.Filled.PlaylistAdd
-                TrackSecondaryAction.DownloadAll -> "下载全部" to Icons.Filled.Download
-                TrackSecondaryAction.Sort -> "排序" to Icons.AutoMirrored.Filled.Sort
+                TrackSecondaryAction.Add -> s.library.trackAdd to Icons.AutoMirrored.Filled.PlaylistAdd
+                TrackSecondaryAction.DownloadAll -> s.library.downloadAll to Icons.Filled.Download
+                TrackSecondaryAction.Sort -> s.library.sort to Icons.AutoMirrored.Filled.Sort
             }
             // ⚠️ **不要** `weight(1f)`：改造前这三个 chip 是内容宽度、靠左排列。
             // 拉伸成等宽之后，宽屏上会变成三条 300dp 的横条，与「胶囊」的样子完全不像。
@@ -688,7 +691,7 @@ fun TrackPrimaryActionRow(
 private fun primaryActionLabel(action: TrackPrimaryAction, s: CpStrings): String =
     when (action) {
         TrackPrimaryAction.PlayAll -> s.library.playAll
-        TrackPrimaryAction.Shuffle -> "随机播放"
+        TrackPrimaryAction.Shuffle -> s.player.shuffle
     }
 
 // ============================== 顶栏 ==============================
@@ -813,6 +816,7 @@ private fun TrackTopBarSearch(
     expandedWidth: Dp,
     modifier: Modifier = Modifier,
 ) {
+    val s = cpStrings()
     val progress by animateFloatAsState(
         targetValue = if (spec.active) 1f else 0f,
         animationSpec = tween(280, easing = FastOutSlowInEasing),
@@ -841,7 +845,7 @@ private fun TrackTopBarSearch(
         Box(Modifier.fillMaxSize(), contentAlignment = if (spec.active) Alignment.CenterStart else Alignment.Center) {
             Icon(
                 imageVector = Icons.Filled.Search,
-                contentDescription = if (spec.active) null else "搜索",
+                contentDescription = if (spec.active) null else s.common.search,
                 tint = if (spec.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier
                     .then(if (spec.active) Modifier.padding(start = 12.dp) else Modifier)
@@ -868,7 +872,7 @@ private fun TrackTopBarSearch(
                             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
                                 if (spec.query.isEmpty()) {
                                     CpText(
-                                        text = "搜索歌曲、歌手、专辑...",
+                                        text = s.library.trackSearchHint,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                         maxLines = 1,
@@ -881,7 +885,7 @@ private fun TrackTopBarSearch(
                     if (spec.query.isNotEmpty()) {
                         Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                             CpText(
-                                text = "${spec.resultCount} 首",
+                                text = s.library.trackSearchResultCount(spec.resultCount),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -891,7 +895,7 @@ private fun TrackTopBarSearch(
                         IconButton(onClick = { spec.onQueryChange("") }, modifier = Modifier.size(28.dp)) {
                             Icon(
                                 Icons.Filled.Close,
-                                contentDescription = "清除",
+                                contentDescription = s.library.trackSearchClear,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(16.dp),
                             )
@@ -900,7 +904,7 @@ private fun TrackTopBarSearch(
                     IconButton(onClick = { spec.onToggle(false) }, modifier = Modifier.size(28.dp)) {
                         Icon(
                             Icons.Filled.Close,
-                            contentDescription = "关闭搜索",
+                            contentDescription = s.library.trackSearchClose,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp),
                         )

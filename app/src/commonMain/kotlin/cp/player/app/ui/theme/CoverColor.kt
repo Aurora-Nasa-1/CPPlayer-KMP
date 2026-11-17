@@ -2,8 +2,11 @@ package cp.player.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toArgb
+import com.materialkolor.hct.Hct
 import com.materialkolor.quantize.QuantizerCelebi
 import com.materialkolor.score.Score
+import kotlin.math.abs
 
 /**
  * 解码与量化的目标边长。
@@ -54,7 +57,7 @@ internal fun extractSeedColor(image: ImageBitmap): Color? {
  * 从裸 ARGB 像素数组提取种子色。
  *
  * 单独抽出来是为了让**非 `ImageBitmap`** 的来源复用同一套逻辑：桌面壁纸走
- * `ImageIO` 降采样解码（见 `PlatformSeed.desktop.kt`），拿到的本来就是 `IntArray`，
+ * Skia 解码后抽样（见 `PlatformSeed.desktop.kt`），拿到的本来就是 `IntArray`，
  * 没必要先绕成一个 `ImageBitmap` 再拆回数组。
  *
  * ⚠️ 调用方必须保证数组**已经降采样过**（约 [CoverSampleSizePx] 量级）：
@@ -98,6 +101,122 @@ internal object CoverSeedCache {
     }
 
     /** 仅供测试与「清空缓存」设置项。 */
+    fun clear() = entries.clear()
+
+    internal fun cachedCount(): Int = entries.size
+}
+
+/**
+ * 从封面提取 Apple Music 风格的流体多角色色盘。
+ *
+ * 与 M3 主题种子色（只取 1 个色相并压低彩度）不同，Apple Music 的动态背景
+ * 直接提取自封面原图中最具辨识度的鲜活色与对比色，并构建深邃夜空底或柔润浅色底。
+ *
+ * @return 包含 3 个流体光团色与 1 个底色的色盘列表（共 4 色，底色在末位）；
+ *   若位图无效或全图无色彩，返回 null。
+ */
+internal fun extractCoverFluidPalette(image: ImageBitmap, dark: Boolean): List<Color>? {
+    if (image.width <= 0 || image.height <= 0) return null
+    val pixels = IntArray(image.width * image.height)
+    image.readPixels(pixels)
+    return extractCoverFluidPalette(pixels, image.width, image.height, dark)
+}
+
+/**
+ * 从像素数组提取 Apple Music 风格流体色盘。
+ */
+internal fun extractCoverFluidPalette(
+    pixels: IntArray,
+    width: Int,
+    height: Int,
+    dark: Boolean,
+): List<Color>? {
+    if (width <= 0 || height <= 0 || pixels.size < width * height) return null
+    val quantized = QuantizerCelebi.quantize(pixels, QuantizeMaxColors)
+    if (quantized.isEmpty()) return null
+
+    // 分析量化色彩，筛选高表现力候选
+    data class Candidate(val hct: Hct, val score: Double)
+    val candidates = mutableListOf<Candidate>()
+    for ((argb, count) in quantized) {
+        val hct = Hct.fromInt(argb)
+        // 过滤透明或近无彩度的纯灰
+        if (hct.chroma < 12.0) continue
+        // 面积与鲜艳度加权评分
+        val score = count.toDouble() * hct.chroma.coerceAtLeast(15.0)
+        candidates.add(Candidate(hct, score))
+    }
+    candidates.sortByDescending { it.score }
+
+    val picked = mutableListOf<Hct>()
+    for (cand in candidates) {
+        val isFarEnough = picked.all { existing ->
+            val diff = abs(existing.hue - cand.hct.hue)
+            val dist = if (diff > 180.0) 360.0 - diff else diff
+            dist >= 28.0
+        }
+        if (isFarEnough) {
+            picked.add(cand.hct)
+            if (picked.size >= 3) break
+        }
+    }
+
+    val dominant = picked.firstOrNull() ?: run {
+        val seed = extractSeedColor(pixels, width, height) ?: return null
+        Hct.fromInt(seed.toArgb())
+    }
+    val hue0 = dominant.hue
+
+    return if (dark) {
+        // 深色模式：色团高亮鲜活（Tone 48~56，Chroma 72~85），底色深邃纯正（Tone 11，Chroma 18）
+        val blob1 = Color(Hct.from(picked.getOrNull(0)?.hue ?: hue0, 80.0, 52.0).toInt())
+        val blob2 = if (picked.size > 1) {
+            Color(Hct.from(picked[1].hue, 72.0, 46.0).toInt())
+        } else {
+            Color(Hct.from((hue0 + 38.0) % 360.0, 75.0, 48.0).toInt())
+        }
+        val blob3 = if (picked.size > 2) {
+            Color(Hct.from(picked[2].hue, 76.0, 50.0).toInt())
+        } else {
+            Color(Hct.from((hue0 - 45.0 + 360.0) % 360.0, 74.0, 52.0).toInt())
+        }
+        // 底色：幽邃纯净暗夜底，微透封面主色相氛围
+        val base = Color(Hct.from(hue0, 18.0, 11.0).toInt())
+        listOf(blob1, blob2, blob3, base)
+    } else {
+        // 浅色模式：水彩柔润透光，高对比可读
+        val blob1 = Color(Hct.from(picked.getOrNull(0)?.hue ?: hue0, 48.0, 80.0).toInt())
+        val blob2 = if (picked.size > 1) {
+            Color(Hct.from(picked[1].hue, 42.0, 84.0).toInt())
+        } else {
+            Color(Hct.from((hue0 + 35.0) % 360.0, 44.0, 82.0).toInt())
+        }
+        val blob3 = if (picked.size > 2) {
+            Color(Hct.from(picked[2].hue, 46.0, 76.0).toInt())
+        } else {
+            Color(Hct.from((hue0 - 38.0 + 360.0) % 360.0, 46.0, 78.0).toInt())
+        }
+        // 底色：晨曦柔白底
+        val base = Color(Hct.from(hue0, 4.0, 97.5).toInt())
+        listOf(blob1, blob2, blob3, base)
+    }
+}
+
+/**
+ * 封面流体色盘缓存（key = "$url:$dark"）。
+ */
+internal object CoverFluidPaletteCache {
+    private val entries = object : LinkedHashMap<String, List<Color>>(CacheCapacity, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Color>>?): Boolean =
+            size > CacheCapacity
+    }
+
+    fun get(url: String, dark: Boolean): List<Color>? = entries["$url:$dark"]
+
+    fun put(url: String, dark: Boolean, palette: List<Color>) {
+        entries["$url:$dark"] = palette
+    }
+
     fun clear() = entries.clear()
 
     internal fun cachedCount(): Int = entries.size

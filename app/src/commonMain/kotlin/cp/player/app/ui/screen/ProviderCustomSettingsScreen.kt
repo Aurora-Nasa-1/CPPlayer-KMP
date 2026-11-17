@@ -23,8 +23,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsDropdownItem
@@ -32,10 +30,11 @@ import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSwitchItem
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.provider.ProviderSettingItemSchema
 import cp.player.core.util.defaultSettingsStorage
 import cp.player.app.ui.component.CpText
+import cp.player.app.i18n.cpStrings
 
 /**
  * 声明式音源自定义设置页面。
@@ -52,7 +51,9 @@ class ProviderCustomSettingsScreen(
 
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val s = cpStrings().providerManagement
+        val common = cpStrings().common
+        val navigator = LocalAppNavigator.current
         val storage = remember(providerId) { defaultSettingsStorage("provider_config_$providerId") }
 
         // 将当前持久化的配置读取到 Compose 响应式状态 Map 中
@@ -70,16 +71,16 @@ class ProviderCustomSettingsScreen(
         var editingText by remember { mutableStateOf("") }
 
         CpRouteScaffold(
-            title = "$providerName 配置",
-            onBack = { navigator.popOrNotify() }
+            title = s.customSettingsTitle(providerName),
+            onBack = { navigator.pop() }
         ) { pageModifier ->
             SettingsPage(pageModifier) {
                 SettingsNote(
-                    text = "在此配置该音源专属参数。保存后将在发起 API 调用时自动注入。",
+                    text = s.customSettingsNote,
                     color = MaterialTheme.colorScheme.primary
                 )
 
-                SettingsSection(title = "参数设置") {
+                SettingsSection(title = s.customSettingsSection) {
                     schemas.forEachIndexed { index, item ->
                         when (item.type.lowercase()) {
                             "switch", "boolean" -> {
@@ -126,11 +127,11 @@ class ProviderCustomSettingsScreen(
                                 val displayValue = when {
                                     isPassword && currentVal.isNotEmpty() -> "••••••••"
                                     currentVal.isNotEmpty() -> currentVal
-                                    else -> "未设置"
+                                    else -> s.settingUnset
                                 }
                                 val subtitle = buildString {
                                     item.description?.let { append(it).append("\n") }
-                                    append("当前: ").append(displayValue)
+                                    append(s.settingCurrent(displayValue))
                                 }
                                 SettingsClickItem(
                                     title = item.label,
@@ -155,7 +156,7 @@ class ProviderCustomSettingsScreen(
             val isPassword = item.type.equals("password", ignoreCase = true)
             AlertDialog(
                 onDismissRequest = { editingItem = null },
-                title = { CpText(text = "编辑 ${item.label}") },
+                title = { CpText(text = s.editSetting(item.label)) },
                 text = {
                     Column {
                         item.description?.let {
@@ -187,12 +188,12 @@ class ProviderCustomSettingsScreen(
                             editingItem = null
                         }
                     ) {
-                        CpText("保存")
+                        CpText(common.save)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { editingItem = null }) {
-                        CpText("取消")
+                        CpText(common.dismiss)
                     }
                 }
             )

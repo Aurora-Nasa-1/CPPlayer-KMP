@@ -11,15 +11,11 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.screen.ScreenKey
 import cp.player.app.AppModel
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.model.PlaylistDetailScreenModel
 import cp.player.core.BackendResult
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.TrackSummary
-
-enum class HomeGeneratedPlaylistKind {
-    Static,
-    IntelligenceFromDaily,
-}
 
 class HomeGeneratedPlaylistScreen(
     private val playlist: PlaylistSummary,
@@ -32,7 +28,7 @@ class HomeGeneratedPlaylistScreen(
      * 只是想看看今天推荐了什么。原先默认值是 `0`，于是「打开日推」等价于「播放第 1 首」。
      */
     private val startIndex: Int? = null,
-    private val kind: HomeGeneratedPlaylistKind = HomeGeneratedPlaylistKind.Static,
+    private val kind: AppRoute.HomeGeneratedKind = AppRoute.HomeGeneratedKind.Static,
     /** 拉取心动歌曲的种子曲目 id（这类页面本身不携带曲目，种子必须由调用方传入）。 */
     private val seedTrackId: String? = null,
     /**
@@ -53,8 +49,8 @@ class HomeGeneratedPlaylistScreen(
         val effectiveStartIndex = if (!autoPlayConsumed) startIndex else null
         LaunchedEffect(kind, playlist.id, seedTrackId, seedPlaylistId, sourceTracks.firstOrNull()?.id) {
             when (kind) {
-                HomeGeneratedPlaylistKind.Static -> Unit
-                HomeGeneratedPlaylistKind.IntelligenceFromDaily -> {
+                AppRoute.HomeGeneratedKind.Static -> Unit
+                AppRoute.HomeGeneratedKind.IntelligenceFromDaily -> {
                     val seed = seedTrackId ?: sourceTracks.firstOrNull()?.id
                     if (seed == null) {
                         // 没有种子就没有请求可发：必须退出加载态并说明原因，
@@ -101,7 +97,7 @@ class HomeGeneratedPlaylistScreen(
             isLocalPlaylist = true,
             // 心动模式要先按种子拉取再填充，拉取期间保持加载态，
             // 否则会先闪一屏「歌单暂无歌曲」。
-            loadingOverride = kind != HomeGeneratedPlaylistKind.Static,
+            loadingOverride = kind != AppRoute.HomeGeneratedKind.Static,
         )
     }
 }

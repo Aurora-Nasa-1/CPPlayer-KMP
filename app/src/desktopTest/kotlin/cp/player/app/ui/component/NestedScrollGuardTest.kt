@@ -10,8 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Density
-import java.io.ByteArrayInputStream
-import javax.imageio.ImageIO
+import cp.player.app.readPng
 import kotlin.test.Test
 
 /**
@@ -90,7 +89,7 @@ class NestedScrollGuardTest {
         )
         return try {
             val bytes = scene.render().encodeToData()?.bytes ?: error("encode failed")
-            val png = ImageIO.read(ByteArrayInputStream(bytes)) ?: error("decode failed")
+            val png = readPng(bytes)
             val argb = IntArray(png.width * png.height)
             png.getRGB(0, 0, png.width, png.height, argb, 0, png.width)
             val bg = argb[0]

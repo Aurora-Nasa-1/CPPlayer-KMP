@@ -18,8 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.isAggressiveStandbyActive
@@ -31,7 +29,7 @@ import cp.player.app.ui.component.SettingsNoteEmphasis
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSwitchItem
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.sync.SYNC_HTTP_PORT
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -59,7 +57,7 @@ class StandbySettingsScreen : Screen {
 
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val s = cpStrings()
         val enabled by AppModel.aggressiveStandbyFlow.collectAsState()
         // 实际持锁状态与开关值分开：持锁可能因权限被拒 / Wi-Fi 未开启而失败。
@@ -103,7 +101,7 @@ class StandbySettingsScreen : Screen {
 
         CpRouteScaffold(
             title = s.standby.screenTitle,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier ->
             SettingsPage(pageModifier) {
                 SettingsSection(s.standby.sectionSelf) {

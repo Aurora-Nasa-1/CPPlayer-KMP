@@ -81,7 +81,7 @@ actual fun cancelMessageNotification(key: String) {
     }
 }
 
-actual fun setOnMessageNotificationClick(handler: ((String, Long, String) -> Unit)?) {
+actual fun setOnMessageNotificationClick(handler: ((providerId: String, peerUid: Long, title: String) -> Unit)?) {
     clickHandler = handler
     // 补投「冷启动时先到的那一次点击」（见 pendingClick 的说明）。
     if (handler != null) {

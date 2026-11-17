@@ -16,6 +16,7 @@ class SdkBackendProvider(
     override val settingsSchema: List<ProviderSettingItemSchema>? = null,
     override val sdkAllowedOrigins: Set<String> = emptySet(),
     override val capabilities: List<String>? = emptyList(),
+    override val defaultCountryCode: String? = null,
 ) : BackendProvider {
     private val listeners = mutableSetOf<() -> Unit>()
     private var disposed = false
@@ -37,7 +38,11 @@ class SdkBackendProvider(
             if (disposed) true else { listeners.add(listener); false }
         }
         if (notify) listener()
-        return { synchronized(listeners) { listeners.remove(listener) }; Unit }
+        return {
+            synchronized(listeners) {
+                listeners.remove(listener)
+            }
+        }
     }
     override fun close() {
         synchronized(listeners) { disposed = true }

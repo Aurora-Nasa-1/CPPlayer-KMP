@@ -1,6 +1,7 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CloudSync
@@ -165,7 +166,7 @@ fun settingsEntries(): List<SettingsEntry> = buildList {
         (!entry.debugOnly || AppVersion.isDesktopRunOrDebug)
 }
 
-private fun generalEntries(): List<SettingsEntry> = listOf(
+private fun generalEntries(): List<SettingsEntry> = listOfNotNull(
     SettingsEntry(
         id = "appearance",
         group = SettingsGroup.GENERAL,
@@ -223,10 +224,10 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 sectionOf = { "界面动效与视觉表现" },
             ),
             SettingsSubItem(
-                id = "appearance_fluid_background_dither",
-                titleOf = { it.appearance.fluidBackgroundDither },
-                subtitleOf = { it.appearance.fluidBackgroundDitherNote },
-                keywords = listOf("抖动", "dither", "色阶", "断层", "色带", "10bit", "平滑", "渐变", "banding"),
+                id = "appearance_fluid_background_fps",
+                titleOf = { it.appearance.fluidBackgroundFps },
+                subtitleOf = { it.appearance.fluidBackgroundFpsNote },
+                keywords = listOf("流体", "帧率", "FPS", "刷新率", "省电", "fluid", "frame rate"),
                 sectionOf = { "界面动效与视觉表现" },
             ),
             SettingsSubItem(
@@ -245,51 +246,91 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
             ),
             SettingsSubItem(
                 id = "appearance_modern_mobile_player",
-                titleOf = { "全新单页播放布局" },
-                subtitleOf = { "将封面、双行歌词预览与控制整合在一个页面中展示" },
-                keywords = listOf("单页", "播放页", "新版播放器", "播放界面", "歌词", "apple music", "封面", "布局", "手机播放器"),
-                sectionOf = { "手机端播放界面与布局" },
+                titleOf = { "播放器样式" },
+                subtitleOf = { "切换播放页排版" },
+                keywords = listOf("三段式", "标准", "播放器样式", "单页", "播放页", "播放界面", "歌词", "封面", "布局", "手机播放器", "player", "layout"),
+                sectionOf = { it.appearance.sectionMobile },
+                androidOnly = true,
             ),
             SettingsSubItem(
                 id = "appearance_mobile_player_layout",
-                titleOf = { "手机播放偏好" },
-                subtitleOf = { "切歌手势、歌词预览字号、逐字高亮与翻译" },
-                keywords = listOf("播放界面", "手势", "歌词字号", "翻译", "卡拉OK"),
-                sectionOf = { "手机端播放界面与布局" },
+                titleOf = { it.appearance.mobilePreferences },
+                subtitleOf = { it.appearance.mobilePreferencesNote },
+                keywords = listOf("播放界面", "歌词翻译", "沉浸歌词", "恢复默认", "播放器"),
+                sectionOf = { it.appearance.sectionMobile },
+                androidOnly = true,
             ),
             SettingsSubItem(
-                id = "mobile_player_cover_swipe",
-                titleOf = { "封面左右滑动切歌手势" },
-                subtitleOf = { "在专辑封面上左右横向滑动手势触发上一首 / 下一首" },
-                keywords = listOf("滑动切歌", "手势", "切歌", "swipe gesture"),
-                sectionOf = { "手机端播放界面与布局" },
-            ),
-            SettingsSubItem(
-                id = "mobile_player_lyrics_size",
-                titleOf = { "歌词预览字号" },
-                subtitleOf = { "调整封面下方当前歌词的字体大小" },
-                keywords = listOf("歌词大小", "歌词字号", "lyrics font size"),
-                sectionOf = { "手机端播放界面与布局" },
-            ),
-            SettingsSubItem(
-                id = "mobile_player_karaoke",
-                titleOf = { "预览逐字高亮" },
-                subtitleOf = { "音源包含逐字时值时，以精准平滑的高亮推进动画展现" },
-                keywords = listOf("逐字歌词", "卡拉OK", "karaoke"),
-                sectionOf = { "手机端播放界面与布局" },
+                id = "mobile_player_lyrics_mini",
+                titleOf = { it.playback.showMiniPlayerLyrics },
+                subtitleOf = { it.playback.showMiniPlayerLyricsSubtitle },
+                keywords = listOf("迷你播放器", "歌词", "歌手", "mini player"),
+                sectionOf = { it.appearance.playerLyricsPresentation },
             ),
             SettingsSubItem(
                 id = "mobile_player_translation",
-                titleOf = { "双语歌词翻译展示" },
-                subtitleOf = { "在歌曲拥有翻译歌词时，在正文下方同步显示次行译文" },
+                titleOf = { it.appearance.playerLyricsTranslation },
+                subtitleOf = { it.appearance.playerLyricsTranslationNote },
                 keywords = listOf("歌词翻译", "双语", "译文", "translation"),
-                sectionOf = { "手机端播放界面与布局" },
+                sectionOf = { it.appearance.playerLyricsPresentation },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_lyrics_ruby",
+                titleOf = { it.playback.showRubyLyrics },
+                subtitleOf = { it.playback.showRubyLyricsSubtitle },
+                keywords = listOf("注音", "假名", "振假名", "日文", "furigana"),
+                sectionOf = { it.appearance.playerLyricsPresentation },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_lyrics_segmentation",
+                titleOf = { it.playback.lyricsWordSegmentation },
+                subtitleOf = { it.playback.lyricsWordSegmentationSubtitle },
+                keywords = listOf("分词", "断句", "换行", "日文", "segmentation"),
+                sectionOf = { it.appearance.playerLyricsPresentation },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_lyrics_karaoke",
+                titleOf = { it.playback.smartKaraokeLrc },
+                subtitleOf = { it.playback.smartKaraokeLrcSubtitle },
+                keywords = listOf("逐字", "卡拉OK", "高亮", "karaoke"),
+                sectionOf = { it.appearance.playerLyricsPresentation },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_lyrics_source",
+                titleOf = { it.playback.lyricsSource },
+                subtitleOf = { it.playback.lyricsSourceNote },
+                keywords = listOf("歌词来源", "AMLL", "歌词库", "lyrics source"),
+                sectionOf = { it.appearance.playerLyricsPresentation },
+            ),
+            SettingsSubItem(
+                id = "mobile_player_lyrics_immersive",
+                titleOf = { it.appearance.playerLyricsImmersiveToggle },
+                subtitleOf = { it.appearance.playerLyricsImmersiveNote },
+                keywords = listOf("沉浸歌词", "全屏歌词", "隐藏控制栏", "immersive"),
+                sectionOf = { it.appearance.playerLyricsImmersive },
+                androidOnly = true,
+            ),
+            SettingsSubItem(
+                id = "mobile_player_lyrics_timeout",
+                titleOf = { it.appearance.playerLyricsImmersiveTimeout },
+                subtitleOf = { it.appearance.playerLyricsImmersiveTimeoutNote },
+                keywords = listOf("沉浸歌词", "等待时间", "自动隐藏", "timeout"),
+                sectionOf = { it.appearance.playerLyricsImmersive },
+                androidOnly = true,
+            ),
+            SettingsSubItem(
+                id = "mobile_player_reset",
+                titleOf = { it.appearance.playerReset },
+                subtitleOf = { "重置歌词呈现与沉浸歌词选项" },
+                keywords = listOf("恢复默认", "重置", "播放器设置", "reset"),
+                sectionOf = { it.appearance.playerResetSection },
+                androidOnly = true,
             ),
             SettingsSubItem(
                 id = "appearance_font_roundness",
                 titleOf = { it.appearance.fontRoundness },
-                subtitleOf = { "调节界面部件形状与字体笔画的圆润程度" },
-                keywords = listOf("圆角", "字体", "几何", "笔画", "圆润", "形状", "radius", "roundness", "font"),
+                subtitleOf = { "选择字体的圆滑或方正形态" },
+                keywords = listOf("圆滑", "方正", "字体", "字形", "圆润", "roundness", "font"),
                 sectionOf = { it.appearance.sectionFont },
             ),
             SettingsSubItem(
@@ -324,10 +365,14 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
             ),
         ),
         screen = { targetId ->
-            if (targetId != null && targetId.startsWith("mobile_player_")) {
-                MobilePlayerSettingsScreen(targetId)
-            } else if (targetId in listOf("appearance_modern_mobile_player", "appearance_mobile_player_layout")) {
-                MobilePlayerSettingsScreen(targetId)
+            if (isAndroidPlatform()) {
+                if (targetId != null && targetId.startsWith("mobile_player_")) {
+                    MobilePlayerSettingsScreen(targetId)
+                } else if (targetId == "appearance_mobile_player_layout") {
+                    MobilePlayerSettingsScreen(targetId)
+                } else {
+                    AppearanceSettingsScreen(targetId)
+                }
             } else {
                 AppearanceSettingsScreen(targetId)
             }
@@ -337,11 +382,11 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
         id = "playback",
         group = SettingsGroup.GENERAL,
         titleOf = { it.settings.itemPlayback.title },
-        subtitleOf = { "流媒体音质、FlickEngine 发烧架构、淡入淡出与定时播放" },
+        subtitleOf = { "默认音质、音频输出与淡入淡出" },
         icon = Icons.Filled.PlayArrow,
         accent = SettingsAccent.SECONDARY,
         keywords = listOf(
-            "音质", "无损", "hires", "定时", "睡眠", "关闭", "quality", "sleep",
+            "音质", "无损", "hires", "quality",
             "flick", "engine", "wasapi", "exclusive", "独占", "bit-perfect", "源码",
             "内核", "发烧", "dsd", "asio", "声卡", "音频", "输出", "dac",
             "音效", "均衡器", "均衡", "eq", "peq", "调音", "混音", "平衡", "响度",
@@ -369,13 +414,6 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 subtitleOf = { "提前缓冲即将播放的曲目，消除切歌等待与卡顿" },
                 keywords = listOf("预加载", "缓冲", "预读", "提前加载", "preload", "buffer"),
                 sectionOf = { "流媒体与音频音质" },
-            ),
-            SettingsSubItem(
-                id = "playback_speed",
-                titleOf = { "播放速度" },
-                subtitleOf = { "0.5× ~ 2.0× 变速，由音频引擎处理、不改变音调" },
-                keywords = listOf("倍速", "播放速度", "变速", "快放", "慢放", "speed", "tempo"),
-                sectionOf = { "播放速度" },
             ),
             SettingsSubItem(
                 id = "playback_audio_engine",
@@ -411,13 +449,6 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
                 subtitleOf = { "重新启动应用时恢复上次播放的曲目及播放时间点" },
                 keywords = listOf("记忆播放", "断点续播", "进度", "恢复播放", "历史进度", "resume", "progress"),
                 sectionOf = { "播放控制与过渡" },
-            ),
-            SettingsSubItem(
-                id = "playback_sleep_timer",
-                titleOf = { "睡眠定时器" },
-                subtitleOf = { "倒计时停止播放或在当前歌曲播放完毕后自动退出" },
-                keywords = listOf("睡眠", "定时", "倒计时", "定时关闭", "自动停止", "播完停止", "sleep", "timer"),
-                sectionOf = { "定时与自动化" },
             ),
             SettingsSubItem(
                 id = "playback_auto_play",
@@ -548,6 +579,90 @@ private fun generalEntries(): List<SettingsEntry> = listOf(
         desktopOnly = true,
         screen = { _ -> ShortcutSettingsScreen() },
     ),
+    SettingsEntry(
+        id = "navigation",
+        group = SettingsGroup.GENERAL,
+        titleOf = { it.settings.itemNavigation.title },
+        subtitleOf = { it.settings.itemNavigation.subtitle },
+        icon = Icons.Filled.Tune,
+        accent = SettingsAccent.SECONDARY,
+        keywords = listOf(
+            "动态", "朋友圈", "社交", "feed", "dynamic", "social",
+            "导航", "入口", "tab", "底部导航", "侧栏", "隐藏入口", "navigation",
+            "消息", "私信", "messages", "chat",
+            "搜索", "search", "替代搜索", "顶栏",
+            "音源不支持", "能力", "capability", "隐藏功能",
+        ),
+        subItems = listOf(
+            SettingsSubItem(
+                id = "navigation_dynamic_tab",
+                titleOf = { "用「动态」替代「搜索」tab" },
+                subtitleOf = { "第 2 个 tab 变成动态，搜索移到顶栏动作位" },
+                keywords = listOf("动态", "搜索", "tab", "替代", "顶栏", "dynamic", "search"),
+                sectionOf = { "主 tab" },
+            ),
+            SettingsSubItem(
+                id = "navigation_hide_dynamic",
+                titleOf = { "隐藏「动态」入口" },
+                subtitleOf = { "导航入口隐藏，动态数据与页面仍然可用" },
+                keywords = listOf("动态", "隐藏", "入口", "dynamic", "hide"),
+                sectionOf = { "入口可见性" },
+            ),
+            SettingsSubItem(
+                id = "navigation_hide_messages",
+                titleOf = { "隐藏「消息」入口" },
+                subtitleOf = { "隐藏顶栏 / 侧栏 / 底栏的消息入口" },
+                keywords = listOf("消息", "私信", "隐藏", "入口", "messages", "hide"),
+                sectionOf = { "入口可见性" },
+            ),
+            SettingsSubItem(
+                id = "navigation_provider_support",
+                titleOf = { "音源功能支持清单" },
+                subtitleOf = { "列出动态 / 消息 / 搜索在当前音源是否可用；不支持时对应入口直接隐藏" },
+                keywords = listOf("音源", "支持", "能力", "不支持", "隐藏", "capability", "provider"),
+                sectionOf = { "当前音源的功能支持" },
+            ),
+        ),
+        screen = { targetId -> NavigationSettingsScreen(targetId) },
+    ),
+    // A2UI 入口暂时下线：与播放器里的两个入口共用同一个开关。
+    // 恢复时把 `A2UI_ENTRY_ENABLED` 改回 true 即可，不要在这里单独删/加。
+    if (cp.player.app.ui.a2ui.A2UI_ENTRY_ENABLED) SettingsEntry(
+        id = "ai_settings",
+        group = SettingsGroup.GENERAL,
+        titleOf = { it.ai.settingsTitle },
+        subtitleOf = { it.ai.settingsSubtitle },
+        icon = Icons.Filled.AutoAwesome,
+        accent = SettingsAccent.TERTIARY,
+        keywords = listOf(
+            "ai", "a2ui", "大模型", "api key", "base uri", "openai", "deepseek", "gemini", "ollama",
+            "dj台", "私人dj", "智能", "声场", "生成式", "agent"
+        ),
+        subItems = listOf(
+            SettingsSubItem(
+                id = "ai_provider",
+                titleOf = { "接口与模型" },
+                subtitleOf = { "选择 OpenAI 兼容端点，填写基地址、密钥与模型" },
+                keywords = listOf("ai", "provider", "base uri", "api key", "端点", "密钥", "deepseek", "gemini", "openai"),
+                sectionOf = { "接口与模型" },
+            ),
+            SettingsSubItem(
+                id = "ai_test_connection",
+                titleOf = { "连接与生成诊断" },
+                subtitleOf = { "实测模型响应延迟与认证有效性" },
+                keywords = listOf("测试", "延迟", "ping", "连通性", "诊断", "test"),
+                sectionOf = { "诊断" },
+            ),
+            SettingsSubItem(
+                id = "ai_expressive_motion",
+                titleOf = { "界面动效与触觉反馈" },
+                subtitleOf = { "A2UI 结构切换动画与动作确认反馈" },
+                keywords = listOf("动效", "m3e", "expressive", "弹簧", "波形", "触感", "震动", "motion"),
+                sectionOf = { "行为" },
+            ),
+        ),
+        screen = { _ -> AiSettingsScreen() },
+    ) else null,
 )
 
 private fun accountEntries(): List<SettingsEntry> = listOf(
@@ -571,44 +686,69 @@ private fun accountEntries(): List<SettingsEntry> = listOf(
         screen = { _ -> AccountScreen() },
     ),
     SettingsEntry(
-        id = "providers",
-        group = SettingsGroup.ACCOUNT_AND_PROVIDER,
-        titleOf = { it.settings.itemProviders.title },
-        subtitleOf = { it.settings.itemProviders.subtitle + " · 歌词来源" },
-        icon = Icons.Filled.Dns,
-        accent = SettingsAccent.PRIMARY,
-        keywords = listOf(
-            "音源", "导入", "模块", "切换", "音源配置", "音源设置", "自定义配置", "provider", "module", "settings",
-            "歌词", "歌词源", "歌词来源", "来源", "排序", "优先级", "插件", "歌词插件",
-            "lyrico", "lrc", "ttml", "逐字", "导入歌词", "amll", "边车", "lyrics", "source", "priority", "karaoke",
-        ),
-        subItems = listOf(
-            SettingsSubItem(
-                id = "providers_manage",
-                titleOf = { "音源插件管理与导入" },
-                subtitleOf = { "安装第三方音源 (.zip)、启用/禁用音源与调整搜索聚合优先级" },
-                keywords = listOf("音源", "插件", "模块", "导入音源", "音源优先级", "音源配置", "音源设置", "自定义配置", "provider", "module", "source"),
-                sectionOf = { "数据源" },
-            ),
-            SettingsSubItem(
-                id = "providers_lyrics_plugins",
-                titleOf = { "歌词源插件与优先级" },
-                subtitleOf = { "管理 AMLL / TTML / 网易云 / QQ 歌词源，支持排序与导入插件" },
-                keywords = listOf("歌词", "歌词源", "逐字歌词", "歌词插件", "AMLL", "ttml", "lrc", "lyrics", "karaoke"),
-                sectionOf = { "歌词来源" },
-            ),
-        ),
-        screen = { _ -> ProviderManagementScreen() },
-    ),
-    SettingsEntry(
-        id = "plugin_repository",
+        id = "plugins",
         group = SettingsGroup.ACCOUNT_AND_PROVIDER,
         titleOf = { it.pluginRepository.title },
         subtitleOf = { it.pluginRepository.subtitle },
         icon = Icons.Filled.Extension,
-        accent = SettingsAccent.SECONDARY,
-        keywords = listOf("插件", "仓库", "安装", "更新", "plugin", "repository", "install", "update"),
-        screen = { _ -> PluginRepositoryScreen() },
+        accent = SettingsAccent.PRIMARY,
+        keywords = listOf(
+            "插件", "音源", "歌词", "仓库", "安装", "更新", "导入", "模块", "切换", "启用", "排序", "优先级",
+            "音源配置", "歌词来源", "歌词插件", "provider", "lyrics", "plugin", "repository", "catalog",
+            "install", "update", "source", "priority", "module", "settings",
+        ),
+        subItems = listOf(
+            SettingsSubItem(
+                id = "plugins_installed",
+                titleOf = { "已安装插件与音源" },
+                subtitleOf = { "查看当前音源、歌词来源与仓库插件，切换音源或调整歌词优先级" },
+                keywords = listOf(
+                    "已安装", "音源", "歌词", "插件", "切换音源", "启用", "排序", "优先级",
+                    "provider", "lyrics", "installed", "switch", "priority",
+                ),
+                sectionOf = { "已安装" },
+            ),
+            SettingsSubItem(
+                id = "plugins_discover",
+                titleOf = { "发现与安装插件" },
+                subtitleOf = { "从已启用的仓库浏览音源与歌词插件，查看作者、来源和更新说明后安装" },
+                keywords = listOf(
+                    "发现", "浏览", "安装", "插件", "仓库", "音源", "歌词", "下载",
+                    "discover", "browse", "install", "catalog", "plugin",
+                ),
+                sectionOf = { "发现" },
+            ),
+            SettingsSubItem(
+                id = "plugins_updates",
+                titleOf = { "检查插件与音源更新" },
+                subtitleOf = { "汇总仓库插件与音源模块的可用更新，支持逐个或全部检查" },
+                keywords = listOf(
+                    "更新", "检查更新", "插件更新", "音源更新", "升级", "版本",
+                    "update", "upgrade", "version", "check",
+                ),
+                sectionOf = { "更新" },
+            ),
+            SettingsSubItem(
+                id = "plugins_repositories",
+                titleOf = { "仓库与联网设置" },
+                subtitleOf = { "添加 HTTPS 插件仓库、启用联网与自动检查，管理仓库信任边界" },
+                keywords = listOf(
+                    "仓库", "联网", "自动检查", "HTTPS", "目录", "来源", "信任",
+                    "repository", "catalog", "network", "auto check", "source",
+                ),
+                sectionOf = { "仓库" },
+            ),
+        ),
+        screen = { target ->
+            PluginHubScreen(
+                initialView = when (target) {
+                    "plugins_discover" -> PluginHubView.DISCOVER
+                    "plugins_updates" -> PluginHubView.UPDATES
+                    "plugins_repositories" -> PluginHubView.REPOSITORIES
+                    else -> PluginHubView.INSTALLED
+                },
+            )
+        },
     ),
 )
 
@@ -785,6 +925,14 @@ private fun connectivityEntries(): List<SettingsEntry> = listOf(
                 desktopOnly = true,
             ),
             SettingsSubItem(
+                id = "msg_notify_close_behavior",
+                titleOf = { "关闭窗口时" },
+                subtitleOf = { it.messageNotify.closeBehaviorHint },
+                keywords = listOf("关闭行为", "关窗", "托盘", "退出", "询问", "close behavior"),
+                sectionOf = { "桌面行为" },
+                desktopOnly = true,
+            ),
+            SettingsSubItem(
                 id = "msg_notify_startup",
                 titleOf = { "开机自动启动" },
                 subtitleOf = { "随电脑开机自动启动并在后台托盘静默运行" },
@@ -905,6 +1053,15 @@ private fun otherEntries(): List<SettingsEntry> = listOf(
                 titleOf = { "垂直同步 (V-Sync)" },
                 subtitleOf = { "画面帧率与显示器刷新率同步，防止画面撕裂" },
                 keywords = listOf("垂直同步", "vsync", "撕裂", "刷新率", "帧率", "掉帧"),
+                sectionOf = { "渲染性能" },
+                desktopOnly = true,
+                debugOnly = true,
+            ),
+            SettingsSubItem(
+                id = "render_tuning_vrr",
+                titleOf = { "VRR / G-SYNC（逐程序）" },
+                subtitleOf = { "把本程序在 NVIDIA 驱动里设为「固定刷新率」，避免刷新率随界面跳动导致闪烁" },
+                keywords = listOf("vrr", "g-sync", "gsync", "可变刷新率", "刷新率", "闪烁", "nvidia", "驱动"),
                 sectionOf = { "渲染性能" },
                 desktopOnly = true,
                 debugOnly = true,

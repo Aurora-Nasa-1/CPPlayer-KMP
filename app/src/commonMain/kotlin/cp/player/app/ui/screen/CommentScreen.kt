@@ -5,13 +5,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CommentPane
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.model.CommentScreenModel
-import cp.player.app.ui.util.popOrNotify
 
 /**
  * 评论页（窄屏整页形态）。
@@ -23,7 +22,7 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
     @Composable
     override fun Content() {
         val model = rememberScreenModel { CommentScreenModel(id, type) }
-        val navigator = LocalNavigator.current
+        val navigator = LocalAppNavigator.current
         val s = cpStrings()
         val playbackState by AppModel.playback.state.collectAsState()
         val currentTrack = playbackState.currentTrack
@@ -45,7 +44,7 @@ class CommentScreen(val id: String, val type: String = "music") : Screen {
         // 收在一处，本页只需要声明标题与返回动作。
         CpRouteScaffold(
             title = titleText,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier ->
             CommentPane(model = model, modifier = pageModifier)
         }

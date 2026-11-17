@@ -38,8 +38,6 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
@@ -54,7 +52,7 @@ import cp.player.app.ui.component.SettingsConfirmItem
 import cp.player.app.ui.component.SettingsLazyPage
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsSection
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.CpText
 
 /**
@@ -63,7 +61,7 @@ import cp.player.app.ui.component.CpText
 class ShortcutSettingsScreen : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val bindings by AppModel.shortcutBindingsFlow.collectAsState()
         var recording by remember { mutableStateOf<ShortcutAction?>(null) }
 
@@ -91,7 +89,7 @@ class ShortcutSettingsScreen : Screen {
 
         CpRouteScaffold(
             title = cpStrings().shortcuts.screenTitle,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier ->
             ShortcutSettingsBody(
                 pageModifier = pageModifier,

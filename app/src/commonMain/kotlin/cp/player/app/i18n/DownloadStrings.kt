@@ -93,6 +93,23 @@ interface DownloadStrings {
     val playVideo: String
     val addToLocalPlaylist: String
     val openInFileManager: String
+
+    /**
+     * 「在文件管理器中打开」失败时的提示。
+     *
+     * ⚠️ 不能静默：Android 上应用私有目录（`Android/data/<pkg>/`）从 11 起对文件管理器
+     * 不可见，这类失败拿不到任何系统反馈，只能由我们解释，否则用户只看到「点了没反应」。
+     *
+     * @param path 目标路径，让用户确认点的是哪一个文件。
+     */
+    fun openInFileManagerFailed(path: String): String
+
+    /**
+     * Android 专属的补充说明（私有目录不可见）。
+     *
+     * 桌面端不追加这句 —— 那里没有这个限制，失败通常是路径已失效，套用会误导。
+     */
+    val openInFileManagerPrivateHint: String
     val favoriteCloud: String
     val unfavoriteCloud: String
 
@@ -164,6 +181,7 @@ interface DownloadStrings {
 
     // —— 歌曲 / 歌单操作弹层（MoreOptionsSheet）——
     val favorite: String
+    val unfavorite: String
     val playNext: String
     val addToQueue: String
     val addAllToQueue: String
@@ -239,6 +257,16 @@ interface DownloadStrings {
     fun deleteLocalFileMessage(title: String): String
     fun playlistTrackCount(count: Int): String
     fun deleteLocalPlaylistMessage(name: String): String
+
+    fun localSongCount(count: Int): String = "共 $count 首本地歌曲"
+    fun losslessCount(count: Int): String = "无损 $count 首"
+    val browseLibrary: String get() = "浏览曲库"
+    val recentAdded: String get() = "最近添加"
+    val viewAll: String get() = "查看全部"
+    fun downloadingCount(count: Int): String = "$count 下载中"
+    fun downloadedCount(count: Int): String = "已下载 $count 首"
+    val quickShuffle: String get() = "随机播放"
+    val quickPlay: String get() = "顺序播放"
 }
 
 /** 简体中文实现（界面现有字面量照搬）。 */
@@ -297,6 +325,9 @@ object DownloadStringsZh : DownloadStrings {
     override val playVideo = "播放视频"
     override val addToLocalPlaylist = "添加到本地歌单"
     override val openInFileManager = "在文件管理器中打开"
+    override fun openInFileManagerFailed(path: String) = "无法在文件管理器中显示：$path"
+    override val openInFileManagerPrivateHint =
+        "Android 11+ 的文件管理器无法访问应用私有目录（Android/data/…）。"
     override val favoriteCloud = "云端收藏"
     override val unfavoriteCloud = "取消云端收藏"
     override fun favoriteCloudDone(favorited: Boolean) =
@@ -333,6 +364,7 @@ object DownloadStringsZh : DownloadStrings {
     override val unsupportedMedia = "暂不支持播放该媒体"
 
     override val favorite = "收藏"
+    override val unfavorite = "取消收藏"
     override val playNext = "下一首播放"
     override val addToQueue = "添加到队列"
     override val addAllToQueue = "全部加入队列"
@@ -399,6 +431,16 @@ object DownloadStringsZh : DownloadStrings {
     override fun deleteLocalFileMessage(title: String) = "确定要将《$title》从磁盘彻底删除吗？此操作无法撤销。"
     override fun playlistTrackCount(count: Int) = "$count 首歌曲"
     override fun deleteLocalPlaylistMessage(name: String) = "确定删除本地歌单《$name》吗？歌单内的本地音频文件不会被删除。"
+
+    override fun localSongCount(count: Int) = "共 $count 首本地歌曲"
+    override fun losslessCount(count: Int) = "无损 $count 首"
+    override val browseLibrary = "浏览曲库"
+    override val recentAdded = "最近添加"
+    override val viewAll = "查看全部"
+    override fun downloadingCount(count: Int) = "$count 下载中"
+    override fun downloadedCount(count: Int) = "已下载 $count 首"
+    override val quickShuffle = "随机播放"
+    override val quickPlay = "顺序播放"
 }
 
 /** 英文实现。 */
@@ -461,6 +503,9 @@ object DownloadStringsEn : DownloadStrings {
     override val playVideo = "Play video"
     override val addToLocalPlaylist = "Add to local playlist"
     override val openInFileManager = "Show in file manager"
+    override fun openInFileManagerFailed(path: String) = "Can't show this in a file manager: $path"
+    override val openInFileManagerPrivateHint =
+        "On Android 11+ file managers can't open app-private folders (Android/data/…)."
     override val favoriteCloud = "Favorite in cloud"
     override val unfavoriteCloud = "Remove cloud favorite"
     override fun favoriteCloudDone(favorited: Boolean) =
@@ -500,6 +545,7 @@ object DownloadStringsEn : DownloadStrings {
     override val unsupportedMedia = "This media type can't be played yet"
 
     override val favorite = "Favorite"
+    override val unfavorite = "Remove favorite"
     override val playNext = "Play next"
     override val addToQueue = "Add to queue"
     override val addAllToQueue = "Add all to queue"
@@ -561,6 +607,16 @@ object DownloadStringsEn : DownloadStrings {
     override fun deleteLocalFileMessage(title: String) = "Permanently delete \"$title\" from disk? This can't be undone."
     override fun playlistTrackCount(count: Int) = if (count == 1) "1 song" else "$count songs"
     override fun deleteLocalPlaylistMessage(name: String) = "Delete the local playlist \"$name\"? Its audio files will remain on disk."
+
+    override fun localSongCount(count: Int) = if (count == 1) "1 local song" else "$count local songs"
+    override fun losslessCount(count: Int) = "$count lossless"
+    override val browseLibrary = "Browse library"
+    override val recentAdded = "Recently added"
+    override val viewAll = "View all"
+    override fun downloadingCount(count: Int) = "$count downloading"
+    override fun downloadedCount(count: Int) = if (count == 1) "1 downloaded" else "$count downloaded"
+    override val quickShuffle = "Shuffle all"
+    override val quickPlay = "Play all"
 
     override val collapsePlayer = "Collapse the player"
     override val lyrics = "Lyrics"

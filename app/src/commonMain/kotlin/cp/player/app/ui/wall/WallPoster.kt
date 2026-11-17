@@ -1,5 +1,6 @@
 package cp.player.app.ui.wall
 
+import cp.player.app.ui.component.CpAutoSizeText
 import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -160,12 +161,13 @@ internal fun WallPosterOverlay(
                 .graphicsAlpha(bodyAlpha),
             verticalArrangement = Arrangement.Bottom,
         ) {
-            CpText(
+            CpAutoSizeText(
                 item.title,
                 color = Color.White,
                 fontSize = 23.sp,
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 2,
+                minFontSize = 14.sp,
             )
             item.subtitle?.takeIf { it.isNotBlank() }?.let {
                 Spacer(Modifier.height(6.dp))
@@ -173,7 +175,7 @@ internal fun WallPosterOverlay(
                     it,
                     color = Color.White.copy(alpha = 0.86f),
                     fontSize = 13.5.sp,
-                    maxLines = 1,
+                    maxLines = 2,
                 )
             }
             Spacer(Modifier.height(18.dp))

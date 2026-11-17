@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -25,24 +27,27 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.AppModel
 import cp.player.app.platform.BackHandler
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.feedback.CpHaptic
 import cp.player.app.ui.feedback.LocalCpHaptics
 import cp.player.app.ui.model.CommentScreenModel
-import cp.player.app.ui.screen.LyricsPluginSettingsScreen
-import cp.player.app.ui.screen.UserProfileScreen
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.theme.CpMotion
-import cp.player.app.ui.util.pushOrNotify
 import cp.player.core.music.ArtistSummary
 import cp.player.core.playback.PlaybackUiState
 import cp.player.core.provider.ProviderCapability
 import kotlinx.coroutines.launch
+
+internal fun modernPlayerFallbackColors(colorScheme: ColorScheme): List<Color> =
+    listOf(colorScheme.surfaceContainerHigh, colorScheme.surfaceContainerLow, colorScheme.surface)
 
 /** Mobile player host. Playback, sheets and navigation stay outside the layout. */
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -62,7 +67,7 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
     onRemoveQueue: (Int) -> Unit,
     onMoveQueue: (Int, Int) -> Unit,
 ) {
-    val navigator = LocalNavigator.current
+    val navigator = LocalAppNavigator.current
     val config by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
     val haptics = LocalCpHaptics.current
     val scope = rememberCoroutineScope()
@@ -110,12 +115,10 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
         )
     }
     val onArtist: ((ArtistSummary) -> Unit)? = remember(navigator) {
-        navigator?.let { nav ->
-            { artist -> nav.pushOrNotify(UserProfileScreen(artist.id, artist.name, artist.resourceId)) }
-        }
+        { artist -> navigator.push(AppRoute.UserProfile(artist.id, artist.name, artist.resourceId)) }
     }
     val onChangeSource: (() -> Unit)? = remember(navigator) {
-        navigator?.let { nav -> { nav.pushOrNotify(LyricsPluginSettingsScreen()) } }
+        { navigator.push(AppRoute.LyricsPluginSettings) }
     }
 
     val currentTrack = state.currentTrack
@@ -133,8 +136,27 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
         )
     } else Modifier
 
+    val colorScheme = MaterialTheme.colorScheme
+    val fallbackColors = remember(
+        colorScheme.surfaceContainerHigh,
+        colorScheme.surfaceContainerLow,
+        colorScheme.surface,
+    ) {
+        modernPlayerFallbackColors(colorScheme)
+    }
+    val backgroundBrush = remember(fallbackColors) { Brush.verticalGradient(fallbackColors) }
+    val fluidBackground by AppModel.fluidBackgroundFlow.collectAsState()
+
     Box(
         Modifier.fillMaxSize()
+            .cpFluidBackground(
+                enabled = fluidBackground,
+                fallback = backgroundBrush,
+                pauseShaderAnimation = shouldPauseFluidBackgroundDuringNavigation(
+                    animatedVisibilityScope.transition.isRunning,
+                ),
+                coverUrl = state.currentTrack?.coverUrl,
+            )
             .sharedBounds(rememberSharedContentState("player-container"), animatedVisibilityScope)
             .graphicsLayer { translationY = dragOffset.value },
     ) {
@@ -159,13 +181,12 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
             onSeek = onSeek,
             onSkipNext = onSkipNext,
             onSkipPrevious = onSkipPrev,
-            onRepeat = onRepeat,
-            onShuffle = onShuffle,
             onLike = { AppModel.toggleFavoriteOf(state.currentTrack?.id) },
             onArtistClick = onArtist,
             onQueue = { showQueue = true },
             onComments = { showComments = true },
             onMore = { more.showMoreMenu = true },
+            onCast = { more.showDevicePicker = true },
             modifier = Modifier.fillMaxSize(),
             contentModifier = Modifier.windowInsetsPadding(WindowInsets.systemBars),
             dismissGesture = dismissGesture,
@@ -212,6 +233,10 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
                 showQueue = false
                 more.showSimilarSongs = true
             },
+            shuffleEnabled = state.shuffleEnabled,
+            repeatMode = state.repeatMode,
+            onShuffle = onShuffle,
+            onRepeat = onRepeat,
         )
     }
     PlayerMoreSheets(state = state, sheets = more)

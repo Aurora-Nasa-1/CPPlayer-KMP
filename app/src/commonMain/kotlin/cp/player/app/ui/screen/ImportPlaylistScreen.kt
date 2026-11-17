@@ -15,7 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -36,10 +36,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.CpLinearProgress
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
@@ -52,7 +51,7 @@ import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.settingsRowContainer
 import cp.player.app.ui.model.ImportPlaylistScreenModel
 import cp.player.app.ui.model.ImportPlaylistUiState
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.music.PlaylistSummary
 import cp.player.app.ui.component.CpText
 
@@ -63,17 +62,18 @@ import cp.player.app.ui.component.CpText
  * 粘贴文本后立刻能看到「哪些歌匹配到了、哪些没有」，而不是点完导入才知道失败。
  * 识别结果默认全选，用户可以取消个别条目；未匹配的条目单独列在底部，不会被静默吞掉。
  *
- * 入口在「我的 → 曲库」标题行（[cp.player.app.ui.screen.LibraryScreen]）。
+ * 入口在「我的 → 曲库」标题行（[cp.player.app.ui.screen.LibraryScreen]）：
+ * 桌面在页面标题下的分体按钮，手机在曲库标题行右侧。
  */
 class ImportPlaylistScreen : Screen {
     @Composable
     override fun Content() {
         val model = rememberScreenModel { ImportPlaylistScreenModel() }
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         ImportPlaylistContent(
             model = model,
-            onBack = { navigator.popOrNotify() },
-            onOpenPlaylist = { summary -> navigator.push(PlaylistDetailScreen(summary)) },
+            onBack = { navigator.pop() },
+            onOpenPlaylist = { summary -> navigator.push(AppRoute.PlaylistDetail(summary)) },
         )
     }
 }
@@ -90,6 +90,7 @@ internal fun ImportPlaylistContent(
 ) {
     val s = cpStrings()
     val state by model.state.collectAsState()
+    @Suppress("DEPRECATION")
     val clipboard = LocalClipboardManager.current
     var showPlaylistPicker by remember { mutableStateOf(false) }
 
@@ -412,7 +413,7 @@ private fun ImportActions(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.large,
             ) {
-                Icon(Icons.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 CpText(s.playlistImport.importToNew)
             }

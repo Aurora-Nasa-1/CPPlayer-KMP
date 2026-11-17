@@ -34,11 +34,14 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import kotlin.math.roundToInt
 
@@ -147,20 +150,19 @@ fun CpContextMenu(
         content()
         val anchor = showAt
         if (anchor != null && !currentItems.isNullOrEmpty()) {
-            // 菜单出现在光标的**右下角**：左上角钉在光标处，再让开一小格间隙，
-            // 光标明确指向菜单外角而不是压在菜单上。
-            val gapPx = with(LocalDensity.current) { 4.dp.roundToPx() }
+            val density = LocalDensity.current
+            val gapPx = with(density) { 4.dp.roundToPx() }
+            val marginPx = with(density) { 8.dp.roundToPx() }
+            val positionProvider = remember(anchor, gapPx, marginPx) {
+                CpContextMenuPositionProvider(anchor, gapPx, marginPx)
+            }
             Popup(
-                alignment = Alignment.TopStart,
-                offset = IntOffset(
-                    anchor.x.roundToInt() + gapPx,
-                    anchor.y.roundToInt() + gapPx,
-                ),
+                popupPositionProvider = positionProvider,
                 onDismissRequest = { showAt = null },
-                // clippingEnabled = false：桌面端 Popup 是独立窗口，关掉钳制后可以
-                // 伸出主窗口边界（靠近窗口右/下缘右键时菜单不再被裁掉）。
-                // 1.11.1 实现核实：false 时完全跳过 clipPosition。
-                properties = PopupProperties(focusable = true, clippingEnabled = false),
+                // clippingEnabled = true：确保右键菜单完全被约束在宿主软件窗口内，
+                // 结合 CpContextMenuPositionProvider 的动态翻转与安全边距钳制，
+                // 彻底杜绝菜单穿出到系统桌面或被边缘截断的问题。
+                properties = PopupProperties(focusable = true, clippingEnabled = true),
             ) {
                 CpContextMenuPanel(
                     items = currentItems.orEmpty(),
@@ -333,16 +335,20 @@ fun CpAnchoredMenu(
     content: @Composable () -> Unit,
 ) {
     val isDesktop = LocalWindowChromeActive.current
-    var anchorHeightPx by remember { mutableStateOf(0) }
-    Box(modifier.onSizeChanged { anchorHeightPx = it.height }) {
+    Box(modifier) {
         content()
         if (expanded && !items.isNullOrEmpty()) {
             if (isDesktop) {
+                val density = LocalDensity.current
+                val gapPx = with(density) { 4.dp.roundToPx() }
+                val marginPx = with(density) { 8.dp.roundToPx() }
+                val positionProvider = remember(gapPx, marginPx) {
+                    CpAnchoredMenuPositionProvider(gapPx, marginPx)
+                }
                 Popup(
-                    alignment = Alignment.TopEnd,
-                    offset = IntOffset(0, anchorHeightPx),
+                    popupPositionProvider = positionProvider,
                     onDismissRequest = onDismiss,
-                    properties = PopupProperties(focusable = true, clippingEnabled = false),
+                    properties = PopupProperties(focusable = true, clippingEnabled = true),
                 ) {
                     CpContextMenuPanel(items = items.orEmpty(), onDismiss = onDismiss)
                 }
@@ -350,5 +356,132 @@ fun CpAnchoredMenu(
                 CpContextMenuBottomSheet(items = items.orEmpty(), onDismiss = onDismiss)
             }
         }
+    }
+}
+
+/**
+ * 桌面端右键菜单动态位置提供器。
+ *
+ * 保证右键菜单始终完整显示在宿主软件窗口（[windowSize]）内：
+ * - **水平方向**：
+ *   - LTR 下默认展开在光标右侧（`cursorX + gapPx`）；若右侧超出安全边界（`windowWidth - marginPx`），
+ *     自动翻转至光标左侧（`cursorX - gapPx - menuWidth`）。
+ *   - RTL 下反之，默认展开在光标左侧，不足时翻转至右侧。
+ *   - 若两端空间均不足（如窗口极窄或光标处于极端位置），自动钳制在窗口内 `[minMarginX, maxMarginX]`。
+ * - **垂直方向**：
+ *   - 默认展开在光标下方（`cursorY + gapPx`）；若下方超出安全边界（`windowHeight - marginPx`），
+ *     自动翻转至光标上方（`cursorY - gapPx - menuHeight`）。
+ *   - 若上下空间均不足（如窗口较矮或菜单项较多），自动钳制在窗口内 `[minMarginY, maxMarginY]`。
+ *
+ * 结合 [PopupProperties.clippingEnabled] = true，彻底防止菜单穿出到系统桌面或被边缘截断。
+ */
+internal class CpContextMenuPositionProvider(
+    private val cursorOffset: androidx.compose.ui.geometry.Offset,
+    private val gapPx: Int = 4,
+    private val marginPx: Int = 8,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val cursorX = anchorBounds.left + cursorOffset.x.roundToInt()
+        val cursorY = anchorBounds.top + cursorOffset.y.roundToInt()
+
+        val safeMaxX = (windowSize.width - popupContentSize.width).coerceAtLeast(0)
+        val safeMaxY = (windowSize.height - popupContentSize.height).coerceAtLeast(0)
+
+        val minMarginX = marginPx.coerceAtMost(safeMaxX)
+        val maxMarginX = (windowSize.width - popupContentSize.width - marginPx).coerceIn(minMarginX, safeMaxX)
+
+        val minMarginY = marginPx.coerceAtMost(safeMaxY)
+        val maxMarginY = (windowSize.height - popupContentSize.height - marginPx).coerceIn(minMarginY, safeMaxY)
+
+        val isLtr = layoutDirection == LayoutDirection.Ltr
+
+        val rightX = cursorX + gapPx
+        val leftX = cursorX - gapPx - popupContentSize.width
+
+        val x = if (isLtr) {
+            when {
+                rightX + popupContentSize.width <= windowSize.width - marginPx && rightX >= minMarginX -> rightX
+                leftX >= minMarginX && leftX + popupContentSize.width <= windowSize.width - minMarginX -> leftX
+                rightX + popupContentSize.width <= windowSize.width && rightX >= 0 -> rightX.coerceIn(minMarginX, maxMarginX)
+                leftX >= 0 && leftX + popupContentSize.width <= windowSize.width -> leftX.coerceIn(minMarginX, maxMarginX)
+                else -> (if (rightX > maxMarginX) leftX else rightX).coerceIn(minMarginX, maxMarginX)
+            }
+        } else {
+            when {
+                leftX >= minMarginX && leftX + popupContentSize.width <= windowSize.width - marginPx -> leftX
+                rightX + popupContentSize.width <= windowSize.width - marginPx && rightX >= minMarginX -> rightX
+                leftX >= 0 && leftX + popupContentSize.width <= windowSize.width -> leftX.coerceIn(minMarginX, maxMarginX)
+                rightX + popupContentSize.width <= windowSize.width && rightX >= 0 -> rightX.coerceIn(minMarginX, maxMarginX)
+                else -> (if (leftX < minMarginX) rightX else leftX).coerceIn(minMarginX, maxMarginX)
+            }
+        }
+
+        val belowY = cursorY + gapPx
+        val aboveY = cursorY - gapPx - popupContentSize.height
+
+        val y = when {
+            belowY + popupContentSize.height <= windowSize.height - marginPx && belowY >= minMarginY -> belowY
+            aboveY >= minMarginY && aboveY + popupContentSize.height <= windowSize.height - minMarginY -> aboveY
+            belowY + popupContentSize.height <= windowSize.height && belowY >= 0 -> belowY.coerceIn(minMarginY, maxMarginY)
+            aboveY >= 0 && aboveY + popupContentSize.height <= windowSize.height -> aboveY.coerceIn(minMarginY, maxMarginY)
+            else -> (if (belowY > maxMarginY) aboveY else belowY).coerceIn(minMarginY, maxMarginY)
+        }
+
+        return IntOffset(x, y)
+    }
+}
+
+/**
+ * 桌面端锚定菜单动态位置提供器。
+ *
+ * 保证锚定菜单（下拉菜单、三点更多菜单等）始终在宿主软件窗口（[windowSize]）内显示：
+ * - 水平方向默认右对齐触发锚点；若超出窗口边界则自动向内钳制或翻转。
+ * - 垂直方向默认在锚点下方展开；若下方空间不足则自动翻转至锚点上方展开。
+ */
+internal class CpAnchoredMenuPositionProvider(
+    private val gapPx: Int = 4,
+    private val marginPx: Int = 8,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val safeMaxX = (windowSize.width - popupContentSize.width).coerceAtLeast(0)
+        val safeMaxY = (windowSize.height - popupContentSize.height).coerceAtLeast(0)
+
+        val minMarginX = marginPx.coerceAtMost(safeMaxX)
+        val maxMarginX = (windowSize.width - popupContentSize.width - marginPx).coerceIn(minMarginX, safeMaxX)
+
+        val minMarginY = marginPx.coerceAtMost(safeMaxY)
+        val maxMarginY = (windowSize.height - popupContentSize.height - marginPx).coerceIn(minMarginY, safeMaxY)
+
+        val isLtr = layoutDirection == LayoutDirection.Ltr
+
+        val alignedX = if (isLtr) {
+            anchorBounds.right - popupContentSize.width
+        } else {
+            anchorBounds.left
+        }
+        val x = alignedX.coerceIn(minMarginX, maxMarginX)
+
+        val belowY = anchorBounds.bottom + gapPx
+        val aboveY = anchorBounds.top - gapPx - popupContentSize.height
+
+        val y = when {
+            belowY + popupContentSize.height <= windowSize.height - marginPx && belowY >= minMarginY -> belowY
+            aboveY >= minMarginY && aboveY + popupContentSize.height <= windowSize.height - minMarginY -> aboveY
+            belowY + popupContentSize.height <= windowSize.height && belowY >= 0 -> belowY.coerceIn(minMarginY, maxMarginY)
+            aboveY >= 0 && aboveY + popupContentSize.height <= windowSize.height -> aboveY.coerceIn(minMarginY, maxMarginY)
+            else -> (if (belowY > maxMarginY) aboveY else belowY).coerceIn(minMarginY, maxMarginY)
+        }
+
+        return IntOffset(x, y)
     }
 }

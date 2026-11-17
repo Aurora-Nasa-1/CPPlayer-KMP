@@ -190,4 +190,61 @@ class ModuleImportAndAutoUpdateTest {
         }
         assertFalse(moduleManager.queueRepositoryUpdate(createZip("cross.zip", validManifest).absolutePath, "test-src", "../other"))
     }
+
+    @Test
+    fun `deleting a missing module directory also removes its stale descriptor`() {
+        val manifest = """{"id":"missing-dir","name":"Missing directory","type":"js","entryPoint":"index.js","contract":"kmp-sdk-v1","version":"1.0.0"}"""
+        assertNotNull(moduleManager.importModuleDetails(createZip("missing-dir.zip", manifest).absolutePath))
+        assertNotNull(moduleManager.getProvider("missing-dir"))
+        assertTrue(File(tempModulesDir, "missing-dir").deleteRecursively())
+
+        // The filesystem deletion already happened, but the manager must still invalidate a
+        // descriptor and any startup scan token for this ID.
+        assertFalse(moduleManager.deleteModule("missing-dir"))
+        assertNull(moduleManager.getProvider("missing-dir"))
+        assertTrue(moduleManager.providersFlow.value.none { it.id == "missing-dir" })
+    }
+
+    @Test
+    fun `legacy cleanup selects only non SDK API v1 and v3 module directories`() {
+        fun writeModule(id: String, manifest: String) {
+            File(tempModulesDir, id).apply { mkdirs() }
+                .resolve("manifest.json").writeText(manifest)
+        }
+        writeModule("legacy-v1", """{"id":"legacy-v1","name":"Legacy one","type":"js","apiVersion":"v1"}""")
+        writeModule("legacy-v3", """{"id":"legacy-v3","name":"Legacy three","type":"http","apiVersion":3,"contract":"old-api"}""")
+        writeModule("sdk-v3", """{"id":"sdk-v3","name":"SDK","type":"js","apiVersion":3,"contract":"kmp-sdk-v1"}""")
+        writeModule("unrelated-v2", """{"id":"unrelated-v2","name":"Other","type":"js","apiVersion":2}""")
+
+        assertEquals(
+            listOf(LegacyProviderModule("legacy-v1", "Legacy one", 1), LegacyProviderModule("legacy-v3", "Legacy three", 3)),
+            moduleManager.findLegacyProviderModules(),
+        )
+        assertFalse(moduleManager.queueLegacyProviderCleanup(setOf("sdk-v3"), "1.8.9"))
+        assertTrue(File(tempModulesDir, "sdk-v3").isDirectory)
+        assertTrue(moduleManager.queueLegacyProviderCleanup(setOf("legacy-v1", "legacy-v3"), "1.8.9"))
+        assertTrue(File(tempModulesDir, "legacy-v1").isDirectory)
+        assertTrue(File(tempModulesDir, "legacy-v3").isDirectory)
+        assertTrue(File(tempModulesDir, "unrelated-v2").exists())
+        assertTrue(File(tempModulesDir, "sdk-v3").exists())
+    }
+
+    @Test
+    fun `confirmed legacy cleanup waits until target app version starts`() {
+        val moduleDirectory = File(tempModulesDir, "legacy-pending").apply { mkdirs() }
+        File(moduleDirectory, "manifest.json").writeText(
+            """{"id":"legacy-pending","name":"Legacy pending","type":"js","apiVersion":1}""",
+        )
+        assertTrue(moduleManager.queueLegacyProviderCleanup(setOf("legacy-pending"), "1.8.9"))
+
+        // The update installer can be declined or fail; an old-version restart must leave user files intact.
+        moduleManager.init(providerManager, currentVersionName = "1.8.8")
+        assertTrue(moduleDirectory.isDirectory)
+
+        // Only after the target version is actually installed and starts may the confirmed directory be removed.
+        val updatedManager = ModuleManager(tempModulesDir.absolutePath, context)
+        updatedManager.init(providerManager, currentVersionName = "1.8.9")
+        assertFalse(moduleDirectory.exists())
+        assertFalse(File(tempModulesDir, ".pending-legacy-provider-cleanup.json").exists())
+    }
 }

@@ -46,7 +46,21 @@ if (Test-Path $profPath) {
 } else {
     Write-Warning "Android Baseline Profile not found at $profPath. Consider running scripts/collect-baseline-profile.ps1 before release."
 }
-Write-Host "Pre-flight: Desktop packages will build GraalVM Native Image (G1GC) for Windows and JVM for Linux in CI." -ForegroundColor Gray
+Write-Host "Pre-flight: Windows uses Oracle GraalVM Native Image (Serial GC, 128 MiB max Java heap, CompactingOldGen); Linux packages remain JVM. PGO applies when its profile exists." -ForegroundColor Gray
+$pgoProfilePath = Join-Path $PSScriptRoot "..\app\graalvm\pgo\default.iprof"
+if (Test-Path $pgoProfilePath) {
+    # 只判「文件在」不够：--pgo-instrument 的镜像如果没正常退出，profile 根本不会落盘；
+    # 而中途被杀后残留的半截文件同样存在。真正的 profile 是几十 MB 的 JSON。
+    $pgoLength = (Get-Item $pgoProfilePath).Length
+    $pgoSha256 = (Get-FileHash -LiteralPath $pgoProfilePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($pgoLength -lt 1MB) {
+        Write-Warning "PGO profile at $pgoProfilePath is only $pgoLength bytes — that is not a trained profile (instrumented run probably exited abnormally). Recollect before shipping a Windows build."
+    } else {
+        Write-Host ("Pre-flight: Windows PGO profile {0:N0} bytes, SHA-256 {1} — release native-image will run with --pgo (Oracle GraalVM 25.3.4.1 only)." -f $pgoLength, $pgoSha256) -ForegroundColor Gray
+    }
+} else {
+    Write-Warning "Windows PGO profile is missing at $pgoProfilePath. Without it the release falls back to ML Profile Inference; recollect via .\gradlew :app:runWithPgoInstrument, or trigger .github/workflows/desktop-pgo-instrument.yml."
+}
 
 # 5. Execute Gradle build
 # Do NOT pass app.versionCode by default: Gradle derives it from app.versionName

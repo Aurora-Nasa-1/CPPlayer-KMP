@@ -83,10 +83,11 @@ data class PluginCatalogEntry(
     val managed: ManagedPluginInstall? = null,
 ) {
     val updateAvailable: Boolean
-        get() = installed != null && managed?.pendingRestart != true && managed?.sourceUrl == source.url &&
+        get() = installed != null && !installed.bundled && managed?.pendingRestart != true &&
+            (managed == null || managed.sourceUrl == source.url) &&
             when (plugin.kind) {
                 RepositoryPluginKind.LYRICS ->
-                    plugin.versionCode != null && plugin.versionCode > (installed.versionCode ?: managed.versionCode ?: 0)
+                    plugin.versionCode != null && plugin.versionCode > (installed.versionCode ?: managed?.versionCode ?: 0)
                 RepositoryPluginKind.PROVIDER ->
                     PluginVersion.compare(plugin.version, installed.version)?.let { it > 0 } == true
             }

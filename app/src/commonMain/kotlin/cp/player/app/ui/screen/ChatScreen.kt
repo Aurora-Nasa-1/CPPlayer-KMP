@@ -38,8 +38,6 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
@@ -47,18 +45,18 @@ import cp.player.app.ui.component.ArtistAvatar
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.util.UiEvents
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.CpChatBubblesSkeleton
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.util.formatChatTime
 import cp.player.core.BackendResult
 import cp.player.core.model.Message
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.ProvideCpTextFullDisplay
+import cp.player.app.ui.theme.cpSheetSurface
 
 /**
  * 一对一私信页。
@@ -78,82 +76,59 @@ class ChatScreen(
 ) : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         ChatContent(
             peerUid = peerUid,
             peerName = peerName,
             // `rememberScreenModel` 是定义在 `Screen` 上的**扩展函数**，只有 Screen 子类的
             // 成员里才有接收者（顶层 @Composable 里会报 `Unresolved reference`）。
             model = rememberScreenModel { ChatModel() },
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         )
     }
 }
 
-internal data class ChatUiState(
-    val loading: Boolean = true,
-    val error: String? = null,
-    val messages: List<Message> = emptyList(),
-    val sending: Boolean = false,
-)
+internal typealias ChatUiState = cp.player.app.presentation.chat.ChatUiState
 
-internal class ChatModel : ScreenModel {
-    private val _state = MutableStateFlow(ChatUiState())
-    val state: StateFlow<ChatUiState> = _state
+/** 私信页的 Voyager 适配层（Thin Adapter）。 */
+internal class ChatModel(
+    fetchMessages: suspend (peerUid: Long, myUid: Long) -> BackendResult<List<Message>> =
+        { peerUid, myUid -> AppModel.socialRepository.getMessages(peerUid, myUid) },
+    sendText: suspend (peerUid: Long, text: String) -> Boolean =
+        { peerUid, text -> AppModel.socialRepository.sendMessage(peerUid, text) },
+    requestScope: CoroutineScope? = null,
+) : ScreenModel {
+    private val presenter = cp.player.app.presentation.chat.ChatPresenter(
+        scope = requestScope ?: screenModelScope,
+        fetchMessages = fetchMessages,
+        sendText = sendText,
+    )
 
-    private var loadedUid: Long? = null
+    val state: StateFlow<ChatUiState> get() = presenter.state
 
-    /**
-     * 换会话时必须把上一段对话清掉再拉。
-     *
-     * ⚠️ 双栏模式下这个模型是**跨会话复用**的（左栏点谁就切谁），若沿用 `_state.value.copy(…)`
-     * 保留旧 messages，切换瞬间右栏会先渲染**上一个会话的气泡**（还在 `messages` 里的那些），
-     * 等网络回来才换成新的 —— 那一下闪现比空白更糟。所以进这里就换成一个干净的 state。
-     *
-     * @param strings 失败兜底文案要按**当前语言**组 —— 协程里读不到 CompositionLocal，
-     *   由组合侧传进来（见 I18N.md §5.9）。
-     */
-    fun load(peerUid: Long, myUid: Long, force: Boolean = false, strings: CpStrings) {
-        if (!force && loadedUid == peerUid && _state.value.messages.isNotEmpty()) return
-        val switchingPeer = loadedUid != peerUid
-        loadedUid = peerUid
-        screenModelScope.launch {
-            _state.value = if (switchingPeer) ChatUiState(loading = true)
-            else _state.value.copy(loading = true, error = null)
-            val result = runCatching { AppModel.socialRepository.getMessages(peerUid, myUid) }
-                .getOrElse { BackendResult.Error(it.message ?: strings.social.chat.loadFailed) }
-            _state.value = when (result) {
-                is BackendResult.Success -> ChatUiState(loading = false, messages = result.data)
-                is BackendResult.Error -> _state.value.copy(loading = false, error = result.message)
-                is BackendResult.Unsupported -> _state.value.copy(loading = false, error = result.message)
-            }
-        }
-    }
+    fun stateFor(session: ChatSessionIdentity, observedState: ChatUiState): ChatUiState =
+        presenter.stateFor(session, observedState)
 
-    /**
-     * 发送。
-     *
-     * 采用「**先落地再重拉**」：服务端受理后重新拉一次历史，而不是把本地气泡直接往后追加。
-     * 直接追加看似更快，但服务端返回的 id / 时间与本地臆造的不一致，
-     * 下次进这一页重新拉取时整条消息会「跳一下」。
-     */
+    fun load(
+        peerUid: Long,
+        myUid: Long,
+        force: Boolean = false,
+        strings: CpStrings,
+        providerId: String = AppModel.activeProviderId(),
+        sourceGeneration: Int = AppModel.sourceGeneration.value,
+    ) = presenter.load(peerUid, myUid, force, strings, providerId, sourceGeneration)
+
+    fun reset() = presenter.reset()
+
     fun send(
         peerUid: Long,
         myUid: Long,
         text: String,
         strings: CpStrings,
+        providerId: String = AppModel.activeProviderId(),
+        sourceGeneration: Int = AppModel.sourceGeneration.value,
         onResult: (Boolean) -> Unit,
-    ) {
-        val body = text.trim()
-        if (body.isEmpty() || _state.value.sending) return
-        _state.value = _state.value.copy(sending = true)
-        screenModelScope.launch {
-            val ok = AppModel.socialRepository.sendMessage(peerUid, body)
-            _state.value = _state.value.copy(sending = false)
-            if (ok) load(peerUid, myUid, force = true, strings = strings)
-            onResult(ok)
-        }
-    }
+    ) = presenter.send(peerUid, myUid, text, strings, providerId, sourceGeneration, onResult)
 }
 
 /**
@@ -174,27 +149,45 @@ internal fun ChatContent(
     embedded: Boolean = false,
     clearGlobalUnread: Boolean = !embedded,
 ) {
-    val state by model.state.collectAsState()
+    val observedState by model.state.collectAsState()
     val me by AppModel.userProfileFlow.collectAsState()
     val myUid = me?.uid ?: 0L
+    val activeProvider by AppModel.activeProviderFlow.collectAsState()
+    val providerId = activeProvider?.id ?: AppModel.activeProviderId()
+    val sourceGeneration by AppModel.sourceGeneration.collectAsState()
+    val session = ChatSessionIdentity(providerId, sourceGeneration, myUid, peerUid)
+    val state = model.stateFor(session, observedState)
     var draft by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val s = cpStrings()
     val chat = s.social.chat
+    val messageKeys = remember(state.messages) { stableChatMessageKeys(state.messages) }
+    val previousMessageKeys = remember(peerUid, myUid, providerId, sourceGeneration) {
+        mutableStateOf(emptyList<String>())
+    }
 
-    LaunchedEffect(peerUid, myUid) {
+    LaunchedEffect(peerUid, myUid, providerId, sourceGeneration) {
         if (myUid != 0L) {
             // ⚠️ `force = true` 不能省：双栏模式下左栏点谁就切谁，`peerUid` 一变这里就要
             // 重新拉。`ChatModel` 自己只按 `loadedUid` 判重，页面这层不再兜一遍。
-            model.load(peerUid, myUid, force = true, strings = s)
+            model.load(
+                peerUid,
+                myUid,
+                force = true,
+                strings = s,
+                providerId = providerId,
+                sourceGeneration = sourceGeneration,
+            )
             // 进对话即视为已读（列表页已经本地标过一次，这里补上报服务端）。
             AppModel.socialRepository.markRead(peerUid)
             if (clearGlobalUnread) AppModel.clearUnreadMessages()
             AppModel.refreshUnreadMessages()
             // 通知栏里这一条该收走了 —— 用户正在看这个会话。
             cp.player.app.platform.cancelMessageNotification(
-                cp.player.app.notify.MessageNotification.keyOf(AppModel.activeProviderId(), peerUid)
+                cp.player.app.notify.MessageNotification.keyOf(providerId, peerUid)
             )
+        } else {
+            model.reset()
         }
     }
 
@@ -216,17 +209,32 @@ internal fun ChatContent(
         }
     }
 
-    // 新消息到达后滚到底部。用 `size` 而不是 `messages` 作 key：内容变化（例如重拉后
-    // 同一条消息的 id 变了）不该触发一次滚动。
-    LaunchedEffect(state.messages.size, peerUid) {
-        if (state.messages.isNotEmpty()) listState.animateScrollToItem(state.messages.size - 1)
+    // 列表只在纯追加时做滚动动画；历史被替换、删除或重排时直接定位，避免动画继续
+    // 驱动已从 LazyColumn 移除的行节点。消息字段刷新但条数不变时仍不触发滚动。
+    LaunchedEffect(messageKeys, peerUid, myUid, providerId, sourceGeneration) {
+        val previous = previousMessageKeys.value
+        if (messageKeys.isNotEmpty() && messageKeys.size != previous.size) {
+            if (isStrictlyAppendedChatList(previous, messageKeys)) {
+                listState.animateScrollToItem(messageKeys.lastIndex)
+            } else {
+                listState.scrollToItem(messageKeys.lastIndex)
+            }
+        }
+        previousMessageKeys.value = messageKeys
     }
 
     // 先声明后使用：Kotlin 的局部函数不能前向引用，写成 lambda 变量最直观。
     val submit: () -> Unit = {
         val body = draft
         if (body.isNotBlank()) {
-            model.send(peerUid, myUid, body, strings = s) { ok ->
+            model.send(
+                peerUid,
+                myUid,
+                body,
+                strings = s,
+                providerId = providerId,
+                sourceGeneration = sourceGeneration,
+            ) { ok ->
                 if (ok) draft = "" else UiEvents.notify(chat.sendFailed)
             }
         }
@@ -259,7 +267,14 @@ internal fun ChatContent(
                         actionLabel = if (state.error != null) s.player.retry else null,
                         onAction = if (state.error != null) (
                             {
-                                model.load(peerUid, myUid, force = true, strings = s)
+                                model.load(
+                                    peerUid,
+                                    myUid,
+                                    force = true,
+                                    strings = s,
+                                    providerId = providerId,
+                                    sourceGeneration = sourceGeneration,
+                                )
                             }
                             ) else null,
                     )
@@ -272,11 +287,7 @@ internal fun ChatContent(
                         ),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        items(state.messages.size, key = { index ->
-                            // ⚠️ key 里带上 index：上游同一页里出现重复 `id` 时，
-                            // 纯 id 作 key 会让 Compose 直接抛「Key was already used」。
-                            "${state.messages[index].id}-$index"
-                        }) { index ->
+                        items(state.messages.size, key = { index -> messageKeys[index] }) { index ->
                             MessageBubble(state.messages[index], emptyText = chat.emptyMessage)
                         }
                     }
@@ -284,7 +295,8 @@ internal fun ChatContent(
             }
 
             Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                // 输入栏是压在页面上的浮层，走 sheet 层而不是卡片层。
+                color = cpSheetSurface(),
                 tonalElevation = 2.dp,
             ) {
                 Row(

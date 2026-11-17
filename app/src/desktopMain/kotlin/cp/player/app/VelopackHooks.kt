@@ -1,5 +1,6 @@
 package cp.player.app
 
+import cp.player.core.util.DesktopDataDir
 import kotlin.system.exitProcess
 
 /**
@@ -26,12 +27,14 @@ import kotlin.system.exitProcess
  * 报「安装未完成」→ 安装器再把应用正常启动一次（带 `VELOPACK_FIRSTRUN=true`）。
  * 用户看到的就是「启动一次、退出、报错、又启动一次」。
  *
- * ## 为什么钩子里「什么都不做」就够了
+ * ## 各钩子要做什么
  *
- * 官方要求钩子里**不能有任何 UI、不能长耗时**。本应用也确实没有那边要做的事：
- * 没有注册表写入、没有需要预热的解压、没有需要随卸载清理的共享缓存。数据目录由
- * 应用自己按需创建，快捷方式与卸载项都归 Velopack 管。所以唯一正确的实现就是
- * **立刻以 0 退出**（非 0 会被当成失败）。
+ * 官方要求钩子里**不能有任何 UI、不能长耗时**。安装 / 升级没有注册表写入、
+ * 没有需要预热的解压；快捷方式与卸载项都归 Velopack 管。
+ * **卸载**则要清掉应用自己的数据根目录 `~/.cpplayer` 与历史目录 `~/.kmp-pro`，
+ * 否则重装后会继承旧设置、账号、插件、缓存和本地曲库索引。清理走
+ * [DesktopDataDir.deleteAllData]，失败也只记日志，仍必须以 0 退出 —— 非 0 会被
+ * 安装器当成卸载失败。
  *
  * ⚠️ **判据必须放在 `main()` 的第一行，不能放进 [runDesktopApp]**：`main()` 必须在任何
  * 框架初始化或建窗前执行钩子检测，确保 Velopack 安装/升级过程秒级响应。
@@ -40,11 +43,13 @@ import kotlin.system.exitProcess
  * 非守护线程还在（钩子路径走不到那儿，但将来有人把这段挪位置就会踩）。
  * `exitProcess(0)` 才是「立刻、以成功码」退出的可靠写法。
  */
+internal const val VELOPACK_UNINSTALL_ARG = "--veloapp-uninstall"
+
 internal val VelopackHookArgs: Set<String> = setOf(
     "--veloapp-install",
     "--veloapp-obsolete",
     "--veloapp-updated",
-    "--veloapp-uninstall",
+    VELOPACK_UNINSTALL_ARG,
 )
 
 /**
@@ -68,6 +73,28 @@ internal fun velopackHookOf(args: Array<String>): VelopackHook? {
 }
 
 /**
+ * 卸载钩子的数据清理。其它钩子原样返回，不做任何 I/O。
+ *
+ * 代码与 [exitIfVelopackHook] 分开是为了能在测试里注入替身 —— 后者会 `exitProcess`，
+ * 而「只有卸载才清数据」与「清理失败也继续退出」这两条都不能靠真机卸载来验证。
+ */
+internal fun clearDataForVelopackHook(
+    hook: VelopackHook,
+    deleteAllData: () -> Boolean = { DesktopDataDir.deleteAllData() },
+) {
+    if (hook.arg != VELOPACK_UNINSTALL_ARG) return
+    val deleted = runCatching(deleteAllData).getOrElse {
+        System.err.println("[CPPlayer] Velopack 卸载前清理数据异常：${it.message}")
+        false
+    }
+    if (deleted) {
+        println("[CPPlayer] Velopack 卸载前已清除应用数据")
+    } else {
+        System.err.println("[CPPlayer] Velopack 卸载前未能完全清除应用数据")
+    }
+}
+
+/**
  * 若本次进程是被 Velopack 安装器当成钩子拉起的，立即以 0 退出；否则原样返回。
  *
  * 必须在任何 UI / 初始化之前调用（理由见 [VelopackHookArgs]）。
@@ -77,6 +104,7 @@ internal fun velopackHookOf(args: Array<String>): VelopackHook? {
  */
 internal fun exitIfVelopackHook(args: Array<String>) {
     val hook = velopackHookOf(args) ?: return
+    clearDataForVelopackHook(hook)
     println("[CPPlayer] Velopack 钩子 ${hook.arg} ${hook.version.ifEmpty { "?" }} → 跳过启动流程，立即退出")
     System.out.flush()
     // 退出码必须是 0：非 0 会被安装器当成这一步失败，照样弹「安装未完成」。

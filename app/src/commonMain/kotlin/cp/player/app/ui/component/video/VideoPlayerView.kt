@@ -1,6 +1,7 @@
 package cp.player.app.ui.component.video
 
 import cp.player.app.ui.component.CpText
+import cp.player.app.i18n.cpStrings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -95,6 +96,9 @@ fun VideoPlayerView(
     onBackClick: (() -> Unit)? = null,
     onToggleFullscreen: (() -> Unit)? = null,
 ) {
+    val s = cpStrings().video
+    val common = cpStrings().common
+    val playerStrings = cpStrings().player
     val state by controller.state.collectAsState()
     val scope = rememberCoroutineScope()
 
@@ -250,7 +254,7 @@ fun VideoPlayerView(
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         CpText(
-                            text = state.errorMessage ?: "播放失败",
+                            text = state.errorMessage ?: s.playbackFailed,
                             color = MaterialTheme.colorScheme.error,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
@@ -265,16 +269,16 @@ fun VideoPlayerView(
                                     onClick = onBackClick,
                                     shape = RoundedCornerShape(50),
                                 ) {
-                                    CpText("返回", fontSize = 13.sp)
+                                    CpText(common.back, fontSize = 13.sp)
                                 }
                             }
                             FilledTonalButton(
                                 onClick = { controller.retry() },
                                 shape = RoundedCornerShape(50),
                             ) {
-                                Icon(Icons.Filled.Refresh, contentDescription = "重试", modifier = Modifier.size(16.dp))
+                                Icon(Icons.Filled.Refresh, contentDescription = s.retry, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                CpText("重试", fontSize = 13.sp)
+                                CpText(s.retry, fontSize = 13.sp)
                             }
                         }
                     }
@@ -301,7 +305,7 @@ fun VideoPlayerView(
                         } else {
                             Icons.AutoMirrored.Filled.VolumeDown
                         }
-                        Icon(icon, contentDescription = "音量", tint = Color.White)
+                        Icon(icon, contentDescription = playerStrings.volume, tint = Color.White)
                         Spacer(modifier = Modifier.width(8.dp))
                         CpText(
                             text = "${(currentVolumeValue * 100).toInt()}%",
@@ -385,7 +389,7 @@ fun VideoPlayerView(
                     if (onBackClick != null) {
                         IconButton(onClick = onBackClick) {
                             val backIcon = if (isFullscreen) Icons.Filled.Close else Icons.AutoMirrored.Filled.ArrowBack
-                            Icon(backIcon, contentDescription = "返回", tint = Color.White)
+                            Icon(backIcon, contentDescription = common.back, tint = Color.White)
                         }
                     }
 
@@ -395,7 +399,7 @@ fun VideoPlayerView(
                             .padding(horizontal = 8.dp),
                     ) {
                         CpText(
-                            text = title ?: state.currentMedia?.title ?: "视频播放",
+                            text = title ?: state.currentMedia?.title ?: s.videoTitle,
                             color = Color.White,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -424,7 +428,7 @@ fun VideoPlayerView(
                     ) {
                         Icon(
                             Icons.Filled.AspectRatio,
-                            contentDescription = "画幅模式",
+                            contentDescription = s.scalingMode,
                             tint = if (state.scalingMode == VideoScalingMode.CROP) MaterialTheme.colorScheme.primary else Color.White,
                         )
                     }
@@ -443,7 +447,7 @@ fun VideoPlayerView(
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.OpenInNew,
-                                contentDescription = "在系统播放器中打开",
+                                contentDescription = s.openExternally,
                                 tint = Color.White,
                             )
                         }
@@ -452,6 +456,7 @@ fun VideoPlayerView(
 
                 // 桌面端专属：原生播放器引导卡片（在控制栏显示时呈现）
                 if (!isAndroidPlatform() && state.currentMedia != null) {
+                    @Suppress("DEPRECATION")
                     val clipboardManager = LocalClipboardManager.current
                     var copied by remember { mutableStateOf(false) }
 
@@ -476,14 +481,14 @@ fun VideoPlayerView(
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             CpText(
-                                text = "正在播放: ${state.currentMedia?.title ?: "视频"}",
+                                text = "${s.nowPlaying}: ${state.currentMedia?.title ?: s.videoTitle}",
                                 color = Color.White,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                             )
                             CpText(
-                                text = "已解析画质: ${state.currentQuality?.label ?: "标准"} • Windows 建议使用系统播放器全硬解",
+                                text = "${s.resolvedQuality}: ${state.currentQuality?.label ?: s.standardQuality} • ${s.desktopPlayerHint}",
                                 color = Color.White.copy(alpha = 0.75f),
                                 fontSize = 12.sp,
                             )
@@ -506,7 +511,7 @@ fun VideoPlayerView(
                                 ) {
                                     Icon(Icons.AutoMirrored.Filled.OpenInNew, null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(6.dp))
-                                    CpText("系统播放器打开 (PotPlayer/推荐)", fontSize = 13.sp)
+                                    CpText(s.openInSystemPlayer, fontSize = 13.sp)
                                 }
 
                                 FilledTonalButton(
@@ -518,7 +523,7 @@ fun VideoPlayerView(
                                     },
                                     shape = RoundedCornerShape(50),
                                 ) {
-                                    CpText(if (copied) "已复制直链" else "复制播放直链", fontSize = 13.sp)
+                                    CpText(if (copied) s.copiedDirectLink else s.copyDirectLink, fontSize = 13.sp)
                                 }
                             }
                         }
@@ -568,7 +573,7 @@ fun VideoPlayerView(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(onClick = { controller.togglePlayPause() }) {
                                 val icon = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow
-                                Icon(icon, contentDescription = "播放/暂停", tint = Color.White, modifier = Modifier.size(28.dp))
+                                Icon(icon, contentDescription = s.playPause, tint = Color.White, modifier = Modifier.size(28.dp))
                             }
 
                             // 播放时间 / 总时长
@@ -585,7 +590,7 @@ fun VideoPlayerView(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             // 清晰度选择按钮
                             Box {
-                                val qualityLabel = state.currentQuality?.label ?: "清晰度"
+                                val qualityLabel = state.currentQuality?.label ?: s.quality
                                 Surface(
                                     color = Color.White.copy(alpha = 0.2f),
                                     shape = RoundedCornerShape(6.dp),
@@ -630,7 +635,7 @@ fun VideoPlayerView(
                             if (onToggleFullscreen != null) {
                                 IconButton(onClick = onToggleFullscreen) {
                                     val fsIcon = if (isFullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen
-                                    Icon(fsIcon, contentDescription = "全屏切换", tint = Color.White)
+                                    Icon(fsIcon, contentDescription = s.fullscreen, tint = Color.White)
                                 }
                             }
                         }

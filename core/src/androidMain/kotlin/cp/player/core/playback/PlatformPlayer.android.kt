@@ -7,22 +7,30 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.drm.DefaultDrmSessionManager
+import androidx.media3.exoplayer.drm.ExoMediaDrm
+import androidx.media3.exoplayer.drm.FrameworkMediaDrm
+import androidx.media3.exoplayer.drm.MediaDrmCallback
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import cp.player.core.music.DrmPlaybackInfo
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.androidContext
 import cp.player.core.util.defaultSettingsStorage
 import java.io.File
+import java.util.UUID
 import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -38,6 +46,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+
+private val WIDEVINE_UUID: UUID = UUID.fromString("edef8ba9-79d6-4ace-a3c8-27dcd51d21ed")
+private const val MAX_DRM_LICENSE_BYTES = 8 * 1024 * 1024
 
 /** Media3-backed player used by the Android shared PlaybackController. */
 /** Shared process player used by PlaybackController and MediaSessionService. */
@@ -189,6 +201,41 @@ internal class Media3PlatformPlayer(context: android.content.Context) : Platform
     /** 供缓存目录等使用；持有 application context 不泄漏 Activity。 */
     private val appContext = context.applicationContext
 
+    override val supportsDrm: Boolean = true
+
+    /** 当前装载的 DRM 描述；license 回调只读取它，不缓存 challenge / license。 */
+    @Volatile
+    private var activeDrm: DrmPlaybackInfo? = null
+
+    @Volatile
+    private var drmSessionManager: DefaultDrmSessionManager? = null
+
+    /** DRM 清单归一化代理；Media3 不认 Apple 的 `METHOD=ISO-23001-7`。 */
+    private var drmPlaylistProxy: DrmPlaylistProxy? = null
+
+    private val drmCallback = object : MediaDrmCallback {
+        override fun executeProvisionRequest(
+            uuid: UUID,
+            request: ExoMediaDrm.ProvisionRequest,
+        ): MediaDrmCallback.Response =
+            throw UnsupportedOperationException("The host does not provide DRM provisioning")
+
+        override fun executeKeyRequest(
+            uuid: UUID,
+            request: ExoMediaDrm.KeyRequest,
+        ): MediaDrmCallback.Response {
+            // A release request carries no challenge and needs no provider call.
+            if (request.requestType == ExoMediaDrm.KeyRequest.REQUEST_TYPE_RELEASE) {
+                return MediaDrmCallback.Response(ByteArray(0))
+            }
+            val drm = activeDrm ?: throw IllegalStateException("No active DRM descriptor")
+            val license = drm.exchangeLicense?.let { exchange ->
+                runBlocking { exchange(request.data) }
+            } ?: directLicense(drm, request.data)
+            return MediaDrmCallback.Response(license)
+        }
+    }
+
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private fun runOnMainThread(block: () -> Unit) {
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
@@ -322,7 +369,13 @@ internal class Media3PlatformPlayer(context: android.content.Context) : Platform
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            _state.value = PlatformPlaybackState.Error(error.message ?: "Media playback error")
+            val httpStatus = generateSequence(error as Throwable?) { it.cause }
+                .filterIsInstance<HttpDataSource.InvalidResponseCodeException>()
+                .firstOrNull()?.responseCode
+            val statusSuffix = httpStatus?.let { " HTTP status $it" }.orEmpty()
+            _state.value = PlatformPlaybackState.Error(
+                "${error.errorCodeName}: ${error.message ?: "Media playback error"}$statusSuffix",
+            )
         }
 
         override fun onAudioSessionIdChanged(audioSessionId: Int) {
@@ -453,6 +506,97 @@ internal class Media3PlatformPlayer(context: android.content.Context) : Platform
         }
     }
 
+    override suspend fun loadDrm(
+        url: String,
+        drm: DrmPlaybackInfo,
+        startPositionMs: Long,
+        headers: Map<String, String>,
+        metadata: PlaybackMetadata?,
+    ) = kotlinx.coroutines.withContext(Dispatchers.Main) {
+        val uuid = when (drm.keySystem.trim().lowercase()) {
+            "widevine", "com.widevine.alpha", "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed" -> WIDEVINE_UUID
+            else -> throw UnsupportedOperationException("Unsupported DRM key system: ${drm.keySystem}")
+        }
+        activeDrm = drm
+        pendingSeek.cancel()
+        _format.value = null
+
+        // DRM streams bypass the disk cache: ciphertext must not be persisted,
+        // and SimpleCache cannot serve encrypted segments anyway.
+        val upstream: DataSource.Factory = DefaultDataSource.Factory(
+            appContext,
+            DefaultHttpDataSource.Factory()
+                .setDefaultRequestProperties(headers)
+                .setConnectTimeoutMs(15_000)
+                .setReadTimeoutMs(30_000)
+                .setAllowCrossProtocolRedirects(true),
+        )
+        val manager = obtainDrmSessionManager(uuid)
+        val proxy = obtainDrmPlaylistProxy()
+        val proxiedUrl = try {
+            proxy.playlistUrl(url)
+        } catch (error: Exception) {
+            throw IllegalStateException(
+                "DRM 清单代理不可用：${proxy.lastError ?: error.message}",
+                error,
+            )
+        }
+        val mediaMetadata = metadata?.let {
+            MediaMetadata.Builder()
+                .setTitle(it.title)
+                .setArtist(it.artist)
+                .setAlbumTitle(it.album)
+                .setArtworkUri(it.coverUrl?.let(Uri::parse))
+                .build()
+        }
+        val mediaItem = MediaItem.Builder()
+            .setUri(Uri.parse(proxiedUrl))
+            .setMimeType(MimeTypes.APPLICATION_M3U8)
+            .setMediaId(metadata?.id?.takeIf { it.isNotBlank() } ?: url)
+            .setMediaMetadata(mediaMetadata ?: MediaMetadata.Builder().build())
+            .setDrmConfiguration(
+                MediaItem.DrmConfiguration.Builder(uuid)
+                    .setMultiSession(false)
+                    .build(),
+            )
+            .build()
+        val mediaSource = DefaultMediaSourceFactory(upstream)
+            .setDrmSessionManagerProvider { manager }
+            .createMediaSource(mediaItem)
+
+        runOnMainThread {
+            player.setMediaSource(mediaSource)
+            player.prepare()
+            if (startPositionMs > 0) {
+                pendingSeek.request(startPositionMs, engineReady = false, origin = SeekOrigin.START_POSITION)
+                _position.value = startPositionMs
+            } else {
+                applySeekToEngine(0L)
+            }
+            player.play()
+        }
+    }
+
+    private fun obtainDrmSessionManager(uuid: UUID): DefaultDrmSessionManager {
+        drmSessionManager?.let { return it }
+        return DefaultDrmSessionManager.Builder()
+            .setUuidAndExoMediaDrmProvider(uuid, FrameworkMediaDrm.DEFAULT_PROVIDER)
+            .setMultiSession(false)
+            .build(drmCallback)
+            .also {
+                it.prepare()
+                drmSessionManager = it
+            }
+    }
+
+    private suspend fun obtainDrmPlaylistProxy(): DrmPlaylistProxy {
+        drmPlaylistProxy?.let { return it }
+        val proxy = DrmPlaylistProxy()
+        proxy.start()
+        drmPlaylistProxy = proxy
+        return proxy
+    }
+
     override fun play() { runOnMainThread { player.play() } }
     override fun pause() { runOnMainThread { player.pause() } }
 
@@ -512,6 +656,11 @@ internal class Media3PlatformPlayer(context: android.content.Context) : Platform
             // 避免 SharedMedia3Player.instance 指向一个已释放的播放器。
             SharedMedia3Player.release()
         }
+        activeDrm = null
+        runCatching { drmSessionManager?.release() }
+        drmSessionManager = null
+        runCatching { drmPlaylistProxy?.stop() }
+        drmPlaylistProxy = null
     }
 
     override fun setVolume(volume: Float) {
@@ -636,3 +785,43 @@ internal class Media3PlatformPlayer(context: android.content.Context) : Platform
 
 actual fun createPlatformPlayer(context: PlatformContext): PlatformPlayer =
     context.androidContext()?.let { cp.player.core.playback.flick.FlickEngineManager.createPlayer(it) } ?: AudioPlayerImpl()
+
+/**
+ * Direct license POST for descriptors that expose a license URL and no
+ * provider exchange callback. Challenge and response stay in memory.
+ */
+private fun directLicense(drm: DrmPlaybackInfo, challenge: ByteArray): ByteArray {
+    val url = drm.licenseUrl ?: throw UnsupportedOperationException(
+        "DRM descriptor has neither a license URL nor an exchange callback",
+    )
+    val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+    try {
+        connection.requestMethod = "POST"
+        connection.doOutput = true
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 30_000
+        connection.setRequestProperty("Content-Type", "application/octet-stream")
+        drm.headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
+        connection.outputStream.use { it.write(challenge) }
+        val status = connection.responseCode
+        if (status !in 200..299) {
+            throw IllegalStateException("DRM license endpoint returned HTTP $status")
+        }
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(16 * 1024)
+        connection.inputStream.use { input ->
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                output.write(buffer, 0, read)
+                if (output.size() > MAX_DRM_LICENSE_BYTES) {
+                    throw IllegalStateException("DRM license response is too large")
+                }
+            }
+        }
+        return output.toByteArray().takeIf { it.isNotEmpty() }
+            ?: throw IllegalStateException("DRM license endpoint returned no license")
+    } finally {
+        connection.disconnect()
+    }
+}

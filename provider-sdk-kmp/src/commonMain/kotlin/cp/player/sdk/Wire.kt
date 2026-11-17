@@ -79,4 +79,61 @@ fun valueLong(v: Any?): Long {
 }
 fun valueInt(v: Any?): Int = valueLong(v).also { require(it in Int.MIN_VALUE..Int.MAX_VALUE) }.toInt()
 fun valueBool(v: Any?): Boolean = v as? Boolean ?: error("Expected boolean")
-fun valueBytes(v: Any?): ByteArray = (v as? ByteArray ?: error("Expected bytes")).copyOf()
+/**
+ * Accept both JVM byte arrays and JS number arrays. QuickJS materializes a
+ * `Uint8Array`/`Array` as a numeric list, so a strict `ByteArray` cast would
+ * reject every binary response produced by a script provider.
+ */
+fun valueBytes(v: Any?): ByteArray = when (v) {
+    is ByteArray -> v.copyOf()
+    is IntArray -> v.toCheckedBytes()
+    is ShortArray -> v.toCheckedBytes()
+    is LongArray -> v.toCheckedBytes()
+    is DoubleArray -> v.toCheckedBytes()
+    is FloatArray -> v.toCheckedBytes()
+    is Array<*> -> bytesOf(v.asList())
+    is List<*> -> bytesOf(v)
+    else -> error("Expected bytes")
+}
+
+private fun bytesOf(values: List<*>): ByteArray {
+    val output = ByteArray(values.size)
+    values.forEachIndexed { index, value ->
+        require(value is Number) { "Expected byte" }
+        val number = value.toLong()
+        require(number in -128..255) { "Byte out of range" }
+        output[index] = number.toByte()
+    }
+    return output
+}
+
+private fun IntArray.toCheckedBytes(): ByteArray = ByteArray(size) { index ->
+    require(this[index] in -128..255) { "Byte out of range" }
+    this[index].toByte()
+}
+
+private fun ShortArray.toCheckedBytes(): ByteArray = ByteArray(size) { index ->
+    require(this[index] in -128..255) { "Byte out of range" }
+    this[index].toByte()
+}
+
+private fun LongArray.toCheckedBytes(): ByteArray = ByteArray(size) { index ->
+    require(this[index] in -128..255) { "Byte out of range" }
+    this[index].toByte()
+}
+
+private fun DoubleArray.toCheckedBytes(): ByteArray = ByteArray(size) { index ->
+    val value = this[index]
+    require(value.isFinite() && value == value.toLong().toDouble() && value in -128.0..255.0) {
+        "Byte out of range"
+    }
+    value.toInt().toByte()
+}
+
+private fun FloatArray.toCheckedBytes(): ByteArray = ByteArray(size) { index ->
+    val value = this[index]
+    require(value.isFinite() && value == value.toLong().toFloat() && value in -128f..255f) {
+        "Byte out of range"
+    }
+    value.toInt().toByte()
+}

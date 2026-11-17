@@ -22,7 +22,7 @@ import cp.player.app.ui.component.CpText
  * 墙的**构图方式**（排序）。
  *
  * 排序在墙模式里不是设置项，而是构图手段 —— 换一次排序整面墙重新排布，
- * 但**谁是大瓦片不变**（大瓦片由"最近"决定，见 `AlbumWallScreen` 的 `buildWallItems`）。
+ * 但**谁是大瓦片不变**（大瓦片由"最近"决定，见 `PosterWallScreen` 的瓦片构图）。
  * 于是换排序是一次纯粹的"洗牌"，而不是"重新评价一遍谁重要"。
  */
 enum class WallSort { RECENT, TITLE, TYPE }

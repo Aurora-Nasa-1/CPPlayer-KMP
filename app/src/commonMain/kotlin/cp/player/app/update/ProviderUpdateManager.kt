@@ -29,21 +29,40 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
+private val UPDATE_VERSION_PATTERN = Regex("^\\d+(\\.\\d+){0,2}(?:[-+][0-9A-Za-z.-]+)?$")
+
+private fun String?.normalizedUpdateVersion(): String? =
+    this?.trim()?.removePrefix("v")?.takeIf { UPDATE_VERSION_PATTERN.matches(it) }
+
 @Serializable
 data class ProviderUpdateInfo(
     val version: String,
     val downloadUrl: String,
+    /**
+     * 最低仍可用的音源版本。低于该版本时，作者已停止对应上游接口/协议，
+     * 宿主应把当前安装视为「可能已不可用」并强制提醒更新。
+     * 缺省或空串表示作者未声明停用线。
+     */
+    val minUsableVersion: String? = null,
     val changelog: String? = null,
     val name: String? = null,
     val minHostApiVersion: Int? = null,
     val sha256: String? = null,
     val publishedAt: String? = null,
-)
+) {
+    /** 当前安装版本是否已低于作者声明的最低可用版本。 */
+    fun requiresUpdate(currentVersion: String): Boolean {
+        val minimum = minUsableVersion.normalizedUpdateVersion() ?: return false
+        return AppUpdateChecker.compareVersions(currentVersion, minimum) < 0
+    }
+}
 
 sealed interface ProviderUpdateState {
     data object Idle : ProviderUpdateState
     data object Checking : ProviderUpdateState
     data class UpdateAvailable(val info: ProviderUpdateInfo) : ProviderUpdateState
+    /** 当前版本低于更新清单声明的最低可用版本，音源可能已无法使用。 */
+    data class UpdateRequired(val info: ProviderUpdateInfo) : ProviderUpdateState
     data object UpToDate : ProviderUpdateState
     data class Error(val message: String) : ProviderUpdateState
 }
@@ -129,12 +148,21 @@ class ProviderUpdateManager(
                 ?.jsonPrimitive?.content?.trim()
             val name = obj["name"]?.jsonPrimitive?.content?.trim()
             val minHostApiVersion = obj["minHostApiVersion"]?.jsonPrimitive?.content?.toIntOrNull()
+            val minUsableVersion = (
+                obj["minUsableVersion"]
+                    ?: obj["min_usable_version"]
+                    ?: obj["unusableBeforeVersion"]
+                    ?: obj["unusable_before_version"]
+            )
+                ?.jsonPrimitive?.content
+                .normalizedUpdateVersion()
             val sha256 = (obj["sha256"] ?: obj["hash"])?.jsonPrimitive?.content?.trim()
             val publishedAt = (obj["publishedAt"] ?: obj["published_at"])?.jsonPrimitive?.content?.trim()
 
             ProviderUpdateInfo(
                 version = version,
                 downloadUrl = downloadUrl,
+                minUsableVersion = minUsableVersion,
                 changelog = changelog,
                 name = name,
                 minHostApiVersion = minHostApiVersion,
@@ -167,12 +195,7 @@ class ProviderUpdateManager(
                 if (info == null) {
                     ProviderUpdateState.Error("更新信息解析失败")
                 } else {
-                    val hasNewer = AppUpdateChecker.compareVersions(info.version, provider.version) > 0
-                    if (hasNewer) {
-                        ProviderUpdateState.UpdateAvailable(info)
-                    } else {
-                        ProviderUpdateState.UpToDate
-                    }
+                    evaluateUpdateState(provider.version, info)
                 }
             }
         } catch (e: CancellationException) {
@@ -183,6 +206,19 @@ class ProviderUpdateManager(
 
         _updateStates.update { it + (provider.id to state) }
         return state
+    }
+
+    /**
+     * 先判停用线，再判是否有新版本。
+     *
+     * 低于 [ProviderUpdateInfo.minUsableVersion] 时必须进入 [ProviderUpdateState.UpdateRequired]，
+     * 不能只当成普通「有更新」——否则用户会忽略列表角标，继续使用已经失效的音源。
+     */
+    fun evaluateUpdateState(currentVersion: String, info: ProviderUpdateInfo): ProviderUpdateState = when {
+        info.requiresUpdate(currentVersion) -> ProviderUpdateState.UpdateRequired(info)
+        AppUpdateChecker.compareVersions(info.version, currentVersion) > 0 ->
+            ProviderUpdateState.UpdateAvailable(info)
+        else -> ProviderUpdateState.UpToDate
     }
 
     suspend fun checkAllUpdates(providers: List<BackendProvider>) = coroutineScope {

@@ -1,10 +1,5 @@
 package cp.player.app.ui.screen
 
-import cp.player.app.repository.QrStatusKind
-import cp.player.core.api.WebLoginState
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
-
 import cp.player.app.ui.component.CpText
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -19,6 +14,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.lazy.LazyRow
@@ -78,7 +75,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -92,33 +89,25 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.auth.AccountStore
 import cp.player.app.auth.CookieLogin
-import cp.player.app.auth.QrLoginSession
-import cp.player.app.auth.QrLoginStore
-import cp.player.app.auth.QrAutoSaveTracker
 import cp.player.app.i18n.AccountStrings
-import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
-import cp.player.app.platform.isPackageInstalled
-import cp.player.app.platform.openTargetApp
-import cp.player.app.platform.openWebview
-import cp.player.app.platform.saveQrCodeToGallery
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpIconSize
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
+import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsNoteEmphasis
@@ -126,15 +115,9 @@ import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.settingsRowHighlightContent
-import cp.player.app.ui.theme.LocalIsDarkTheme
-import cp.player.app.ui.util.popOrNotify
-import cp.player.core.provider.ProviderCapability
-import cp.player.core.util.currentTimeMillis
-
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.drop
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.presentation.navigation.AppRoute
+import cp.player.app.ui.navigation.LocalAppNavigator
 import kotlinx.coroutines.launch
 
 /**
@@ -167,7 +150,7 @@ import kotlinx.coroutines.launch
 class AccountScreen : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val s = cpStrings()
         val model = rememberScreenModel { AccountScreenModel(s.account) }
         val provider by model.activeProvider.collectAsState()
@@ -176,27 +159,12 @@ class AccountScreen : Screen {
         val isLoading by model.isLoading.collectAsState()
         val message by model.message.collectAsState()
         val verifyUrl by model.verifyUrl.collectAsState()
-        val webviewLoginUrl by model.webviewLoginUrl.collectAsState()
-        val qrUrl by model.qrUrl.collectAsState()
-        val qrImgBase64 by model.qrImgBase64.collectAsState()
         val qrRestored by model.qrRestored.collectAsState()
-        val targetAppName by model.targetAppName.collectAsState()
-        val targetAppInstalled by model.targetAppInstalled.collectAsState()
         val accounts by model.accounts.collectAsState()
-        val method by model.method.collectAsState()
         val showForm by model.showForm.collectAsState()
-        val loginChannels by model.loginChannels.collectAsState()
-        val supportsCaptchaImage by model.supportsCaptchaImage.collectAsState()
-        val captchaImage by model.captchaImage.collectAsState()
-        val imageCaptcha by model.imageCaptcha.collectAsState()
-
-        var email by remember { mutableStateOf("") }
-        var password by remember { mutableStateOf("") }
-        var phone by remember { mutableStateOf("") }
-        var captcha by remember { mutableStateOf("") }
-        var cookieText by remember { mutableStateOf("") }
 
         val confirm = rememberConfirmState()
+        @Suppress("DEPRECATION")
         val clipboardManager = LocalClipboardManager.current
 
         val body: @Composable (Modifier) -> Unit = { pageModifier ->
@@ -225,89 +193,18 @@ class AccountScreen : Screen {
                 if (!isLogged) {
                     // ================= 未登录态：明确为登录界面 =================
                     val currentProvider = provider
-                    val unloggedHasSettings = !currentProvider?.settingsSchema.isNullOrEmpty()
-                    LoginBrandHeader(
+                    val schema = currentProvider?.settingsSchema
+                    LoginCompactHeader(
                         providerName = currentProvider?.name,
-                        providerType = currentProvider?.type?.name,
-                        onSwitchProvider = { navigator.push(ProviderManagementScreen()) },
-                        onOpenSettings = if (unloggedHasSettings && currentProvider != null) {
-                            { navigator.push(ProviderCustomSettingsScreen(currentProvider.id, currentProvider.name, currentProvider.settingsSchema!!)) }
+                        onSwitchProvider = { navigator.push(AppRoute.PluginHub()) },
+                        onOpenSettings = if (currentProvider != null && !schema.isNullOrEmpty()) {
+                            { navigator.push(AppRoute.ProviderCustomSettings(currentProvider.id, currentProvider.name, schema)) }
                         } else null,
                     )
 
                     Spacer(Modifier.height(8.dp))
 
-                    // 登录通道选择分段切换器
-                    LoginChannelSelector(
-                        channels = loginChannels,
-                        selected = method,
-                        onSelect = { model.setChannel(it) },
-                    )
-
-                    Spacer(Modifier.height(12.dp))
-
-                    // 登录卡片容器
-                    Surface(
-                        shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(CpSpacing.formRowHorizontal),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            val normalizedCookie = CookieLogin.normalize(cookieText)
-
-                            when (method) {
-                                LoginChannel.QR -> QrLoginPanel(
-                                    qrUrl = qrUrl,
-                                    qrImgBase64 = qrImgBase64,
-                                    isLoading = isLoading,
-                                    targetAppName = targetAppName,
-                                    targetAppInstalled = targetAppInstalled,
-                                    onSaveQr = { model.saveQrCode() },
-                                    onOpenTargetApp = { model.openTargetApp() },
-                                    onRefresh = { model.fetchQrCode() },
-                                )
-                                LoginChannel.EMAIL -> EmailLoginPanel(
-                                    email = email,
-                                    onEmailChange = { email = it },
-                                    password = password,
-                                    onPasswordChange = { password = it },
-                                    isLoading = isLoading,
-                                    onSubmit = { model.loginEmail(email, password) },
-                                )
-                                LoginChannel.PHONE -> PhoneLoginPanel(
-                                    phone = phone,
-                                    onPhoneChange = { phone = it },
-                                    captcha = captcha,
-                                    onCaptchaChange = { captcha = it },
-                                    isLoading = isLoading,
-                                    captchaImageUrl = captchaImage.takeIf { supportsCaptchaImage },
-                                    imageCaptcha = imageCaptcha,
-                                    onImageCaptchaChange = { model.imageCaptcha.value = it },
-                                    onRefreshCaptcha = { model.fetchCaptchaImage() },
-                                    onSendCaptcha = { model.sendCaptcha(phone) },
-                                    onSubmit = { model.loginPhone(phone, captcha) },
-                                )
-                                LoginChannel.COOKIE -> CookieLoginPanel(
-                                    raw = cookieText,
-                                    onRawChange = { cookieText = it },
-                                    normalized = normalizedCookie,
-                                    isLoading = isLoading,
-                                    onSubmit = { model.loginWithCookie(cookieText) },
-                                )
-                                LoginChannel.WEBVIEW -> WebviewLoginPanel(
-                                    webviewUrl = webviewLoginUrl,
-                                    isLoading = isLoading,
-                                    onFetchUrl = { model.fetchWebviewLoginUrl() },
-                                    onOpenWebview = { model.openWebviewLogin() },
-                                )
-                            }
-                        }
-                    }
+                    AccountLoginPane(model)
 
                     Spacer(Modifier.height(12.dp))
 
@@ -336,8 +233,8 @@ class AccountScreen : Screen {
                             avatarUrl = me.avatarUrl,
                             uid = me.resourceId,
                             providerName = provider?.name ?: s.account.currentProvider,
-                            onOpenProfile = { navigator.push(UserProfileScreen(me.uid, me.nickname, me.resourceId)) },
-                            onOpenMessages = { navigator.push(MessagesScreen()) },
+                            onOpenProfile = { navigator.push(AppRoute.UserProfile(me.uid, me.nickname, me.resourceId)) },
+                            onOpenMessages = { navigator.push(AppRoute.Messages) },
                         )
                     }
 
@@ -438,78 +335,11 @@ class AccountScreen : Screen {
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                                 TextButton(onClick = { model.cancelAddAccount() }) {
-                                    CpText(s.account.removeLabel.takeIf { false } ?: "收起")
+                                    CpText(s.player.collapse)
                                 }
                             }
 
-                            LoginChannelSelector(
-                                channels = loginChannels,
-                                selected = method,
-                                onSelect = { model.setChannel(it) },
-                            )
-
-                            Spacer(Modifier.height(8.dp))
-
-                            Surface(
-                                shape = MaterialTheme.shapes.large,
-                                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(CpSpacing.formRowHorizontal),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                ) {
-                                    val normalizedCookie = CookieLogin.normalize(cookieText)
-                                    when (method) {
-                                        LoginChannel.QR -> QrLoginPanel(
-                                            qrUrl = qrUrl,
-                                            qrImgBase64 = qrImgBase64,
-                                            isLoading = isLoading,
-                                            targetAppName = targetAppName,
-                                            targetAppInstalled = targetAppInstalled,
-                                            onSaveQr = { model.saveQrCode() },
-                                            onOpenTargetApp = { model.openTargetApp() },
-                                            onRefresh = { model.fetchQrCode() },
-                                        )
-                                        LoginChannel.EMAIL -> EmailLoginPanel(
-                                            email = email,
-                                            onEmailChange = { email = it },
-                                            password = password,
-                                            onPasswordChange = { password = it },
-                                            isLoading = isLoading,
-                                            onSubmit = { model.loginEmail(email, password) },
-                                        )
-                                        LoginChannel.PHONE -> PhoneLoginPanel(
-                                            phone = phone,
-                                            onPhoneChange = { phone = it },
-                                            captcha = captcha,
-                                            onCaptchaChange = { captcha = it },
-                                            isLoading = isLoading,
-                                            captchaImageUrl = captchaImage.takeIf { supportsCaptchaImage },
-                                            imageCaptcha = imageCaptcha,
-                                            onImageCaptchaChange = { model.imageCaptcha.value = it },
-                                            onRefreshCaptcha = { model.fetchCaptchaImage() },
-                                            onSendCaptcha = { model.sendCaptcha(phone) },
-                                            onSubmit = { model.loginPhone(phone, captcha) },
-                                        )
-                                        LoginChannel.COOKIE -> CookieLoginPanel(
-                                            raw = cookieText,
-                                            onRawChange = { cookieText = it },
-                                            normalized = normalizedCookie,
-                                            isLoading = isLoading,
-                                            onSubmit = { model.loginWithCookie(cookieText) },
-                                        )
-                                        LoginChannel.WEBVIEW -> WebviewLoginPanel(
-                                            webviewUrl = webviewLoginUrl,
-                                            isLoading = isLoading,
-                                            onFetchUrl = { model.fetchWebviewLoginUrl() },
-                                            onOpenWebview = { model.openWebviewLogin() },
-                                        )
-                                    }
-                                }
-                            }
+                            AccountLoginPane(model)
                         }
                     }
 
@@ -524,7 +354,7 @@ class AccountScreen : Screen {
                             icon = Icons.Filled.Extension,
                             index = 0,
                             total = providerTotalItems,
-                            onClick = { navigator.push(ProviderManagementScreen()) },
+                            onClick = { navigator.push(AppRoute.PluginHub()) },
                             trailingContent = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     CpText(
@@ -545,13 +375,13 @@ class AccountScreen : Screen {
                         if (hasCustomConfig && currentProvider != null) {
                             val schema = currentProvider.settingsSchema!!
                             SettingsClickItem(
-                                title = "音源专属配置",
-                                subtitle = "自定义 ${currentProvider.name} 的各项参数与高级选项",
+                                title = s.account.providerCustomSettings,
+                                subtitle = s.account.providerCustomSettingsNote(currentProvider.name),
                                 icon = Icons.Filled.Tune,
                                 index = 1,
                                 total = providerTotalItems,
                                 onClick = {
-                                    navigator.push(ProviderCustomSettingsScreen(currentProvider.id, currentProvider.name, schema))
+                                    navigator.push(AppRoute.ProviderCustomSettings(currentProvider.id, currentProvider.name, schema))
                                 },
                                 trailingContent = {
                                     Icon(
@@ -614,8 +444,12 @@ class AccountScreen : Screen {
         }
 
         CpRouteScaffold(
-            title = if (isLogged) s.account.screenTitle else (provider?.name?.let { "登录 $it" } ?: s.account.loginMethod),
-            onBack = { navigator.popOrNotify() },
+            title = if (isLogged) {
+                s.account.screenTitle
+            } else {
+                provider?.name?.let { s.account.loginAs(it) } ?: s.account.loginMethod
+            },
+            onBack = { navigator.pop() },
         ) { pageModifier -> body(pageModifier) }
 
         CpConfirmHost(confirm)
@@ -623,94 +457,171 @@ class AccountScreen : Screen {
 }
 
 /**
- * 未登录时的 M3E 品牌引导 Hero。
+ * 未登录时的紧凑标题。
+ *
+ * 刻意不再放大卡片和 72dp 图标：登录页的主角是登录动作本身。大卡片只留给
+ * 登录后的 [AccountHeroCard]，未登录时用标题 + 权益说明 + 轻量音源入口即可。
  */
 @Composable
-private fun LoginBrandHeader(
+internal fun LoginCompactHeader(
     providerName: String?,
-    providerType: String?,
     onSwitchProvider: () -> Unit,
     onOpenSettings: (() -> Unit)? = null,
 ) {
     val s = cpStrings()
-    Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.size(72.dp),
+    Column(modifier = Modifier.fillMaxWidth()) {
+        CpText(
+            text = providerName?.let { s.account.loginAs(it) } ?: s.account.loginAccount,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+        )
+        Spacer(Modifier.height(6.dp))
+        CpText(
+            text = s.account.loginBenefitsNote,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = Int.MAX_VALUE,
+        )
+        Spacer(Modifier.height(2.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(
+                onClick = onSwitchProvider,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
             ) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Filled.Extension,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(36.dp),
-                    )
-                }
+                Icon(
+                    Icons.Filled.SwapHoriz,
+                    contentDescription = null,
+                    modifier = Modifier.size(CpIconSize.inline),
+                )
+                Spacer(Modifier.width(4.dp))
+                CpText(
+                    text = s.account.switchProvider,
+                    style = MaterialTheme.typography.labelMedium,
+                )
             }
-            Spacer(Modifier.height(16.dp))
-            CpText(
-                text = providerName?.let { "登录 $it 账号" } ?: s.account.loginMethod,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(6.dp))
-            CpText(
-                text = s.account.loginBenefitsNote,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(14.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedButton(
-                    onClick = onSwitchProvider,
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                    shape = MaterialTheme.shapes.medium,
+            if (onOpenSettings != null) {
+                TextButton(
+                    onClick = onOpenSettings,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                 ) {
                     Icon(
-                        Icons.Filled.SwapHoriz,
+                        Icons.Filled.Tune,
                         contentDescription = null,
                         modifier = Modifier.size(CpIconSize.inline),
                     )
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(4.dp))
                     CpText(
-                        text = providerName?.let { "切换音源 (当前: $it)" } ?: s.account.switchProvider,
+                        text = s.account.providerSettings,
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
-                if (onOpenSettings != null) {
-                    OutlinedButton(
-                        onClick = onOpenSettings,
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                        shape = MaterialTheme.shapes.medium,
-                    ) {
-                        Icon(
-                            Icons.Filled.Tune,
-                            contentDescription = null,
-                            modifier = Modifier.size(CpIconSize.inline),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        CpText(
-                            text = "音源配置",
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                    }
+            }
+        }
+    }
+}
+
+/**
+ * 登录面板（通道切换器 + 当前通道表单）。
+ *
+ * 账号页未登录态、账号页「添加新账号」与引导登录步骤共用。标题、游客入口和
+ * 状态提示由各自页面负责，这里只关心登录动作本身。
+ *
+ * @param wrapChannels 引导页里用可换行胶囊，避免内层横向滚动与 pager 抢手势。
+ */
+@Composable
+internal fun AccountLoginPane(
+    model: AccountScreenModel,
+    modifier: Modifier = Modifier,
+    wrapChannels: Boolean = false,
+) {
+    val method by model.method.collectAsState()
+    val loginChannels by model.loginChannels.collectAsState()
+    val isLoading by model.isLoading.collectAsState()
+    val qrUrl by model.qrUrl.collectAsState()
+    val isSavingQr by model.isSavingQr.collectAsState()
+    val targetAppName by model.targetAppName.collectAsState()
+    val targetAppInstalled by model.targetAppInstalled.collectAsState()
+    val supportsCaptchaImage by model.supportsCaptchaImage.collectAsState()
+    val defaultCountryCode by model.defaultCountryCode.collectAsState()
+    val captchaImage by model.captchaImage.collectAsState()
+    val imageCaptcha by model.imageCaptcha.collectAsState()
+
+    var email by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var phone by rememberSaveable { mutableStateOf("") }
+    var countryCode by rememberSaveable { mutableStateOf("") }
+    var captcha by rememberSaveable { mutableStateOf("") }
+    var cookieText by rememberSaveable { mutableStateOf("") }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        LoginChannelSelector(
+            channels = loginChannels,
+            selected = method,
+            onSelect = { model.setChannel(it) },
+            wrap = wrapChannels,
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        Surface(
+            shape = MaterialTheme.shapes.large,
+            color = cpCardSurface(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(CpSpacing.formRowHorizontal),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                val normalizedCookie = CookieLogin.normalize(cookieText)
+
+                when (method) {
+                    LoginChannel.QR -> QrLoginPanel(
+                        qrUrl = qrUrl,
+                        isLoading = isLoading,
+                        isSavingQr = isSavingQr,
+                        targetAppName = targetAppName,
+                        targetAppInstalled = targetAppInstalled,
+                        onSaveQr = { model.saveQrCode() },
+                        onOpenTargetApp = { model.openTargetApp() },
+                        onRefresh = { model.fetchQrCode() },
+                    )
+                    LoginChannel.EMAIL -> EmailLoginPanel(
+                        email = email,
+                        onEmailChange = { email = it },
+                        password = password,
+                        onPasswordChange = { password = it },
+                        isLoading = isLoading,
+                        onSubmit = { model.loginEmail(email, password) },
+                    )
+                    LoginChannel.PHONE -> PhoneLoginPanel(
+                        phone = phone,
+                        onPhoneChange = { phone = it },
+                        countryCode = countryCode,
+                        onCountryCodeChange = { countryCode = it },
+                        fixedCountryCode = defaultCountryCode,
+                        captcha = captcha,
+                        onCaptchaChange = { captcha = it },
+                        isLoading = isLoading,
+                        captchaImageUrl = captchaImage.takeIf { supportsCaptchaImage },
+                        imageCaptcha = imageCaptcha,
+                        onImageCaptchaChange = { model.imageCaptcha.value = it },
+                        onRefreshCaptcha = { model.fetchCaptchaImage() },
+                        onSendCaptcha = { model.sendCaptcha(phone, defaultCountryCode ?: countryCode) },
+                        onSubmit = { useSmsCode ->
+                            model.loginPhone(phone, captcha, useSmsCode, defaultCountryCode ?: countryCode)
+                        },
+                    )
+                    LoginChannel.COOKIE -> CookieLoginPanel(
+                        raw = cookieText,
+                        onRawChange = { cookieText = it },
+                        normalized = normalizedCookie,
+                        isLoading = isLoading,
+                        onSubmit = { model.loginWithCookie(cookieText) },
+                    )
                 }
             }
         }
@@ -720,19 +631,38 @@ private fun LoginBrandHeader(
 /**
  * M3E 登录通道胶囊分段单选控件。
  *
- * 手机界面或窄屏下，5 个标签（扫码、手机号、邮箱、Cookie、WebView）若强行 weight(1f) 均分
+ * 手机界面或窄屏下，4 个标签（扫码、手机号、邮箱、Cookie）若强行 weight(1f) 均分
  * 会导致单项宽度不足（仅 ~55-60dp），使图标与文字严重挤压甚至截断。
  * 此处采用响应式布局：
  * - 宽屏（>= 96dp * channels.size）时均分铺满，保证对称平整；
  * - 窄屏（手机端）时自动切换为流畅横向滚动的胶囊条，单项具有舒适的呼吸空间，并支持自动平滑滚动对焦到当前选中项。
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LoginChannelSelector(
     channels: List<LoginChannel>,
     selected: LoginChannel,
     onSelect: (LoginChannel) -> Unit,
+    wrap: Boolean = false,
 ) {
     val s = cpStrings()
+    if (wrap) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            channels.forEach { channel ->
+                LoginChannelTabItem(
+                    channel = channel,
+                    isSelected = channel == selected,
+                    label = channel.labelOf(s),
+                    onClick = { onSelect(channel) },
+                )
+            }
+        }
+        return
+    }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val minRequiredWidth = 96.dp * channels.size
         val canFitAll = maxWidth >= minRequiredWidth
@@ -802,7 +732,6 @@ private fun LoginChannelTabItem(
         LoginChannel.PHONE -> Icons.Filled.Phone
         LoginChannel.EMAIL -> Icons.Filled.Email
         LoginChannel.COOKIE -> Icons.Filled.Key
-        LoginChannel.WEBVIEW -> Icons.Filled.Language
     }
 
     Surface(
@@ -841,8 +770,8 @@ private fun LoginChannelTabItem(
 @Composable
 private fun QrLoginPanel(
     qrUrl: String?,
-    qrImgBase64: String?,
     isLoading: Boolean,
+    isSavingQr: Boolean = false,
     targetAppName: String?,
     targetAppInstalled: Boolean,
     onSaveQr: () -> Unit,
@@ -902,15 +831,15 @@ private fun QrLoginPanel(
                 Spacer(Modifier.width(6.dp))
                 CpText(s.refreshQr)
             }
-            if (qrImgBase64 != null) {
+            if (qrUrl != null) {
                 OutlinedButton(
                     onClick = onSaveQr,
-                    enabled = !isLoading,
+                    enabled = !isLoading && !isSavingQr,
                     shape = MaterialTheme.shapes.medium,
                 ) {
                     Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(CpIconSize.inline))
                     Spacer(Modifier.width(6.dp))
-                    CpText(s.saveQr)
+                    CpText(if (isSavingQr) s.savingQr else s.saveQr)
                 }
             }
         }
@@ -982,7 +911,7 @@ private fun EmailLoginPanel(
         Spacer(Modifier.height(4.dp))
         Button(
             onClick = onSubmit,
-            enabled = !isLoading && email.isNotBlank() && password.isNotBlank(),
+                enabled = !isLoading && email.isNotBlank() && password.isNotBlank(),
             shape = MaterialTheme.shapes.medium,
             modifier = Modifier.fillMaxWidth().height(48.dp),
         ) {
@@ -1004,6 +933,9 @@ private fun EmailLoginPanel(
 private fun PhoneLoginPanel(
     phone: String,
     onPhoneChange: (String) -> Unit,
+    countryCode: String,
+    onCountryCodeChange: (String) -> Unit,
+    fixedCountryCode: String? = null,
     captcha: String,
     onCaptchaChange: (String) -> Unit,
     isLoading: Boolean,
@@ -1012,23 +944,54 @@ private fun PhoneLoginPanel(
     onImageCaptchaChange: (String) -> Unit = {},
     onRefreshCaptcha: () -> Unit = {},
     onSendCaptcha: () -> Unit,
-    onSubmit: () -> Unit,
+    onSubmit: (useSmsCode: Boolean) -> Unit,
 ) {
     val s = cpStrings().account
+    var useSmsCode by rememberSaveable { mutableStateOf(true) }
     Column(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        OutlinedTextField(
-            value = phone,
-            onValueChange = onPhoneChange,
-            label = { CpText(s.phoneLabel) },
-            leadingIcon = { Icon(Icons.Filled.Phone, null) },
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CpToggleChip(
+                checked = useSmsCode,
+                onCheckedChange = { if (it) useSmsCode = true },
+                label = s.smsCodeLogin,
+            )
+            CpToggleChip(
+                checked = !useSmsCode,
+                onCheckedChange = { if (it) useSmsCode = false },
+                label = s.passwordLogin,
+            )
+        }
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-            singleLine = true,
-            shape = MaterialTheme.shapes.medium,
-        )
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (fixedCountryCode == null) {
+                OutlinedTextField(
+                    value = countryCode,
+                    onValueChange = { onCountryCodeChange(it.filter(Char::isDigit).take(4)) },
+                    label = { CpText(s.countryCodeLabel) },
+                    placeholder = { CpText("86") },
+                    modifier = Modifier.width(110.dp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium,
+                )
+            }
+            OutlinedTextField(
+                value = phone,
+                onValueChange = { onPhoneChange(it.filter(Char::isDigit)) },
+                label = { CpText(s.phoneLabel) },
+                leadingIcon = { Icon(Icons.Filled.Phone, null) },
+                modifier = Modifier.weight(1f),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                singleLine = true,
+                shape = MaterialTheme.shapes.medium,
+            )
+        }
         if (captchaImageUrl != null) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1072,24 +1035,30 @@ private fun PhoneLoginPanel(
             OutlinedTextField(
                 value = captcha,
                 onValueChange = onCaptchaChange,
-                label = { CpText(s.captchaOrPassword) },
+                label = { CpText(if (useSmsCode) s.smsCodeLogin else s.passwordLabel) },
                 modifier = Modifier.weight(1f),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = if (useSmsCode) KeyboardType.Number else KeyboardType.Password,
+                ),
+                visualTransformation = if (useSmsCode) VisualTransformation.None else PasswordVisualTransformation(),
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium,
             )
-            Button(
-                onClick = onSendCaptcha,
-                enabled = phone.isNotBlank() && !isLoading,
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.height(54.dp),
-            ) {
-                CpText(s.sendCaptcha)
+            if (useSmsCode) {
+                Button(
+                    onClick = onSendCaptcha,
+                    enabled = phone.isNotBlank() && !isLoading,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.height(54.dp),
+                ) {
+                    CpText(s.sendCaptcha)
+                }
             }
         }
         Spacer(Modifier.height(4.dp))
         Button(
-            onClick = onSubmit,
-            enabled = !isLoading && phone.isNotBlank(),
+            onClick = { onSubmit(useSmsCode) },
+            enabled = !isLoading && phone.isNotBlank() && captcha.isNotBlank(),
             shape = MaterialTheme.shapes.medium,
             modifier = Modifier.fillMaxWidth().height(48.dp),
         ) {
@@ -1165,12 +1134,17 @@ internal fun CookieLoginForm(
             singleLine = false,
             shape = MaterialTheme.shapes.medium,
             isError = raw.isNotBlank() && normalized == null,
-            supportingText = { CpText(cookieHint(s, raw, normalized)) },
+            // 提示里有「没解析出任何 name=value」这类完整诊断 + 已识别的字段清单，
+            // 单行会把原因裁掉，用户只能看到结果看不到为什么。
+            supportingText = { CpText(cookieHint(s, raw, normalized), maxLines = Int.MAX_VALUE) },
         )
         CpText(
             text = s.cookieHowTo,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            // 这是「怎么获取 Cookie」的完整步骤（F12 → Network → 复制请求头），
+            // 单行只剩开头一句，等于没有教程。
+            maxLines = Int.MAX_VALUE,
         )
     }
 }
@@ -1180,7 +1154,7 @@ internal fun CookieLoginForm(
  * 支持直接唤起系统 WebView / 外部浏览器完成人机或安全核验，并支持复制验证链接。
  */
 @Composable
-private fun SecurityVerificationCard(
+internal fun SecurityVerificationCard(
     verifyUrl: String,
     onOpenWebview: () -> Unit,
     onDismiss: () -> Unit,
@@ -1261,90 +1235,6 @@ private fun SecurityVerificationCard(
 }
 
 /**
- * WebView 网页登录面板。
- */
-@Composable
-private fun WebviewLoginPanel(
-    webviewUrl: String?,
-    isLoading: Boolean,
-    onFetchUrl: () -> Unit,
-    onOpenWebview: () -> Unit,
-) {
-    val s = cpStrings().account
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Surface(
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Icon(
-                        Icons.Filled.Language,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    CpText(
-                        s.webviewLoginTitle,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                CpText(
-                    s.webviewLoginHint,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        Spacer(Modifier.height(4.dp))
-
-        if (webviewUrl != null) {
-            Button(
-                onClick = onOpenWebview,
-                enabled = !isLoading,
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-            ) {
-                Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(CpIconSize.inline))
-                Spacer(Modifier.width(8.dp))
-                CpText(s.openWebviewLogin, style = MaterialTheme.typography.titleSmall)
-            }
-        } else {
-            Button(
-                onClick = onFetchUrl,
-                enabled = !isLoading,
-                shape = MaterialTheme.shapes.medium,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-            ) {
-                if (isLoading) {
-                    CpLoadingIndicator(Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    CpText(s.webviewUrlLoading)
-                } else {
-                    Icon(Icons.Filled.Language, null, Modifier.size(CpIconSize.inline))
-                    Spacer(Modifier.width(8.dp))
-                    CpText(s.fetchWebviewUrl, style = MaterialTheme.typography.titleSmall)
-                }
-            }
-        }
-    }
-}
-
-/**
  * 已登录状态下的 M3E 个人信息 Hero 卡片。
  */
 @Composable
@@ -1359,7 +1249,7 @@ private fun AccountHeroCard(
     val s = cpStrings()
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = cpCardSurface(),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
@@ -1507,789 +1397,54 @@ private fun cookieHint(strings: AccountStrings, raw: String, normalized: String?
 private fun cookieFieldCount(normalized: String): Int =
     normalized.split(';').count { it.contains('=') }
 
-/**
- * 账号与登录 ScreenModel。
- */
-class AccountScreenModel(private val account: AccountStrings) : ScreenModel {
-    val activeProvider: StateFlow<cp.player.core.provider.BackendProvider?> = AppModel.activeProviderFlow
-    val isLoading = MutableStateFlow(false)
-    val isLogged = MutableStateFlow(false)
-    val message = MutableStateFlow<String?>(null)
-    val qrUrl = MutableStateFlow<String?>(null)
-    val qrImgBase64 = MutableStateFlow<String?>(null)
-    val qrRestored = MutableStateFlow(false)
-    val targetAppName = MutableStateFlow<String?>(null)
-    val targetAppInstalled = MutableStateFlow(false)
-    val accounts = MutableStateFlow<List<AccountStore.SavedAccount>>(emptyList())
-    val method = MutableStateFlow(LoginChannel.QR)
-    val showForm = MutableStateFlow(false)
+/** 账号页的 Voyager 适配层（Thin Adapter）。状态机在 [cp.player.app.presentation.account.AccountPresenter]。 */
+class AccountScreenModel(account: AccountStrings) : ScreenModel {
+    private val presenter = cp.player.app.presentation.account.AccountPresenter(
+        account = account,
+        scope = screenModelScope,
+        qrPngBytes = ::qrCodePngBytes,
+    )
 
-    val loginChannels = MutableStateFlow(LoginChannel.DEFAULT)
-    val supportsCaptchaImage = MutableStateFlow(false)
-    val captchaImage = MutableStateFlow<String?>(null)
-    val imageCaptcha = MutableStateFlow("")
-    val verifyUrl = MutableStateFlow<String?>(null)
-    val webviewLoginUrl = MutableStateFlow<String?>(null)
-    private var captchaSessionCookie: String? = null
+    val activeProvider get() = presenter.activeProvider
+    val isLoading get() = presenter.isLoading
+    val isSavingQr get() = presenter.isSavingQr
+    val isLogged get() = presenter.isLogged
+    val message get() = presenter.message
+    val qrUrl get() = presenter.qrUrl
+    val qrImgBase64 get() = presenter.qrImgBase64
+    val qrRestored get() = presenter.qrRestored
+    val targetAppName get() = presenter.targetAppName
+    val targetAppInstalled get() = presenter.targetAppInstalled
+    val accounts get() = presenter.accounts
+    val method get() = presenter.method
+    val showForm get() = presenter.showForm
+    val loginChannels get() = presenter.loginChannels
+    val supportsCaptchaImage get() = presenter.supportsCaptchaImage
+    val defaultCountryCode get() = presenter.defaultCountryCode
+    val captchaImage get() = presenter.captchaImage
+    val imageCaptcha get() = presenter.imageCaptcha
+    val verifyUrl get() = presenter.verifyUrl
 
-    private var qrJob: Job? = null
-    private var webJob: Job? = null
-    private var webSessionId: String? = null
-
-    /**
-     * 「跳转前自动保存」的去重账本（同一张二维码只写一次相册）。
-     *
-     * 与 [qrJob] 同级：随 ScreenModel 生命周期存在，**换音源时**跟着现场一起 reset，
-     * 别让上一个音源的「已存过」拦下新音源的第一张二维码。
-     * 二维码本身换新（刷新 / 过期重取）不需要 reset —— 账本比的是图片内容，新图自然不同。
-     */
-    private val qrAutoSave = QrAutoSaveTracker()
-
-    init {
-        screenModelScope.launch {
-            AppModel.sourceGeneration.drop(1).collect { cancelWebLogin() }
-        }
-        screenModelScope.launch {
-            var lastProviderId: String? = null
-            activeProvider.collect { provider ->
-                val currentProviderId = provider?.id
-                val isProviderSwitched = lastProviderId != null && lastProviderId != currentProviderId
-                lastProviderId = currentProviderId
-
-                if (isProviderSwitched) {
-                    cancelQrPolling()
-                    cancelWebLogin()
-                    qrAutoSave.reset()
-                    // 作废的登录任务不会再清加载态（它已经不"属于"当前音源了），
-                    // 这里必须自己收掉，否则新音源没有扫码通道时转圈会一直停在屏上。
-                    isLoading.value = false
-                    qrUrl.value = null
-                    qrImgBase64.value = null
-                    qrRestored.value = false
-                    webviewLoginUrl.value = null
-                    captchaImage.value = null
-                    captchaSessionCookie = null
-                    verifyUrl.value = null
-                    message.value = null
-                    isLogged.value = false
-                    accounts.value = emptyList()
-                }
-
-                val pkg = provider?.targetAppPackage
-                if (!pkg.isNullOrEmpty()) {
-                    targetAppName.value = provider.name
-                    targetAppInstalled.value = isPackageInstalled(pkg)
-                } else {
-                    targetAppName.value = null
-                    targetAppInstalled.value = false
-                }
-                val declared = provider?.loginMethods
-                    ?.map { it.trim().lowercase() }
-                    ?.filter { it.isNotEmpty() }
-                loginChannels.value = if (declared.isNullOrEmpty()) {
-                    LoginChannel.DEFAULT
-                } else {
-                    buildList {
-                        if ("qr" in declared) add(LoginChannel.QR)
-                        if ("sms" in declared || "phone" in declared) add(LoginChannel.PHONE)
-                        if ("email" in declared) add(LoginChannel.EMAIL)
-                        if ("webview" in declared || "web" in declared) {
-                            add(LoginChannel.WEBVIEW)
-                        }
-                        add(LoginChannel.COOKIE)
-                    }
-                }
-                supportsCaptchaImage.value = declared?.contains("captchaimage") == true
-                if (method.value !in loginChannels.value) {
-                    method.value = loginChannels.value.first()
-                }
-                checkLoginStatus()
-                if (!isLogged.value && method.value == LoginChannel.QR && LoginChannel.QR in loginChannels.value) {
-                    restoreOrFetchQrCode()
-                }
-            }
-        }
-    }
-
-    fun providerId(): String = activeProvider.value?.id ?: AppModel.activeProviderId()
-
-    /**
-     * 一次登录动作所属的音源现场（音源 id + 音源代际）。
-     *
-     * ### 为什么登录链路必须带上它
-     *
-     * 二维码 / 验证码 / WebView 都是**跨音源一定失效**的长事务：请求发出后用户完全可能
-     * 正好切了音源（「登录页 → 切换音源」就在同一屏、同一个栈里）。响应回来时「当前音源」
-     * 已经换了人，如果这时按**当前**音源回写，就会：
-     * 1. 把 A 音源的二维码存成 B 音源的现场（[QrLoginStore]），下次进登录页还会被
-     *    **恢复**出来 —— 看起来就是「切了音源，登录页还是上个音源的二维码」，
-     *    而且重启后依然在（现场有 5 分钟寿命）；
-     * 2. 把 A 音源的 cookie 写进 B 音源的 cookie 槽位（见 [onLoginSucceeded]）。
-     *
-     * 所以每个登录动作在**发起时**抓一份现场，所有回写前先核对它还是不是当前音源。
-     * 注意音源实例用 `!==` 比较是不够的：切走再切回拿到的是**同一个实例**，
-     * 必须靠 [AppModel.sourceGeneration] 区分「中间发生过切换」。
-     */
-    private data class ProviderBinding(val providerId: String, val generation: Int)
-
-    private fun bindProvider(): ProviderBinding =
-        ProviderBinding(providerId(), AppModel.sourceGeneration.value)
-
-    private fun ProviderBinding.isCurrent(): Boolean =
-        generation == AppModel.sourceGeneration.value && providerId == providerId()
-
-    /**
-     * 调一次登录接口，**不吞协程取消**。
-     *
-     * `runCatching { … }` 会把 `CancellationException` 一起吞掉：`cancelQrPolling()` 之后
-     * 旧任务并不会立刻停，还会继续往下走 —— 把提示改成「获取失败 / 轮询失败」，甚至把
-     * 结果写回界面。这里只吞普通异常，取消一律上抛（与取数边界
-     * `UnifiedMusicSourceImpl.boundary` 是同一个约定）。
-     */
-    private suspend fun <T> loginAttempt(block: suspend () -> T): T? = try {
-        block()
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        null
-    }
-
-    fun setChannel(channel: LoginChannel) {
-        if (channel != LoginChannel.WEBVIEW) cancelWebLogin()
-        method.value = channel
-        if (channel == LoginChannel.QR) restoreOrFetchQrCode() else cancelQrPolling()
-        if (channel == LoginChannel.PHONE && supportsCaptchaImage.value) fetchCaptchaImage()
-        if (channel == LoginChannel.WEBVIEW && webviewLoginUrl.value == null) fetchWebviewLoginUrl()
-    }
-
-    fun fetchWebviewLoginUrl() {
-        cancelWebLogin()
-        val provider = activeProvider.value
-        val generation = AppModel.sourceGeneration.value
-        webJob = screenModelScope.launch {
-            isLoading.value = true
-            try {
-                val session = AppModel.authRepository.getWebviewLoginUrl()
-                if (activeProvider.value !== provider || AppModel.sourceGeneration.value != generation) return@launch
-                if (session != null) {
-                    webviewLoginUrl.value = session.url
-                    webSessionId = session.sessionId
-                } else {
-                    message.value = account.webviewUrlFailed
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                message.value = account.webviewUrlFailed
-            } finally {
-                isLoading.value = false
-            }
-        }
-    }
-
-    fun openWebviewLogin(customUrl: String? = null) {
-        val url = customUrl?.takeIf { it.isNotBlank() } ?: webviewLoginUrl.value
-        if (!url.isNullOrBlank()) {
-            openWebview(url, account.webviewLoginTitle)
-            // A custom verification URL must not consume an unrelated login session.
-            if (url == webviewLoginUrl.value) startWebLoginPolling()
-        } else {
-            fetchWebviewLoginUrl()
-        }
-    }
-
-    private fun cancelWebLogin() {
-        webJob?.cancel()
-        webJob = null
-        webSessionId = null
-        webviewLoginUrl.value = null
-    }
-
-    private fun startWebLoginPolling() {
-        val sessionId = webSessionId ?: return
-        if (webJob?.isActive == true) return
-        val provider = activeProvider.value
-        val generation = AppModel.sourceGeneration.value
-        webJob = screenModelScope.launch {
-            try {
-                repeat(150) {
-                    delay(2000L)
-                    if (activeProvider.value !== provider || AppModel.sourceGeneration.value != generation ||
-                        method.value != LoginChannel.WEBVIEW) return@launch
-                    val checkResult = AppModel.authRepository.checkWebviewLogin(sessionId)
-                    if (activeProvider.value !== provider || AppModel.sourceGeneration.value != generation) return@launch
-                    when (checkResult.state) {
-                        WebLoginState.PENDING -> Unit
-                        WebLoginState.AUTHORIZED -> {
-                            webSessionId = null
-                            webviewLoginUrl.value = null
-                            onLoginSucceeded(checkResult.cookie)
-                            return@launch
-                        }
-                        else -> {
-                            webSessionId = null
-                            webviewLoginUrl.value = null
-                            message.value = account.loginFailedRetry
-                            return@launch
-                        }
-                    }
-                }
-                webSessionId = null
-                webviewLoginUrl.value = null
-                message.value = account.loginFailedRetry
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                message.value = account.loginCheckFailed
-            }
-        }
-    }
-
-    fun openVerifyUrl() {
-        verifyUrl.value?.let { openWebview(it, account.verifyRequiredTitle) }
-    }
-
-    fun clearVerifyUrl() {
-        verifyUrl.value = null
-    }
-
-    fun fetchCaptchaImage() {
-        if (!supportsCaptchaImage.value) return
-        screenModelScope.launch {
-            val res = runCatching { AppModel.authRepository.getCaptchaImage() }.getOrNull()
-            if (res != null && res.ok && !res.captchaImage.isNullOrBlank()) {
-                captchaImage.value = res.captchaImage
-                captchaSessionCookie = res.sessionCookie
-            } else {
-                captchaImage.value = null
-                captchaSessionCookie = null
-                message.value = account.captchaImageFailed
-            }
-        }
-    }
-
-    fun startAddAccount() {
-        showForm.value = true
-        restoreOrFetchQrCode()
-    }
-
-    fun cancelAddAccount() {
-        showForm.value = false
-        cancelQrPolling()
-        cancelWebLogin()
-    }
-
-    private fun refreshAccounts() {
-        val providerId = providerId()
-        val stored = AccountStore.list(providerId)
-        val profile = AppModel.userProfileFlow.value
-        val currentUid = profile?.resourceId
-        val merged = if (isLogged.value && profile != null && stored.none { it.uid == currentUid }) {
-            stored + AccountStore.SavedAccount(
-                uid = currentUid ?: "",
-                nickname = profile.nickname,
-                avatarUrl = profile.avatarUrl,
-                cookie = AppModel.cookieStorage.getCookie(providerId) ?: "",
-            )
-        } else {
-            stored
-        }
-        accounts.value = merged
-    }
-
-    private suspend fun checkLoginStatus() {
-        val binding = bindProvider()
-        var networkFailed = false
-        val ok = try {
-            AppModel.authRepository.getLoginStatus()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            networkFailed = true
-            false
-        }
-        // 请求期间切了音源 ⇒ 这份「登录态」属于上一个音源，不能拿来判当前音源已登录。
-        if (!binding.isCurrent()) return
-        if (ok) {
-            isLogged.value = true
-            runCatching { AppModel.refreshUserProfileAwait() }
-            if (!binding.isCurrent()) return
-            message.value = account.loginRestored
-        } else if (networkFailed) {
-            // 弱网或离线：检查本地是否已有已保存的账号或登录态，避免误判为「未登录」
-            val providerId = providerId()
-            val hasCachedAccount = AccountStore.activeUid(providerId) != null ||
-                !AppModel.cookieStorage.getCookie(providerId).isNullOrEmpty() ||
-                AppModel.userProfileFlow.value != null
-            if (hasCachedAccount) {
-                isLogged.value = true
-                runCatching { AppModel.refreshUserProfileAwait() }
-                if (!binding.isCurrent()) return
-            } else {
-                isLogged.value = false
-            }
-        } else {
-            isLogged.value = false
-        }
-        refreshAccounts()
-    }
-
-    fun fetchQrCode() {
-        qrRestored.value = false
-        startQrJob(initialKey = null, reuseQr = false)
-    }
-
-    private fun restoreOrFetchQrCode() {
-        if (qrJob?.isActive == true) return
-        if (LoginChannel.QR !in loginChannels.value) {
-            fetchQrCode()
-            return
-        }
-        val session = QrLoginStore.load(providerId())
-        if (session == null) {
-            fetchQrCode()
-            return
-        }
-        method.value = LoginChannel.QR
-        qrUrl.value = session.url
-        qrImgBase64.value = session.imageBase64
-        qrRestored.value = true
-        startQrJob(initialKey = session.key, reuseQr = true)
-    }
-
-    private fun startQrJob(initialKey: String?, reuseQr: Boolean) {
-        cancelQrPolling()
-        qrJob = screenModelScope.launch {
-            // 这一整轮扫码只认发起时的音源（见 [ProviderBinding]）：中途换源 ⇒ 直接作废，
-            // 既不上屏、也不落盘，更不会把旧音源的 key 拿去轮询。
-            val binding = bindProvider()
-            isLoading.value = true
-            try {
-                var pendingKey = initialKey
-                var pendingReuse = reuseQr
-                repeat(QR_MAX_ROUNDS) { round ->
-                    val key = pendingKey
-                        ?: loginAttempt { AppModel.authRepository.getQrKey() }?.key
-                    val reuse = pendingReuse
-                    pendingKey = null
-                    pendingReuse = false
-                    if (key == null) {
-                        if (binding.isCurrent()) message.value = account.qrKeyFailed
-                        return@launch
-                    }
-                    if (!reuse) {
-                        val qrResp = loginAttempt { AppModel.authRepository.createQrCode(key) }
-                        // 取二维码期间换了音源 ⇒ 这张图是上一个音源的，不能给用户看，
-                        // 更不能记成新音源的现场（否则下次进登录页会被原样"恢复"出来）。
-                        if (!binding.isCurrent()) return@launch
-                        val url = qrResp?.url
-                        val img = qrResp?.imageBase64
-                        qrUrl.value = url
-                        qrImgBase64.value = img
-                        if (url == null) {
-                            message.value = account.qrLoadFailed
-                            return@launch
-                        }
-                        qrRestored.value = false
-                        QrLoginStore.save(
-                            binding.providerId,
-                            QrLoginSession(
-                                key = key,
-                                url = url,
-                                imageBase64 = img,
-                                createdAtMs = currentTimeMillis(),
-                            ),
-                        )
-                    }
-                    isLoading.value = false
-                    when (pollQrStatus(key, binding)) {
-                        QrPollResult.LOGGED_IN -> return@launch
-                        QrPollResult.STOPPED -> {
-                            if (!isLogged.value && binding.isCurrent()) {
-                                QrLoginStore.clear(binding.providerId)
-                            }
-                            return@launch
-                        }
-                        QrPollResult.EXPIRED ->
-                            if (round == QR_MAX_ROUNDS - 1) {
-                                if (binding.isCurrent()) message.value = account.qrExpiredRetry
-                            } else {
-                                if (binding.isCurrent()) {
-                                    message.value = account.qrRefreshing
-                                    isLoading.value = true
-                                }
-                            }
-                    }
-                }
-            } finally {
-                // 换源后新的一轮扫码会自己管加载态，别被作废的旧任务清掉。
-                if (binding.isCurrent()) isLoading.value = false
-            }
-        }
-    }
-
-    private fun cancelQrPolling() {
-        qrJob?.cancel()
-        qrJob = null
-    }
-
-    private suspend fun pollQrStatus(key: String, binding: ProviderBinding): QrPollResult {
-        var consecutiveFailures = 0
-        repeat(QR_POLL_MAX) {
-            kotlinx.coroutines.delay(QR_POLL_INTERVAL_MS)
-            // 换源后这张二维码在这个音源上根本不存在，继续轮询只会拿到 800/错误。
-            if (!binding.isCurrent()) return QrPollResult.STOPPED
-            val resp = loginAttempt { AppModel.authRepository.checkQrStatus(key) }
-            if (!binding.isCurrent()) return QrPollResult.STOPPED
-            if (resp == null) {
-                consecutiveFailures++
-                if (consecutiveFailures >= QR_FAILURE_LIMIT) {
-                    message.value = account.qrPollFailed
-                    return QrPollResult.STOPPED
-                }
-            } else {
-                consecutiveFailures = 0
-                when (resp.status) {
-                    QrStatusKind.WAITING -> message.value = account.qrWaiting
-                    QrStatusKind.SCANNED -> message.value = account.qrScanned
-                    QrStatusKind.SUCCESS -> {
-                        onLoginSucceeded(resp.cookie, binding = binding)
-                        return QrPollResult.LOGGED_IN
-                    }
-                    QrStatusKind.EXPIRED -> return QrPollResult.EXPIRED
-                    QrStatusKind.UNKNOWN -> Unit
-                }
-            }
-            if (isLogged.value) return QrPollResult.LOGGED_IN
-        }
-        message.value = account.qrTimedOut
-        return QrPollResult.STOPPED
-    }
-
-    fun loginEmail(email: String, password: String) {
-        if (email.isBlank() || password.isBlank()) return
-        cancelQrPolling()
-        screenModelScope.launch {
-            val binding = bindProvider()
-            isLoading.value = true
-            try {
-                val actionResult = AppModel.authRepository.login(email, password)
-                // 请求期间换了音源 ⇒ 这是上一个音源发起的登录，cookie 不能记到新音源名下。
-                if (!binding.isCurrent()) return@launch
-                if (actionResult.verifyUrl != null || actionResult.isVerificationChallenge) {
-                    verifyUrl.value = actionResult.verifyUrl
-                    message.value = account.verifyRequired
-                    return@launch
-                }
-                onLoginSucceeded(actionResult.cookie, actionResult.ok, binding)
-            } catch (e: Exception) {
-                message.value = account.loginFailed(e.message)
-            } finally {
-                if (binding.isCurrent()) isLoading.value = false
-            }
-        }
-    }
-
-    fun loginPhone(phone: String, codeOrPass: String) {
-        if (phone.isBlank()) return
-        cancelQrPolling()
-        screenModelScope.launch {
-            val binding = bindProvider()
-            isLoading.value = true
-            try {
-                val actionResult = AppModel.authRepository.loginWithPhone(
-                    phone,
-                    codeOrPass,
-                    imageCaptcha.value.ifBlank { null },
-                    captchaSessionCookie,
-                )
-                if (!binding.isCurrent()) return@launch
-                if (!actionResult.ok) {
-                    if (actionResult.verifyUrl != null || actionResult.isVerificationChallenge) {
-                        verifyUrl.value = actionResult.verifyUrl
-                        message.value = account.verifyRequired
-                        return@launch
-                    }
-                    message.value = account.loginFailed(actionResult.reason ?: account.pleaseRetry)
-                    fetchCaptchaImage()
-                    return@launch
-                }
-                onLoginSucceeded(actionResult.cookie, ok = true, binding = binding)
-            } catch (e: Exception) {
-                message.value = account.loginFailed(e.message)
-            } finally {
-                if (binding.isCurrent()) isLoading.value = false
-            }
-        }
-    }
-
-    fun loginWithCookie(raw: String) {
-        val cookie = CookieLogin.normalize(raw)
-        if (cookie == null) {
-            message.value = account.cookieFormatError
-            return
-        }
-        cancelQrPolling()
-        screenModelScope.launch {
-            val binding = bindProvider()
-            val providerId = binding.providerId
-            isLoading.value = true
-            try {
-                val previous = AppModel.cookieStorage.getCookie(providerId)
-                AppModel.cookieStorage.saveCookie(providerId, cookie)
-                val profile = AppModel.refreshUserProfileAwait()
-                // 验证期间换了音源：上面的 cookie 属于旧音源，收手即可
-                // （切源时 `AppModel.switchOrReport` 会重新拉新音源的资料）。
-                if (!binding.isCurrent()) return@launch
-                if (profile == null) {
-                    if (previous.isNullOrEmpty()) AppModel.cookieStorage.clear(providerId)
-                    else AppModel.cookieStorage.saveCookie(providerId, previous)
-                    AppModel.refreshUserProfileAwait()
-                    isLogged.value = false
-                    message.value = account.cookieInvalid
-                    return@launch
-                }
-                QrLoginStore.clear(providerId)
-                AccountStore.save(
-                    providerId,
-                    AccountStore.SavedAccount(
-                        uid = profile.resourceId,
-                        nickname = profile.nickname,
-                        avatarUrl = profile.avatarUrl,
-                        cookie = cookie,
-                    ),
-                )
-                isLogged.value = true
-                showForm.value = false
-                message.value = account.loginWelcome(profile.nickname)
-                refreshAccounts()
-            } finally {
-                isLoading.value = false
-            }
-        }
-    }
-
-    fun sendCaptcha(phone: String) {
-        screenModelScope.launch {
-            runCatching {
-                AppModel.authRepository.sendCaptcha(
-                    phone,
-                    imageCaptcha.value.ifBlank { null },
-                    captchaSessionCookie,
-                )
-            }
-                .onSuccess { actionResult ->
-                    if (actionResult.ok) {
-                        message.value = account.captchaSent
-                    } else {
-                        if (actionResult.verifyUrl != null || actionResult.isVerificationChallenge) {
-                            verifyUrl.value = actionResult.verifyUrl
-                            message.value = account.verifyRequired
-                            return@launch
-                        }
-                        message.value = account.captchaSendFailed(actionResult.reason ?: account.pleaseRetry)
-                        fetchCaptchaImage()
-                    }
-                }
-                .onFailure { message.value = account.captchaSendFailed(it.message) }
-        }
-    }
-
-
-    fun loginAnonymous() {
-        cancelQrPolling()
-        screenModelScope.launch {
-            isLoading.value = true
-            try {
-                val actionResult = AppModel.authRepository.loginAnonymous()
-                onLoginSucceeded(actionResult.cookie, actionResult.ok)
-            } catch (e: Exception) {
-                message.value = account.guestLoginFailed(e.message)
-            } finally {
-                isLoading.value = false
-            }
-        }
-    }
-
-    /**
-     * 登录成功后的收尾（写 cookie → 拉资料 → 记账号）。
-     *
-     * @param binding 这次登录**发起时**所属的音源；不传则按当前音源现场处理
-     *   （邮箱 / 手机 / Cookie 这类短事务走默认即可）。扫码这种长事务必须传入
-     *   发起时的现场 —— 否则一次在途的 803 会把**上一个音源的 cookie 写进当前音源的
-     *   cookie 槽位**，用户看到的是「切了音源，登进去还是上个音源的账号」。
-     */
-    private suspend fun onLoginSucceeded(
-        cookie: String?,
-        ok: Boolean = true,
-        binding: ProviderBinding? = null,
-    ) {
-        if (!ok) {
-            message.value = account.loginFailedRetry
-            return
-        }
-        val owner = binding ?: bindProvider()
-        // ⚠️ 先判归属再落 cookie：cookie 一旦写错槽位，后续 refreshUserProfileAwait
-        // 读的是**当前**音源的 cookie，两者会互相打脸。
-        if (!owner.isCurrent()) return
-        if (!cookie.isNullOrEmpty()) AppModel.cookieStorage.saveCookie(owner.providerId, cookie)
-        val profile = AppModel.refreshUserProfileAwait()
-        if (!owner.isCurrent()) return
-        isLogged.value = profile != null
-        if (profile != null) {
-            QrLoginStore.clear(owner.providerId)
-            if (!cookie.isNullOrEmpty()) {
-                AccountStore.save(
-                    owner.providerId,
-                    AccountStore.SavedAccount(
-                        uid = profile.resourceId,
-                        nickname = profile.nickname,
-                        avatarUrl = profile.avatarUrl,
-                        cookie = cookie,
-                    ),
-                )
-            }
-            showForm.value = false
-            message.value = account.loginWelcome(profile.nickname)
-        } else {
-            message.value = account.loginCheckFailed
-        }
-        refreshAccounts()
-    }
-
-    fun switchAccount(account: AccountStore.SavedAccount) {
-        cancelQrPolling()
-        cancelWebLogin()
-        screenModelScope.launch {
-            val providerId = providerId()
-            val previousCookie = AppModel.cookieStorage.getCookie(providerId)
-            val previousUid = AccountStore.activeUid(providerId)
-            QrLoginStore.clear(providerId)
-            if (account.cookie.isNotBlank()) {
-                AppModel.cookieStorage.saveCookie(providerId, account.cookie)
-            }
-            AccountStore.setActive(providerId, account.uid)
-            val profile = AppModel.refreshUserProfileAwait()
-            if (profile != null) {
-                isLogged.value = true
-                message.value = this@AccountScreenModel.account.switchedTo(profile.nickname)
-            } else {
-                if (previousCookie.isNullOrEmpty()) AppModel.cookieStorage.clear(providerId)
-                else AppModel.cookieStorage.saveCookie(providerId, previousCookie)
-                AccountStore.setActive(providerId, previousUid)
-                val restored = AppModel.refreshUserProfileAwait()
-                isLogged.value = restored != null
-                message.value = this@AccountScreenModel.account.accountExpired(account.nickname)
-            }
-            refreshAccounts()
-        }
-    }
-
-    fun removeAccount(account: AccountStore.SavedAccount) {
-        cancelQrPolling()
-        cancelWebLogin()
-        screenModelScope.launch {
-            val providerId = providerId()
-            val wasActive = AccountStore.activeUid(providerId) == account.uid
-            QrLoginStore.clear(providerId)
-            AccountStore.remove(providerId, account.uid)
-            if (wasActive) {
-                isLogged.value = false
-                // ⚠️ 移除**当前**账号也必须走一次服务端 logout：
-                //   AccountStore.remove 只清 active 标记与 cookie，不碰接口缓存；
-                //   而缓存键只含 providerId + cookie 哈希，同一音源再登录会命中
-                //   上一个账号的 user/playlist、user/like、user/cloud 响应。
-                //   失败无所谓（cookie 已经没了），但它必须在缓存能清之前被**调用过**。
-                runCatching { AppModel.authRepository.logout() }
-                AppModel.clearUserProfile()
-                message.value = this@AccountScreenModel.account.removedSession(account.nickname)
-            } else {
-                message.value = this@AccountScreenModel.account.removedAccount(account.nickname)
-            }
-            refreshAccounts()
-        }
-    }
-
-    fun logout() {
-        cancelQrPolling()
-        cancelWebLogin()
-        screenModelScope.launch {
-            val providerId = providerId()
-            runCatching { AppModel.authRepository.logout() }
-            AppModel.cookieStorage.clear(providerId)
-            AccountStore.setActive(providerId, null)
-            QrLoginStore.clear(providerId)
-            AppModel.clearUserProfile()
-            isLogged.value = false
-            message.value = account.loggedOut
-            refreshAccounts()
-        }
-    }
-
-    fun saveQrCode() {
-        val base64 = qrImgBase64.value ?: return
-        val providerName = activeProvider.value?.name ?: "qr"
-        val saved = saveQrCodeToGallery(base64, "QR_$providerName")
-        // 手动保存成功同样记账：用户先点了「保存二维码」再点跳转，不该在相册里再出现一张。
-        if (saved) qrAutoSave.markSaved(base64)
-    }
-
-    /**
-     * 「打开目标 App」——跳转前**先把当前二维码存进相册**。
-     *
-     * ### 为什么要在跳转时自动存
-     *
-     * 用户点这个按钮的本意是「去手机上扫」，跳过去后人就在另一个应用里了，
-     * 本应用的登录页看不到；而扫码的通常是**另一台设备**（或者同一台手机的相机 / 系统扫码入口）
-     * —— 现场这张二维码一离开登录页就没了。相册是它能落地的、用户回头找得到的地方。
-     * 于是这里做两件事：存图（同一张图只存一次，见 [QrAutoSaveTracker]）→ 再跳转。
-     *
-     * ### 顺序与失败处理
-     *
-     * 先存后跳：跳转一旦成功，本应用就被切到后台，之后再想写相册会撞上后台限制。
-     * 存图失败（桌面端恒失败、Android 7/8/9 缺写权限）**不阻断跳转** ——
-     * 跳过去扫码才是用户真正要做的事，相册里没有图只是少了个备份。
-     *
-     * 成功后的用户提示**不在这里发**：`saveQrCodeToGallery` 的实现自己弹 toast
-     * （与手动「保存二维码」同一个文案）。这里再写一条 `message` 只会被 2 秒一次的
-     * 轮询状态（「等待扫码…」）立刻盖掉，等于白发。
-     */
-    fun openTargetApp() {
-        val pkg = activeProvider.value?.targetAppPackage ?: return
-        val image = qrImgBase64.value?.takeIf { it.isNotBlank() }
-        if (image != null && qrAutoSave.needsSave(image)) {
-            val providerName = activeProvider.value?.name ?: "qr"
-            if (saveQrCodeToGallery(image, "QR_$providerName")) {
-                qrAutoSave.markSaved(image)
-            }
-        }
-        openTargetApp(pkg)
-    }
+    fun providerId(): String = presenter.providerId()
+    fun setChannel(channel: LoginChannel) = presenter.setChannel(channel)
+    fun openVerifyUrl() = presenter.openVerifyUrl()
+    fun clearVerifyUrl() = presenter.clearVerifyUrl()
+    fun fetchCaptchaImage() = presenter.fetchCaptchaImage()
+    fun startAddAccount() = presenter.startAddAccount()
+    fun cancelAddAccount() = presenter.cancelAddAccount()
+    fun fetchQrCode() = presenter.fetchQrCode()
+    fun loginEmail(email: String, password: String) = presenter.loginEmail(email, password)
+    fun loginPhone(phone: String, codeOrPass: String, useSmsCode: Boolean, countryCode: String? = null) =
+        presenter.loginPhone(phone, codeOrPass, useSmsCode, countryCode)
+    fun loginWithCookie(raw: String) = presenter.loginWithCookie(raw)
+    fun sendCaptcha(phone: String, countryCode: String? = null) = presenter.sendCaptcha(phone, countryCode)
+    fun loginAnonymous() = presenter.loginAnonymous()
+    fun switchAccount(account: AccountStore.SavedAccount) = presenter.switchAccount(account)
+    fun removeAccount(account: AccountStore.SavedAccount) = presenter.removeAccount(account)
+    fun logout() = presenter.logout()
+    fun saveQrCode() = presenter.saveQrCode()
+    fun openTargetApp() = presenter.openTargetApp()
 }
 
-private enum class QrPollResult {
-    LOGGED_IN,
-    EXPIRED,
-    STOPPED,
-}
-
-enum class LoginChannel(val labelOf: (CpStrings) -> String) {
-    QR({ it.account.channelQr }),
-    PHONE({ it.account.channelPhone }),
-    EMAIL({ it.account.channelEmail }),
-    COOKIE({ it.account.channelCookie }),
-    WEBVIEW({ it.account.channelWebview }),
-    ;
-
-    companion object {
-        val DEFAULT = listOf(QR, PHONE, EMAIL, COOKIE, WEBVIEW)
-    }
-}
-
-
-private const val QR_POLL_INTERVAL_MS = 2000L
-private const val QR_POLL_MAX = 120
-private const val QR_FAILURE_LIMIT = 5
-private const val QR_MAX_ROUNDS = 3
-
+typealias LoginChannel = cp.player.app.presentation.account.LoginChannel
 

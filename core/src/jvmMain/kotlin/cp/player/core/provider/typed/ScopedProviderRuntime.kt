@@ -13,30 +13,41 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.io.ByteArrayOutputStream
+import java.net.URI
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal actual fun createSdkRuntime(allowedOrigins: Set<String>): ManagedProviderRuntime =
     ScopedProviderRuntime(allowedOrigins)
 
+internal fun parseSdkAllowedOrigin(value: String): String {
+    val uri = URI(value)
+    require(uri.isAbsolute && uri.rawAuthority != null) { "Invalid SDK origin" }
+    require(uri.rawPath.isNullOrEmpty() && uri.rawQuery == null && uri.rawFragment == null) {
+        "SDK origin must not contain a path, query, or fragment"
+    }
+    return canonicalSdkOrigin(Url(value))
+}
+
+internal fun canonicalSdkOrigin(url: Url): String {
+    validateHttpUrl(url.toString())
+    // Plain HTTP is accepted only on loopback for reproducible local examples.
+    require(url.protocol.name == "https" || url.host in setOf("localhost", "127.0.0.1", "::1"))
+    return "${url.protocol.name}://${url.host}:${url.port}"
+}
+
 /** An account owns one client and one ephemeral store; neither is global. */
 internal class ScopedProviderRuntime(allowedOrigins: Set<String>) : ManagedProviderRuntime {
-    private val origins = allowedOrigins.map { origin(Url(it)) }.toSet()
+    private val origins = allowedOrigins.map(::parseSdkAllowedOrigin).toSet()
     private val closed = AtomicBoolean(false)
     private val storage = mutableMapOf<String, ByteArray>()
     private val client = HttpClient {
         followRedirects = false
         install(HttpTimeout) { requestTimeoutMillis = 10_000; connectTimeoutMillis = 5_000 }
     }
-    private fun origin(url: Url): String {
-        validateHttpUrl(url.toString())
-        // Plain HTTP is accepted only on loopback for reproducible local examples.
-        require(url.protocol.name == "https" || url.host in setOf("localhost", "127.0.0.1", "::1"))
-        return "${url.protocol.name}://${url.host}:${url.port}"
-    }
     override suspend fun http(request: HttpRequest): HttpResponse = withContext(Dispatchers.IO) {
         check(!closed.get())
-        require(origin(Url(request.url)) in origins) { "HTTP origin not permitted" }
+        require(canonicalSdkOrigin(Url(request.url)) in origins) { "HTTP origin not permitted" }
         require(request.method in setOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"))
         require(request.body?.let { it.size <= MAX_BYTES } != false)
         require(request.headers.size <= 64)

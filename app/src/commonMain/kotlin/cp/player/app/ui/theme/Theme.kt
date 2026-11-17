@@ -14,6 +14,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.material3.Typography
 import androidx.compose.ui.graphics.Color
 import com.materialkolor.PaletteStyle
+import com.materialkolor.dynamiccolor.ColorSpec
 import com.materialkolor.ktx.animateColorScheme
 import com.materialkolor.rememberDynamicColorScheme
 import cp.player.app.i18n.CpStrings
@@ -59,15 +60,13 @@ private const val ColorTransitionMillis = 600
  *
  * @param themeMode 跟随系统 / 浅色 / 深色
  * @param colorSource 种子色来源（系统 / 封面 / 固定）
- * @param paletteStyle 种子色展开成整套方案的风格档位。默认 [PaletteStyle.TonalSpot] ——
- *   这是 Flutter `ColorScheme.fromSeed` / Material Theme Builder 的默认档，也是
- *   Kazumi 观感的基准；换成 `Vibrant` / `Expressive` 会让配色明显更跳。
- *   **不要为了"更 Expressive"就把它调高**：M3E 的表达性主要来自形状与动效，
- *   不是配色饱和度。这一档只在需要时由调用方覆盖。
  * @param pureBlack 深色时把 surface 系列压成纯黑
  * @param coverSeed [ColorSource.COVER] 的当前封面种子色；null 表示当前没有曲目封面
  * @param wallpaperSeed [ColorSource.COVER] 且没有曲目封面时的**系统壁纸**回退种子色；
  *   Android 恒为 null（那边由 Monet 直接给整套方案）
+ *
+ * 种子 → 方案的调色风格**固定**为 `SPEC_2025` + `TonalSpot`，不开放设置项 ——
+ * 理由见第 2 段的注释。
  */
 private val defaultFontFaceEnabledMap: Map<AppFontFace, Boolean> =
     AppFontFace.entries.associateWith { true }
@@ -77,7 +76,6 @@ private val defaultFontFaceEnabledMap: Map<AppFontFace, Boolean> =
 fun CpTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     colorSource: ColorSource = ColorSource.FIXED,
-    paletteStyle: PaletteStyle = PaletteStyle.TonalSpot,
     pureBlack: Boolean = false,
     coverSeed: Color? = null,
     wallpaperSeed: Color? = null,
@@ -121,12 +119,23 @@ fun CpTheme(
     }
 
     // 第 2 段：生成方案。只有拿不到平台 Monet 时才需要 materialkolor 展开。
+    //
+    // 两个参数刻意分开看，别一起动：
+    // - `specVersion = SPEC_2025`：**要保留**。这是当前的色彩映射规范，2021 那套
+    //   在高彩度种子下会明显偏灰。
+    // - `style = TonalSpot`：经典柔和档，与 Android 系统 Monet / Material Theme Builder
+    //   同一档，是「取色和其他 MD3 应用一致」的基准。
+    //
+    // ⚠️ **不要把 style 改成 `Expressive`**。那一档会把色相偏移与容器对比整体拉高，
+    // 表现就是「取色很怪、和系统对不上」—— 已经踩过一次，用户一眼就能看出来。
+    // M3E 的表达性主要来自形状与动效（见 `Motion.kt` / `Shape.kt`），不是配色饱和度。
     val generated = if (platformScheme == null && seed != null) {
         rememberDynamicColorScheme(
             seedColor = seed,
             isDark = dark,
             isAmoled = pureBlack,
-            style = paletteStyle,
+            specVersion = ColorSpec.SpecVersion.SPEC_2025,
+            style = PaletteStyle.TonalSpot,
         )
     } else {
         null

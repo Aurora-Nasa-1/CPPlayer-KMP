@@ -15,12 +15,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import cp.player.app.ui.theme.cpCardSurface
 
 /**
  * M3 Expressive 风格列表卡片（Enclosure 组件）。
  *
  * 带标题头 + 可选右侧图标 + 底部内容的圆角卡片容器。
- * 对应原项目的 [ExpressiveListCard]，使用 extraLarge 圆角 + surfaceContainerLow 背景。
+ * 对应原项目的 [ExpressiveListCard]，使用 extraLarge 圆角 + [cpCardSurface] 背景。
  */
 @Composable
 fun ExpressiveListCard(
@@ -38,7 +39,7 @@ fun ExpressiveListCard(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = cpCardSurface(),
     ) {
         Column(modifier = Modifier.padding(bottom = 8.dp)) {
             if (title.isNotBlank() || trailing != null) {

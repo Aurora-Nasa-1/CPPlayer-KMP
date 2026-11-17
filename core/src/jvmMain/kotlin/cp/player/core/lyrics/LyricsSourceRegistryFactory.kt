@@ -1,6 +1,7 @@
 package cp.player.core.lyrics
 
 import cp.player.core.api.AmllTtmlClient
+import cp.player.core.api.LrclibLyricsClient
 import cp.player.core.lyricsplugin.LyricsPluginService
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.PlatformSupport
@@ -25,12 +26,14 @@ actual fun createLyricsSourceRegistry(
     context: PlatformContext,
     plugins: LyricsPluginService,
     amllClient: AmllTtmlClient?,
+    lrclibClient: LrclibLyricsClient?,
     legacySettings: SettingsStorage?,
     unifiedSource: cp.player.core.music.UnifiedMusicSource?,
 ): LyricsSourceRegistry = FileLyricsSourceRegistry(
     rootDir = File(PlatformSupport.dataDir(context), "lyrics-sources"),
     plugins = plugins,
     amllClient = amllClient,
+    lrclibClient = lrclibClient,
     legacySettings = legacySettings,
     unifiedSource = unifiedSource,
 )

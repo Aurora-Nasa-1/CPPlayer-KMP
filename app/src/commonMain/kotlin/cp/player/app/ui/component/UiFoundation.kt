@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import cp.player.app.ui.theme.cpCardSurface
 
 /** 当前窗口是否处于 Expanded 宽度（≥840dp），由 [ProvideIsExpanded] 在根 Navigator 之上提供。 */
 val LocalIsExpanded = staticCompositionLocalOf { false }
@@ -73,6 +74,7 @@ val LocalEmbeddedInPane = staticCompositionLocalOf { false }
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 fun ProvideIsExpanded(content: @Composable () -> Unit) {
+    @Suppress("DEPRECATION")
     val adaptiveInfo = currentWindowAdaptiveInfo()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val expanded = CpBreakpoints.isExpanded(maxWidth)
@@ -169,13 +171,20 @@ object CpSpacing {
     /**
      * 分组列表的**行间距**。
      *
-     * 4dp 是 M3 分组列表的规范缝宽 —— 行与行之间留一道细缝，同时每行的圆角
-     * 从「组内圆角」变形成「容器圆角」时才有空间可看（见 `LegacyListItem`）。
-     * 缝太宽会散成一张张独立卡片，太窄则看不出分组。
+     * 2dp 是全应用 segmented list 的统一缝宽：行间保留轻微分隔，同时让分组保持紧凑。
+     * 行的圆角形变仍能提供交互反馈（见 `LegacyListItem`）。
      *
      * ⚠️ 缝宽与形状变形是**一对**参数：改这个值要回头看 `SegmentInnerRadius`。
      */
-    val listRowGap = 4.dp
+    val listRowGap = 2.dp
+
+    /**
+     * 歌单列表的**行间距**。
+     *
+     * 歌单行是独立圆角卡片，比歌曲裸行多一层视觉边界，2dp 的缝宽会让相邻卡片
+     * 几乎粘在一起。4dp 只用于歌单，歌曲列表继续沿用 [listRowGap]。
+     */
+    val playlistRowGap = 4.dp
 
     /**
      * 桌面端页面的**统一最大内容宽度**。
@@ -336,13 +345,16 @@ fun ContentState(
             )
         }
         Spacer(Modifier.height(16.dp))
-        CpText(title, style = MaterialTheme.typography.titleMedium)
+        // 空态 / 错误态是用户**唯一**能读到原因的路径（列表里没有别的地方可看），
+        // 默认单行会把「为什么失败、下一步做什么」截掉。
+        CpText(title, style = MaterialTheme.typography.titleMedium, maxLines = Int.MAX_VALUE)
         if (!message.isNullOrBlank()) {
             Spacer(Modifier.height(6.dp))
             CpText(
                 message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = Int.MAX_VALUE,
             )
         }
         if (actionLabel != null && onAction != null) {
@@ -379,7 +391,7 @@ fun StateSurface(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = cpCardSurface(),
     ) {
         Box(contentAlignment = Alignment.Center) { content() }
     }

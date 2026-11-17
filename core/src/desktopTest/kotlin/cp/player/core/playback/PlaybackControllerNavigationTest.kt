@@ -533,6 +533,23 @@ class PlaybackControllerNavigationTest {
     }
 
     @Test
+    fun `clearQueue finishes before a replacement queue can start`() = runBlocking {
+        val platform = FakePlatformPlayer()
+        val dispatcher = ManualDispatcher()
+        val c = controller(platform, FakeSource(), dispatcher)
+
+        c.playQueue(listOf(mid(1)), startIndex = 0)
+        dispatcher.drain()
+        c.clearQueue()
+        c.playQueue(listOf(mid(2)), startIndex = 0)
+        dispatcher.drain()
+
+        assertEquals(listOf(mid(2)), c.state.value.queue.map { it.mediaId })
+        assertEquals(mid(2), c.state.value.currentTrack?.id)
+        assertEquals("https://cdn/2", platform.loadedUrls.last())
+    }
+
+    @Test
     fun `dragging in a not-yet-started queue injects no bogus slot`() = runBlocking {
         val c = controller(FakePlatformPlayer(), FakeSource())
         c.playQueue(listOf(mid(1)), startIndex = 0)

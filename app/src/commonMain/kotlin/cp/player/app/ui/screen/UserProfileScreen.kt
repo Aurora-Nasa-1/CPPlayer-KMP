@@ -1,8 +1,8 @@
 package cp.player.app.ui.screen
 
 import cp.player.app.ui.component.CpText
+import cp.player.app.ui.component.CpExpandableText
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -35,11 +35,10 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.AlbumCoverCard
@@ -48,7 +47,7 @@ import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SongDetailInfoDialog
 import cp.player.app.ui.component.SongOptionsSheet
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.CpCardRowSkeleton
@@ -67,10 +66,8 @@ import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.component.playlistShareText
 import cp.player.app.platform.shareText
 import cp.player.app.ui.util.UiEvents
-import cp.player.core.BackendResult
 import cp.player.core.music.ProfileBundle
 import cp.player.core.music.TrackSummary
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
@@ -86,69 +83,38 @@ class UserProfileScreen(
 ) : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         UserProfileContent(
             uid = resourceId,
             displayName = displayName,
             // `rememberScreenModel` 是定义在 `Screen` 上的**扩展函数**，只有 Screen 子类的
             // 成员里才有接收者；顶层的 @Composable 里调用会报 `Unresolved reference`。
             model = rememberScreenModel { UserProfileModel() },
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
             onOpenChat = if (uid > 0L && resourceId == uid.toString()) {
-                { name -> navigator.push(ChatScreen(uid, name)) }
+                { name -> navigator.push(AppRoute.Chat(uid, name)) }
             } else null,
         )
     }
 }
 
-private data class ProfileUiState(
-    val loading: Boolean = true,
-    val error: String? = null,
-    val bundle: ProfileBundle? = null,
-)
+private typealias ProfileUiState = cp.player.app.presentation.userprofile.ProfileUiState
 
 /** 歌手主页默认展开的热门歌曲条数（超出部分折叠，避免把「专辑」推到很下面）。 */
 private const val SONG_PREVIEW = 10
 
 private class UserProfileModel : ScreenModel {
-    private val _state = MutableStateFlow(ProfileUiState())
-    val state: StateFlow<ProfileUiState> = _state
+    private val presenter = cp.player.app.presentation.userprofile.UserProfilePresenter(
+        scope = screenModelScope,
+    )
 
-    private var loadedUid: String? = null
+    val state: StateFlow<ProfileUiState> get() = presenter.state
 
-    /**
-     * @param strings 失败兜底文案按**当前语言**组 —— 协程里读不到 CompositionLocal，
-     *   由组合侧传进来（见 I18N.md §5.9）。
-     */
-    fun load(uid: String, fallbackName: String?, strings: CpStrings) {
-        if (loadedUid == uid && _state.value.bundle != null) return
-        loadedUid = uid
-        screenModelScope.launch {
-            _state.value = ProfileUiState(loading = true)
-            val result = runCatching { AppModel.musicRepository.getProfileBundle(uid) }
-                .getOrElse { BackendResult.Error(it.message ?: strings.account.profileLoadFailed) }
-            _state.value = when (result) {
-                is BackendResult.Success -> ProfileUiState(loading = false, bundle = result.data)
-                is BackendResult.Error -> ProfileUiState(
-                    loading = false,
-                    error = result.message,
-                    bundle = fallbackName?.let {
-                        ProfileBundle(
-                            uid = uid.toLongOrNull() ?: 0L, resourceId = uid, isArtist = false, nickname = it,
-                            avatarUrl = null, signature = null,
-                            primaryCount = 0, follows = 0, followeds = 0,
-                        )
-                    },
-                )
-                is BackendResult.Unsupported -> ProfileUiState(loading = false, error = result.message)
-            }
-        }
-    }
+    fun load(uid: String, fallbackName: String?, strings: CpStrings) =
+        presenter.load(uid, fallbackName, strings)
 
-    fun reload(uid: String, fallbackName: String?, strings: CpStrings) {
-        loadedUid = null
-        load(uid, fallbackName, strings)
-    }
+    fun reload(uid: String, fallbackName: String?, strings: CpStrings) =
+        presenter.reload(uid, fallbackName, strings)
 }
 
 @Composable
@@ -160,21 +126,31 @@ private fun UserProfileContent(
     onOpenChat: ((String) -> Unit)?,
 ) {
     val state by model.state.collectAsState()
-    val navigator = LocalNavigator.currentOrThrow
+    val navigator = LocalAppNavigator.current
     val s = cpStrings()
     val me by AppModel.userProfileFlow.collectAsState()
     val playbackState by AppModel.playback.state.collectAsState()
     val currentTrackId = playbackState.currentTrack?.id
     val likedIds by AppModel.playback.likedIds.collectAsState()
+    val sourceGeneration by AppModel.sourceGeneration.collectAsState()
+    val accountGeneration by AppModel.accountGeneration.collectAsState()
+    val playlistGeneration by AppModel.playlistGeneration.collectAsState()
     val scope = rememberCoroutineScope()
     val provider = AppModel.activeProviderId()
 
     // 歌单列表每行右侧的「更多」动作来源。本页不是有自己 ScreenModel 的复杂页面，
     // 借 HomeScreenModel 现成的歌单动作（播放 / 队列 / 下载 / 分享 / 删除或取消收藏）：
     // 与侧栏、歌单详情页共用「先取详情再拿曲目」的那条取数路径。
-    // ⚠️ 用 `remember` 而不是 `rememberScreenModel`：后者按类型键控、会与本页的
-    // UserProfileModel 抢槽位（Voyager 一个 Screen 只保留一个同名模型）。
-    val playlistActions = remember { cp.player.app.ui.model.HomeScreenModel(loadDiscovery = false) }
+    // ⚠️ 不能用 `remember { HomeScreenModel(...) }`：Voyager 的 ScreenModel 只有在
+    // `rememberScreenModel` 托管时才会被 dispose，直接 remember 会让它的
+    // screenModelScope 永久留在全局表里。这里用页面自己的 scope 托管纯 Presenter。
+    val playlistActions = remember(scope) {
+        cp.player.app.presentation.home.HomePresenter(
+            scope = scope,
+            loadDiscovery = false,
+            notify = UiEvents::notify,
+        )
+    }
     var playlistOptionsTarget by remember {
         mutableStateOf<cp.player.core.music.PlaylistSummary?>(null)
     }
@@ -190,7 +166,9 @@ private fun UserProfileContent(
     var addToPlaylistTrack by remember { mutableStateOf<TrackSummary?>(null) }
     var showInfoTarget by remember { mutableStateOf<TrackSummary?>(null) }
 
-    LaunchedEffect(uid) { model.load(uid, displayName, strings = s) }
+    LaunchedEffect(uid, sourceGeneration, accountGeneration, playlistGeneration) {
+        model.reload(uid, displayName, strings = s)
+    }
 
     val bundle = state.bundle
     val songs = bundle?.songs.orEmpty()
@@ -285,7 +263,7 @@ private fun UserProfileContent(
                                         scope.launch { AppModel.playback.playQueue(mediaIds, index) }
                                     },
                                     onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
-                                        { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
+                                        { navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId", title = "${track.name} - MV")) }
                                     },
                                     isFavorite = track.id in likedIds,
                                     onToggleFavorite = {
@@ -340,7 +318,7 @@ private fun UserProfileContent(
                                 val album = bundle.albums[index]
                                 AlbumCoverCard(
                                     album = album,
-                                    onClick = { navigator.push(AlbumDetailScreen(album.id, album)) },
+                                    onClick = { navigator.push(AppRoute.AlbumDetail(album.id, album)) },
                                 )
                             }
                         }
@@ -357,15 +335,46 @@ private fun UserProfileContent(
                     }
                     items(bundle.playlists.size, key = { "pl-${bundle.playlists[it].resourceId}" }) { index ->
                         val playlist = bundle.playlists[index]
+                        val owner = playlistActions.isPlaylistOwner(playlist)
+                        val askDelete: () -> Unit = {
+                            confirm.request(
+                                title = if (owner) s.library.deletePlaylist else s.library.unfavoritePlaylist,
+                                message = if (owner) {
+                                    s.library.deletePlaylistMessage(playlist.name)
+                                } else {
+                                    s.library.unfavoritePlaylistMessage(playlist.name)
+                                },
+                                confirmLabel = if (owner) s.common.confirm else s.library.unfavoritePlaylist,
+                                destructive = owner,
+                                onConfirm = { playlistActions.deleteOrUnsubscribePlaylist(playlist, s) },
+                            )
+                        }
+                        val menuActions = if (playlistActions.isServerPlaylist(playlist)) {
+                            cp.player.app.ui.component.PlaylistMenuActions(
+                                isOwner = owner,
+                                isFavorite = true,
+                                onPlay = { playlistActions.playPlaylist(playlist, s) },
+                                onAddToQueue = { playlistActions.queuePlaylist(playlist, s) },
+                                onDownload = { playlistActions.downloadPlaylist(playlist, s) },
+                                onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
+                                onToggleFavorite = if (!owner) askDelete else null,
+                                onDelete = if (owner) askDelete else null,
+                            )
+                        } else {
+                            null
+                        }
                         PlaylistItem(
                             playlist = playlist,
                             isOwner = isMe,
-                            modifier = Modifier.animateItem(),
-                            onClick = { navigator.push(PlaylistDetailScreen(playlist)) },
+                            // 歌单卡片行距 4dp；同一列表里的歌曲行仍是全局 2dp，
+                            // 所以这里用 padding 补足差额而不是改整个列表的 arrangement。
+                            modifier = Modifier.animateItem().padding(vertical = 1.dp),
+                            onClick = { navigator.push(AppRoute.PlaylistDetail(playlist)) },
                             // 点击弹歌单动作菜单（原先传的是空 lambda，按钮画得出来、
                             // 点下去毫无反应）。isOwner 跟着 isMe 走：在自己主页上才有
                             // 「删除歌单」，看别人的主页只有「取消收藏」。
                             onOptionsClick = { playlistOptionsTarget = playlist },
+                            menuActions = menuActions,
                         )
                     }
                 }
@@ -406,72 +415,33 @@ private fun UserProfileContent(
                 // 与侧栏 / 歌单详情页同一条规则：删除用通用「确定」，取消收藏直接点出动作。
                 confirmLabel = if (owner) s.common.confirm else s.library.unfavoritePlaylist,
                 destructive = owner,
-                onConfirm = { playlistActions.deleteOrUnsubscribePlaylist(playlist) },
+                onConfirm = { playlistActions.deleteOrUnsubscribePlaylist(playlist, s) },
             )
         }
-        val menuItems = if (playlistActions.isServerPlaylist(playlist)) {
-            cp.player.app.ui.component.playlistContextMenuItems(
-                cp.player.app.ui.component.PlaylistMenuActions(
-                    isOwner = owner,
-                    onPlay = {
-                        playlistActions.playPlaylist(playlist)
-                        playlistOptionsTarget = null
-                    },
-                    onAddToQueue = {
-                        playlistActions.queuePlaylist(playlist)
-                        playlistOptionsTarget = null
-                    },
-                    onDownload = {
-                        playlistActions.downloadPlaylist(playlist)
-                        playlistOptionsTarget = null
-                    },
-                    onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
-                    // 收藏状态不在这里查（要额外一次请求），所以菜单不提供「收藏歌单」；
-                    // 取消收藏走 [onDelete] 那一支的「删除歌单 / 取消收藏」——
-                    // 与侧栏同一条规则：owner 删除、非 owner 取消收藏。
-                    // 两者都先弹确认：删掉自己建的歌单不可恢复。
-                    onDelete = askDelete,
-                )
-            )
-        } else {
-            emptyList()
-        }
-        val windowChromeActive = cp.player.app.ui.component.LocalWindowChromeActive.current
-        if (windowChromeActive && menuItems.isNotEmpty()) {
-            Box(Modifier.fillMaxSize()) {
-                androidx.compose.material3.DropdownMenu(
-                    expanded = true,
-                    onDismissRequest = { playlistOptionsTarget = null },
-                ) {
-                    menuItems.forEach { item ->
-                        androidx.compose.material3.DropdownMenuItem(
-                            text = { CpText(item.label) },
-                            onClick = {
-                                playlistOptionsTarget = null
-                                item.onClick()
-                            },
-                        )
-                    }
-                }
-            }
-        } else {
-            cp.player.app.ui.component.PlaylistOptionsSheet(
-                playlistName = playlist.name,
-                isOwner = owner,
-                onDismiss = { playlistOptionsTarget = null },
-                onPlay = {
-                    playlistActions.playPlaylist(playlist)
-                    playlistOptionsTarget = null
-                },
-                onAddToQueue = {
-                    playlistActions.queuePlaylist(playlist)
-                    playlistOptionsTarget = null
-                },
-                onDelete = if (owner) askDelete else null,
-                onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
-                coverUrl = playlist.coverUrl,
-            )
-        }
+        // 桌面端的「更多 / 右键」已经由 PlaylistItem 内部的锚定菜单处理，
+        // 这里只负责触屏形态的底部弹层。
+        cp.player.app.ui.component.PlaylistOptionsSheet(
+            playlistName = playlist.name,
+            isOwner = owner,
+            onDismiss = { playlistOptionsTarget = null },
+            onPlay = {
+                playlistActions.playPlaylist(playlist, s)
+                playlistOptionsTarget = null
+            },
+            onAddToQueue = {
+                playlistActions.queuePlaylist(playlist, s)
+                playlistOptionsTarget = null
+            },
+            onDownload = {
+                playlistActions.downloadPlaylist(playlist, s)
+                playlistOptionsTarget = null
+            },
+            onDelete = if (owner) askDelete else null,
+            isFavorite = true,
+            onToggleFavorite = if (!owner) askDelete else null,
+            onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
+            coverUrl = playlist.coverUrl,
+        )
     }
 
     // 热门歌曲行尾「更多」弹层（手机 / 触屏形态）。
@@ -516,7 +486,7 @@ private fun UserProfileContent(
             onShowInfo = { showInfoTarget = track },
             onShare = { shareText(songShareText(track)) },
             onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
-                { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
+                { navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId", title = "${track.name} - MV")) }
             },
         )
     }
@@ -555,12 +525,14 @@ private fun ProfileHero(
         )
         bundle.signature?.takeIf { it.isNotBlank() }?.let { signature ->
             Spacer(Modifier.height(8.dp))
-            CpText(
-                signature,
+            // 签名是用户自己写的一句话（可能是多行），4 行之外应当能展开；
+            // 直接截断会让「他到底写了什么」永远缺失。
+            CpExpandableText(
+                text = signature.trim(),
+                collapsedMaxLines = 4,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                maxLines = 4,
                 modifier = Modifier.padding(horizontal = 24.dp),
             )
         }

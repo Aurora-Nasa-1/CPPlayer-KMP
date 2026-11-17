@@ -213,7 +213,7 @@ class SmartKaraokeLrcSynthesizerTest {
     }
 
     @Test
-    fun `completed line stays focused until next line starts without extending word highlight`() {
+    fun `completed line hands focus to next line as soon as the last word ends`() {
         val input = listOf(
             SyncedLyricLine(time = 1_000L, endTime = 2_000L, text = "说走就走"),
             SyncedLyricLine(time = 6_000L, endTime = 8_000L, text = "下一句"),
@@ -221,8 +221,8 @@ class SmartKaraokeLrcSynthesizerTest {
 
         val first = SmartKaraokeLrcSynthesizer.synthesize(input)[0]
 
-        assertEquals(6_000L, first.endTime, "行焦点应保持到下一行真正起唱")
-        assertTrue(first.words.last().endTime < first.endTime!!, "最后一字应先结束，演唱空隙不能继续扫光")
+        assertEquals(first.words.last().endTime, first.endTime, "末字结束后应立即把行焦点交给下一行")
+        assertTrue(first.endTime!! < 6_000L, "长间奏里不能一直停留在上一行")
     }
 
     @Test

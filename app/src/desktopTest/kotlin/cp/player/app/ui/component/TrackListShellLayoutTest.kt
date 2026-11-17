@@ -20,7 +20,7 @@ import cp.player.app.ui.theme.ThemeMode
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.TrackSummary
 import java.io.File
-import javax.imageio.ImageIO
+import cp.player.app.readPng
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -189,7 +189,7 @@ class TrackListShellLayoutTest {
         render("shell-wide-light", dark = false, width = 1200, height = 800) { WideShellPage() }
         render("shell-wide-dark", dark = true, width = 1200, height = 800) { WideShellPage() }
 
-        val img = ImageIO.read(File(outDir, "shell-narrow-light.png"))
+        val img = readPng(File(outDir, "shell-narrow-light.png"))
         val bg = img.getRGB(4, 4)
         val barBottom = 64 // TrackListMetrics.topBarHeight = 64dp @ density 1
 
@@ -225,7 +225,7 @@ class TrackListShellLayoutTest {
         // `surface`（页面背景）几乎同色，阈值稍高就扫不到卡片边界、只会扫到
         // 16dp 内边距之后那张粉色封面（实测 37 ≈ 20+16）—— 这个探针第一版就栽在这。
         // 深色下卡片是 `surfaceContainerHighest`，与背景的差足够大。
-        val darkImg = ImageIO.read(File(outDir, "shell-narrow-dark.png"))
+        val darkImg = readPng(File(outDir, "shell-narrow-dark.png"))
         val darkBg = darkImg.getRGB(4, 4)
         fun darkDiffers(x: Int, y: Int): Boolean {
             val rgb = darkImg.getRGB(x, y)
@@ -275,7 +275,7 @@ class TrackListShellLayoutTest {
         // 顶部不许有 chip；窄屏：内容区「主播放 → 36dp chip → 曲目」只剩一个行距。
         val chipPx = TrackListMetrics.secondaryRowHeight.value.toInt()
 
-        val wide = ImageIO.read(File(outDir, "shell-wide-light.png"))
+        val wide = readPng(File(outDir, "shell-wide-light.png"))
         val wideBg = wide.getRGB(4, 4)
         fun wideDiffers(x: Int, y: Int): Boolean {
             val rgb = wide.getRGB(x, y)

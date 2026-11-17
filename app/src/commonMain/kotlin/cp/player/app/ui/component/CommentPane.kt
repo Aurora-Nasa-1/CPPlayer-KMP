@@ -52,15 +52,14 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.navigator.LocalNavigator
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
+import cp.player.app.presentation.navigation.AppRoute
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.model.CommentFloorUi
 import cp.player.app.ui.model.CommentScreenModel
 import cp.player.app.ui.model.CommentSort
 import cp.player.app.ui.model.CommentUiState
-import cp.player.app.ui.screen.UserProfileScreen
-import cp.player.app.ui.util.pushOrNotify
 import cp.player.core.music.COMMENT_MAX_LENGTH
 import cp.player.core.music.Comment
 
@@ -92,6 +91,7 @@ fun CommentPane(
         CommentSortRow(
             selected = state.sortType,
             totalCount = state.totalCount,
+            sortTypes = state.visibleSortTypes,
             onSelect = model::setSort,
         )
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -124,14 +124,19 @@ fun CommentPane(
 }
 
 @Composable
-private fun CommentSortRow(selected: Int, totalCount: Long, onSelect: (Int) -> Unit) {
+private fun CommentSortRow(
+    selected: Int,
+    totalCount: Long,
+    sortTypes: List<Int>,
+    onSelect: (Int) -> Unit,
+) {
     val s = cpStrings().social.comment
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        CommentSort.ALL.forEach { sort ->
+        sortTypes.forEach { sort ->
             CpToggleChip(
                 checked = selected == sort,
                 onCheckedChange = { onSelect(sort) },
@@ -285,10 +290,10 @@ private fun FloorSection(comment: Comment, floor: CommentFloorUi?, model: Commen
 @Composable
 private fun CommentBody(comment: Comment, model: CommentScreenModel, compact: Boolean = false) {
     val s = cpStrings().social.comment
-    val navigator = LocalNavigator.current
+    val navigator = LocalAppNavigator.current
     val onUserClick: (() -> Unit)? = remember(navigator, comment.userId) {
-        if (navigator == null || comment.userId <= 0L) null
-        else { { navigator.pushOrNotify(UserProfileScreen(comment.userId, comment.user)) } }
+        if (comment.userId <= 0L) null
+        else { { navigator.push(AppRoute.UserProfile(comment.userId, comment.user)) } }
     }
     Row(Modifier.fillMaxWidth()) {
         AsyncImage(

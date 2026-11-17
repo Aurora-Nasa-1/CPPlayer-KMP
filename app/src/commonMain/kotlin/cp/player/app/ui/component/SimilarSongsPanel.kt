@@ -46,11 +46,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.util.resized
 import cp.player.core.BackendResult
 import cp.player.core.music.CPMediaId
 import cp.player.core.music.TrackSummary
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
@@ -85,12 +87,18 @@ fun SimilarSongsPanel(
     var unsupported by remember { mutableStateOf(false) }
     var tracks by remember { mutableStateOf<List<TrackSummary>>(emptyList()) }
     var fetchedFor by remember { mutableStateOf<String?>(null) }
+    var activeSeed by remember { mutableStateOf(seed) }
     var refreshToken by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
+    val visibleTracks = tracks.takeIf { fetchedFor == seed }.orEmpty()
+    val visibleError = errorMessage.takeIf { fetchedFor == seed }
+    val visibleUnsupported = unsupported && fetchedFor == seed
     val isDark = LocalIsDarkTheme.current
+    val s = cpStrings()
     val toMediaId = { id: String -> AppModel.toMediaId(id) }
 
     LaunchedEffect(seed, refreshToken) {
+        activeSeed = seed
         if (seed.isBlank()) return@LaunchedEffect
         val alreadyFetched = fetchedFor == seed &&
             (tracks.isNotEmpty() || errorMessage != null || unsupported)
@@ -99,9 +107,23 @@ fun SimilarSongsPanel(
         errorMessage = null
         unsupported = false
         val result = try {
-            AppModel.musicRepository.getSimilarSongs(seed)
+            AppModel.musicRepository.getSimilarSongs(seed, onRefresh = { refreshed ->
+                val updated = (refreshed as? BackendResult.Success)?.data
+                if (updated != null) {
+                    scope.launch {
+                        if (activeSeed == seed) {
+                            tracks = updated
+                            fetchedFor = seed
+                            errorMessage = null
+                            unsupported = false
+                        }
+                    }
+                }
+            })
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
-            BackendResult.Error(e.message ?: "获取相似歌曲失败", cause = e)
+            BackendResult.Error(e.message ?: s.player.similarLoadFailed, cause = e)
         }
         when (result) {
             is BackendResult.Success -> {
@@ -141,7 +163,7 @@ fun SimilarSongsPanel(
                     ) {
                         Icon(
                             Icons.Filled.Close,
-                            contentDescription = "返回",
+                            contentDescription = s.common.back,
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(20.dp),
                         )
@@ -164,14 +186,18 @@ fun SimilarSongsPanel(
                 }
                 Column {
                     CpText(
-                        "相似歌曲",
+                        s.player.similarSongs,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                     )
                     CpText(
-                        if (tracks.isNotEmpty()) "${tracks.size} 首相似好歌 · 点击即播" else "基于在播歌曲探索推荐",
+                        if (visibleTracks.isNotEmpty()) {
+                            s.player.similarCount(visibleTracks.size)
+                        } else {
+                            s.player.similarEmptyNote
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -179,12 +205,12 @@ fun SimilarSongsPanel(
                 }
             }
 
-            if (tracks.isNotEmpty()) {
+            if (visibleTracks.isNotEmpty()) {
                 Surface(
                     onClick = {
                         scope.launch {
                             AppModel.playback.playQueue(
-                                tracks.map { toMediaId(it.id) },
+                                visibleTracks.map { toMediaId(it.id) },
                                 startIndex = 0,
                             )
                         }
@@ -204,7 +230,7 @@ fun SimilarSongsPanel(
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                         CpText(
-                            "全部播放",
+                            s.library.playAll,
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -218,31 +244,35 @@ fun SimilarSongsPanel(
 
         when {
             // 拉取中且还没有旧数据：整页 loading。
-            loading && tracks.isEmpty() -> {
+            loading && visibleTracks.isEmpty() -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CpLoadingIndicator(Modifier.size(40.dp))
                 }
             }
-            unsupported -> {
+            visibleUnsupported -> {
                 PanelMessage(
-                    title = "当前音源暂不支持相似歌曲",
-                    message = "切换到支持该功能的音源后再试试",
+                    title = s.player.similarUnsupported,
+                    message = s.player.similarUnsupportedNote,
                 )
             }
-            errorMessage != null && tracks.isEmpty() -> {
+            visibleError != null && visibleTracks.isEmpty() -> {
                 PanelMessage(
-                    title = "获取相似歌曲失败",
-                    message = errorMessage,
+                    title = s.player.similarLoadFailed,
+                    message = visibleError,
                 ) {
                     Button(onClick = { refreshToken++ }, modifier = Modifier.padding(top = 16.dp)) {
-                        CpText("重试")
+                        CpText(s.player.retry)
                     }
                 }
             }
-            tracks.isEmpty() && (fetchedFor == seed || seed.isBlank()) -> {
+            visibleTracks.isEmpty() && (fetchedFor == seed || seed.isBlank()) -> {
                 PanelMessage(
-                    title = if (seed.isBlank()) "没有正在播放的歌曲" else "没有找到相似歌曲",
-                    message = if (seed.isBlank()) "播放一首歌后再来看相似推荐" else "换一首歌再试试",
+                    title = if (seed.isBlank()) s.player.similarNothingPlaying else s.player.similarNoMatch,
+                    message = if (seed.isBlank()) {
+                        s.player.similarNothingPlayingNote
+                    } else {
+                        s.player.similarNoMatchNote
+                    },
                 )
             }
             else -> {
@@ -250,14 +280,14 @@ fun SimilarSongsPanel(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    itemsIndexed(tracks, key = { _, item -> item.id }) { index, item ->
+                    itemsIndexed(visibleTracks, key = { _, item -> item.id }) { index, item ->
                         val playingSeed = item.id == seed
                         Surface(
                             onClick = {
                                 CoverFlight.play(item.id, item.coverUrl)
                                 AppModel.playTrackClicked(toMediaId(item.id)) {
                                     AppModel.playback.playQueue(
-                                        tracks.map { toMediaId(it.id) },
+                                        visibleTracks.map { toMediaId(it.id) },
                                         startIndex = index,
                                     )
                                 }
@@ -285,7 +315,7 @@ fun SimilarSongsPanel(
                                         ) {
                                             Icon(
                                                 Icons.Filled.GraphicEq,
-                                                contentDescription = "当前播放",
+                                                contentDescription = s.player.nowPlaying,
                                                 tint = androidx.compose.ui.graphics.Color.White,
                                                 modifier = Modifier.size(20.dp),
                                             )
@@ -322,7 +352,7 @@ fun SimilarSongsPanel(
                                 ) {
                                     Icon(
                                         Icons.AutoMirrored.Filled.QueueMusic,
-                                        contentDescription = "下一首播放",
+                                        contentDescription = s.contextMenu.playNext,
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(18.dp),
                                     )

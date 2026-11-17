@@ -216,4 +216,27 @@ class PlaybackControllerPreloadTest {
         )
         c.release()
     }
+
+    @Test
+    fun `gapless capable engine queues remote URL directly without redundant disk preload`() = runBlocking {
+        val platform = FakePlatformPlayer().apply { gapless = true }
+        val source = FakePreloadSource()
+        val localizer = FakeLocalizer()
+        val c = PlaybackControllerImpl(
+            platform = platform,
+            source = source,
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            streamLocalizer = localizer,
+        )
+
+        c.setQuality("lossless")
+        c.playQueue(listOf("netease://song/1", "netease://song/2"), startIndex = 0)
+        delay(2000)
+
+        // 验证远端 URL 进入队列，且没有触发本地落盘以避免双重网络请求
+        assertEquals(1, platform.queued.size)
+        assertEquals("https://cdn/netease://song/2", platform.queued.single().second)
+        assertTrue(localizer.preloadedKeys.isEmpty(), "gapless 开启时远端流应直接由原生引擎预缓冲，不应触发冗余本地落盘")
+        c.release()
+    }
 }

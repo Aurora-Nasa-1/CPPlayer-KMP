@@ -86,7 +86,7 @@ fun CustomCapacityDialog(
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         shape = MaterialTheme.shapes.large,
-                        placeholder = { CpText(if (isGb) "例如 10" else "例如 2048") },
+                        placeholder = { CpText(if (isGb) s.storage.customCapacityPlaceholderGb() else s.storage.customCapacityPlaceholderMb()) },
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         CpToggleChip(
@@ -103,13 +103,13 @@ fun CustomCapacityDialog(
                 }
                 if (parsedBytes != null && isValid) {
                     CpText(
-                        "设定容量：${formatBytes(parsedBytes)}",
+                        s.storage.customCapacityPreview(formatBytes(parsedBytes)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
                 } else if (textValue.isNotBlank()) {
                     CpText(
-                        "请输入有效容量（128 MB ~ 1024 GB）",
+                        s.storage.customCapacityInvalid,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -125,7 +125,7 @@ fun CustomCapacityDialog(
                     onDismiss()
                 },
             ) {
-                CpText("确定")
+                CpText(s.common.confirm)
             }
         },
         dismissButton = {
@@ -133,7 +133,7 @@ fun CustomCapacityDialog(
                 shape = MaterialTheme.shapes.large,
                 onClick = onDismiss,
             ) {
-                CpText("取消")
+                CpText(s.common.dismiss)
             }
         },
     )

@@ -4,12 +4,12 @@ import androidx.compose.runtime.Composable
 import cafe.adriel.voyager.core.screen.Screen
 
 /**
- * 歌词来源页（已与音源管理整合，默认定位至歌词来源 Tab）。
+ * 歌词来源深链：合并后的插件中心仍以「已安装」为首屏，歌词来源就在首屏内。
  */
 class LyricsPluginSettingsScreen : Screen {
 
     @Composable
     override fun Content() {
-        ProviderManagementScreen(initialTab = 1).Content()
+        PluginHubScreen(initialView = PluginHubView.INSTALLED).Content()
     }
 }

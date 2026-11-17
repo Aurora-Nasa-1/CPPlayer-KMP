@@ -207,13 +207,24 @@ class DesktopRenderTuningTest {
     // ======================== 平台默认 ========================
 
     @Test
-    fun `platform default is OPENGL on Windows and AUTO elsewhere`() {
-        val expected = if (DesktopRenderTuning.isWindows) Backend.OPENGL else Backend.AUTO
+    fun `platform default is DIRECT3D on Windows and AUTO elsewhere`() {
+        val expected = if (DesktopRenderTuning.isWindows) Backend.DIRECT3D else Backend.AUTO
+        assertEquals(expected, DesktopRenderTuning.platformDefaultBackend())
+    }
+
+    @Test
+    fun `platform default vsync is disabled on Windows and untouched elsewhere`() {
         assertEquals(
-            expected,
-            DesktopRenderTuning.platformDefaultBackend(),
-            "Windows 上未做选择时应默认 OpenGL（VRR 闪烁的规避），其余平台交给 Skiko",
+            if (DesktopRenderTuning.isWindows) false else null,
+            DesktopRenderTuning.platformDefaultVsyncOverride(),
         )
+    }
+
+    @Test
+    fun `stored vsync wins over platform default`() {
+        assertEquals(false, DesktopRenderTuning.resolveVsyncOverride(stored = null, platformDefault = false))
+        assertEquals(true, DesktopRenderTuning.resolveVsyncOverride(stored = true, platformDefault = false))
+        assertNull(DesktopRenderTuning.resolveVsyncOverride(stored = null, platformDefault = null))
     }
 
     // ======================== 持久化回落（只读） ========================

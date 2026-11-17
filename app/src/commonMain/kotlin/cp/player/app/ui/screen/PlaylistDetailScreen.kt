@@ -40,22 +40,19 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkAdd
-import androidx.compose.material.icons.filled.BookmarkRemove
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material3.AlertDialog
@@ -93,13 +90,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.platform.BackHandler
 import cp.player.app.platform.shareText
 import cp.player.app.ui.anim.CoverFlight
@@ -111,11 +108,12 @@ import cp.player.app.ui.component.AppScaffold
 import cp.player.app.ui.component.CpActionButtonGroup
 import cp.player.app.ui.component.CpActionGroupItem
 import cp.player.app.ui.component.CpAnchoredMenu
+import cp.player.app.ui.component.CpAutoSizeText
 import cp.player.app.ui.component.CpBackButton
 import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpContextMenu
 import cp.player.app.ui.component.CpContextMenuItem
-import cp.player.app.ui.component.CpContextMenuSeparator
+import cp.player.app.ui.component.CpExpandableText
 import cp.player.app.ui.component.LocalWindowChromeActive
 import cp.player.app.ui.component.CpSplitButton
 import cp.player.app.ui.component.CpTwoPane
@@ -125,7 +123,9 @@ import cp.player.app.ui.component.CpPlaylistHeroSkeleton
 import cp.player.app.ui.component.CpSongRowSkeleton
 import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.PlaylistOptionsSheet
+import cp.player.app.ui.component.PlaylistMenuActions
 import cp.player.app.ui.component.PlaylistPickerSheet
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.SongOptionsSheet
@@ -134,13 +134,13 @@ import cp.player.app.ui.component.TopBarAction
 import cp.player.app.ui.component.CpTopBarActionButton
 import cp.player.app.ui.component.cpBounceClickable
 import cp.player.app.ui.component.playlistShareText
+import cp.player.app.ui.component.playlistContextMenuItems
 import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.model.PlaylistDetailScreenModel
 import cp.player.app.ui.model.PlaylistDetailUiState
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatTimeMs
-import cp.player.app.ui.util.popOrNotify
 import cp.player.app.ui.util.resized
 import cp.player.core.BackendResult
 import cp.player.core.music.CPMediaId
@@ -148,6 +148,7 @@ import cp.player.core.music.PlaylistTracksPage
 import cp.player.core.music.SongDetailInfo
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.TrackSummary
+import cp.player.core.music.isCloudDrive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -183,7 +184,7 @@ fun PlaylistDetailContent(
     loadingOverride: Boolean = false,
 ) {
     val s = cpStrings()
-    val navigator = LocalNavigator.currentOrThrow
+    val navigator = LocalAppNavigator.current
     val state by model.state.collectAsState()
     val playbackState by AppModel.playback.state.collectAsState()
     // TrackSummary.id 可能被解析成带命名空间的 mediaId；歌单行保存的是裸 id。
@@ -197,6 +198,7 @@ fun PlaylistDetailContent(
     var showRenameDialog by remember { mutableStateOf(false) }
     var showSaveDailyDialog by remember { mutableStateOf(false) }
     val isDailyRecommend = playlist.id == -101L || (isLocalPlaylist && playlist.name == "每日推荐")
+    val isCloudDrive = playlist.isCloudDrive
     var optionsTarget by remember { mutableStateOf<TrackSummary?>(null) }
     var showInfoTarget by remember { mutableStateOf<TrackSummary?>(null) }
     var addToPlaylistIds by remember { mutableStateOf<List<String>?>(null) }
@@ -221,7 +223,7 @@ fun PlaylistDetailContent(
     // 曲目已随导航传入，必须跳过远端加载，否则接口 404 会让详情页只剩空白。
     LaunchedEffect(playlist.resourceId, isLocalPlaylist) {
         if (isLocalPlaylist) model.loadLocal(playlist, initialOverrideTracks.orEmpty(), loadingOverride)
-        else model.load(playlist)
+        else model.load(playlist, s)
     }
 
     // 曲目就绪后从 autoPlayIndex 开始播放（为 null 时只浏览不播放）。
@@ -259,20 +261,33 @@ fun PlaylistDetailContent(
     val totalDurationMs = remember(state.tracks) { state.tracks.sumOf { it.durationMs } }
     val summary = state.summary ?: playlist
     // 虚拟歌单没有"创建者"概念，一律按非本人处理，避免出现删除 / 添加等必然失败的操作
-    val isOwner = !isLocalPlaylist && model.isOwner()
+    val isOwner = !isLocalPlaylist && !isCloudDrive && model.isOwner()
     val trackCount = if (state.tracks.isNotEmpty()) state.tracks.size
         else (state.summary?.trackCount ?: playlist.trackCount)
     val durationStr = if (state.tracks.isEmpty()) "…" else formatTimeMs(totalDurationMs)
 
-    // "添加"按钮：仅创建者可向歌单导入歌曲
-    val openAddSongs: () -> Unit = {
+    // "添加"按钮：仅创建者可向歌单导入歌曲；云盘不是歌单，没有"向云盘导入"这个动作。
+    val openAddSongs: (() -> Unit)? = if (isCloudDrive) null else {
+        {
         if (isOwner) showAddSongsOptions = true
         else UiEvents.notify(s.library.creatorOnlyHint)
+        }
     }
 
     val togglePlaylistFavorite: () -> Unit = {
         if (isDailyRecommend) showSaveDailyDialog = true
-        else model.togglePlaylistFavorite()
+        else model.togglePlaylistFavorite(s)
+    }
+
+    // 云盘单曲删除（破坏性，走统一确认）。
+    val confirmDeleteCloudTrack: (TrackSummary) -> Unit = { track ->
+        confirm.request(
+            title = s.account.cloudDelete,
+            message = s.account.cloudDeleteMessage(track.name),
+            confirmLabel = s.account.cloudDelete,
+            destructive = true,
+            onConfirm = { model.removeTracks(listOf(track.id), s) },
+        )
     }
 
     // 「删除歌单 / 取消收藏」的统一确认入口
@@ -286,7 +301,7 @@ fun PlaylistDetailContent(
             },
             confirmLabel = if (isOwner) s.common.confirm else s.library.unfavoritePlaylist,
             destructive = isOwner,
-            onConfirm = { model.deleteOrUnsubscribe { navigator.popOrNotify() } },
+            onConfirm = { model.deleteOrUnsubscribe(s) { navigator.pop() } },
         )
     }
 
@@ -296,10 +311,10 @@ fun PlaylistDetailContent(
             SongMenuActions(
                 onPlay = { model.playAt(index) },
                 onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
-                    { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
+                    { navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId", title = "${track.name} - MV")) }
                 },
                 isFavorite = model.isLiked(track.id),
-                onToggleFavorite = { model.toggleLike(track) },
+                onToggleFavorite = { model.toggleLike(track, s) },
                 onAddToQueue = {
                     scope.launch {
                         AppModel.playback.addToQueue("${AppModel.activeProviderId()}://song/${track.id}")
@@ -317,13 +332,26 @@ fun PlaylistDetailContent(
                 onAddToPlaylist = { addToPlaylistIds = listOf(track.id) },
                 onShare = { shareText(songShareText(track)) },
                 onShowInfo = { showInfoTarget = track },
+                onDelete = if (isCloudDrive) {
+                    { confirmDeleteCloudTrack(track) }
+                } else {
+                    null
+                },
+                deleteLabel = if (isCloudDrive) s.account.cloudDelete else null,
             )
         )
     }
 
-    // 桌面端歌单动作菜单
-    val playlistMenu: List<CpContextMenuItem>? = if (isLocalPlaylist && !isDailyRecommend) null else buildList {
-        if (isDailyRecommend) {
+    // 桌面端歌单动作菜单：与手机弹层、搜索 / 曲库共用同一份动作定义。
+    val playlistMenu: List<CpContextMenuItem>? = when {
+        isLocalPlaylist && !isDailyRecommend -> null
+        isCloudDrive -> buildList {
+            add(CpContextMenuItem(s.common.refresh, Icons.Filled.Refresh, onClick = { model.refresh(s) }))
+            add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, onClick = { model.playAll() }))
+            add(CpContextMenuItem(s.library.addToQueue, Icons.AutoMirrored.Filled.QueueMusic, onClick = { model.queueAll(s) }))
+            add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, onClick = { AppModel.downloadTracks(displayTracks) }))
+        }
+        isDailyRecommend -> buildList {
             add(
                 CpContextMenuItem(
                     if (playlistFavorite) "重新转为歌单" else "一键转歌单",
@@ -331,59 +359,51 @@ fun PlaylistDetailContent(
                     onClick = { showSaveDailyDialog = true },
                 )
             )
-            add(CpContextMenuItem(s.common.refresh, Icons.Filled.Refresh, onClick = { model.refresh() }))
+            add(CpContextMenuItem(s.common.refresh, Icons.Filled.Refresh, onClick = { model.refresh(s) }))
             add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, onClick = { model.playAll() }))
-            add(CpContextMenuItem(s.library.addToQueue, Icons.Filled.QueueMusic, onClick = { model.queueAll() }))
+            add(CpContextMenuItem(s.library.addToQueue, Icons.AutoMirrored.Filled.QueueMusic, onClick = { model.queueAll(s) }))
             add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, onClick = { AppModel.downloadTracks(displayTracks) }))
-        } else {
-            add(CpContextMenuItem(s.common.refresh, Icons.Filled.Refresh, onClick = { model.refresh() }))
-            add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, onClick = { model.playAll() }))
-            add(CpContextMenuItem(s.library.addToQueue, Icons.Filled.QueueMusic, onClick = { model.queueAll() }))
-            add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, onClick = { AppModel.downloadTracks(displayTracks) }))
-            add(CpContextMenuSeparator)
-            add(CpContextMenuItem(s.library.sharePlaylist, Icons.Filled.Share, onClick = {
-                shareText(playlistShareText(playlist.resourceId, summary.name))
-            }))
-            if (!isOwner) {
-                add(
-                    CpContextMenuItem(
-                        if (playlistFavorite) s.library.unfavoritePlaylist else s.library.favoritePlaylist,
-                        if (playlistFavorite) Icons.Filled.BookmarkRemove else Icons.Filled.BookmarkAdd,
-                        onClick = togglePlaylistFavorite,
-                    )
-                )
-            }
-            if (isOwner) {
-                add(
-                    CpContextMenuItem(
-                        s.library.renamePlaylist, Icons.Filled.Edit,
-                        onClick = { showRenameDialog = true },
-                    )
-                )
-                add(
-                    CpContextMenuItem(
-                        s.library.deletePlaylist, Icons.Filled.Delete,
-                        onClick = confirmDeletePlaylist,
-                        danger = true,
-                    )
-                )
-            }
         }
+        else -> playlistContextMenuItems(
+            PlaylistMenuActions(
+                isOwner = isOwner,
+                isFavorite = playlistFavorite,
+                onRefresh = { model.refresh(s) },
+                onPlay = { model.playAll() },
+                onAddToQueue = { model.queueAll(s) },
+                onDownload = { AppModel.downloadTracks(displayTracks) },
+                onShare = {
+                    shareText(playlistShareText(playlist.resourceId, summary.name))
+                },
+                onToggleFavorite = if (!isOwner) togglePlaylistFavorite else null,
+                onRename = if (isOwner) {
+                    { showRenameDialog = true }
+                } else {
+                    null
+                },
+                onDelete = if (isOwner) confirmDeletePlaylist else null,
+            )
+        )
     }
 
     // 多选工具条的「从歌单移除」
     val confirmRemoveTracks: (List<String>) -> Unit = { ids ->
         if (ids.isNotEmpty()) {
             confirm.request(
-                title = s.library.removeFromPlaylist,
-                message = "${s.library.removeSelectedMessage(summary.name, ids.size)}",
-                confirmLabel = s.library.removeSelected,
-                onConfirm = { model.removeTracks(ids) },
+                title = if (isCloudDrive) s.account.cloudDelete else s.library.removeFromPlaylist,
+                message = if (isCloudDrive) {
+                    s.account.cloudDeleteManyMessage(ids.size)
+                } else {
+                    s.library.removeSelectedMessage(summary.name, ids.size)
+                },
+                confirmLabel = if (isCloudDrive) s.account.cloudDelete else s.library.removeSelected,
+                destructive = isCloudDrive,
+                onConfirm = { model.removeTracks(ids, s) },
             )
         }
     }
 
-    val onSharePlaylist: (() -> Unit)? = if (isLocalPlaylist) null else {
+    val onSharePlaylist: (() -> Unit)? = if (isLocalPlaylist || isCloudDrive) null else {
         { shareText(playlistShareText(playlist.resourceId, summary.name)) }
     }
 
@@ -405,10 +425,12 @@ fun PlaylistDetailContent(
                 durationStr = durationStr,
                 currentTrackId = currentTrackId,
                 isOwner = isOwner,
+                isCloudDrive = isCloudDrive,
+                canDeleteTracks = isOwner || isCloudDrive,
                 isFavorite = playlistFavorite,
                 onToggleFavorite = if (isDailyRecommend) {
                     { showSaveDailyDialog = true }
-                } else if (!isOwner && !isLocalPlaylist) togglePlaylistFavorite else null,
+                } else if (!isOwner && !isLocalPlaylist && !isCloudDrive) togglePlaylistFavorite else null,
                 onShare = onSharePlaylist,
                 onDelete = if (isOwner) confirmDeletePlaylist else null,
                 searchQuery = inPlaylistSearchQuery,
@@ -419,7 +441,7 @@ fun PlaylistDetailContent(
                     if (!isSearchActive) inPlaylistSearchQuery = ""
                 },
                 showBackButton = canShowInlineBack,
-                onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.popOrNotify() },
+                onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.pop() },
                 onSongOptions = { optionsTarget = it },
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
                 onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
@@ -441,10 +463,12 @@ fun PlaylistDetailContent(
                 durationStr = durationStr,
                 currentTrackId = currentTrackId,
                 isOwner = isOwner,
+                isCloudDrive = isCloudDrive,
+                canDeleteTracks = isOwner || isCloudDrive,
                 isFavorite = playlistFavorite,
                 onToggleFavorite = if (isDailyRecommend) {
                     { showSaveDailyDialog = true }
-                } else if (!isOwner && !isLocalPlaylist) togglePlaylistFavorite else null,
+                } else if (!isOwner && !isLocalPlaylist && !isCloudDrive) togglePlaylistFavorite else null,
                 onShare = onSharePlaylist,
                 onDelete = if (isOwner) confirmDeletePlaylist else null,
                 searchQuery = inPlaylistSearchQuery,
@@ -454,7 +478,7 @@ fun PlaylistDetailContent(
                     isSearchActive = !isSearchActive
                     if (!isSearchActive) inPlaylistSearchQuery = ""
                 },
-                onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.popOrNotify() },
+                onBack = { if (embedded) onEmbeddedBack?.invoke() else navigator.pop() },
                 onSongOptions = { optionsTarget = it },
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
                 onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
@@ -475,10 +499,12 @@ fun PlaylistDetailContent(
             isOwner = isOwner,
             onDismiss = { showPlaylistSheet = false },
             onPlay = { model.playAll() },
-            onAddToQueue = { model.queueAll() },
-            onRefresh = if (isLocalPlaylist && !isDailyRecommend) null else { { model.refresh() } },
+            onAddToQueue = { model.queueAll(s) },
+            onDownload = { AppModel.downloadTracks(displayTracks) },
+            onRefresh = if (isLocalPlaylist && !isDailyRecommend) null else { { model.refresh(s) } },
             onDelete = if (isOwner) confirmDeletePlaylist else null,
             onShare = onSharePlaylist,
+            statusOverride = if (isCloudDrive) s.library.cloudDrive else null,
             onRename = if (isOwner) {
                 { showRenameDialog = true }
             } else {
@@ -486,7 +512,13 @@ fun PlaylistDetailContent(
             },
             coverUrl = summary.coverUrl,
             isFavorite = playlistFavorite,
-            onToggleFavorite = if (isDailyRecommend) null else if (!isOwner && !isLocalPlaylist) togglePlaylistFavorite else null,
+            onToggleFavorite = if (isDailyRecommend || isCloudDrive) {
+                null
+            } else if (!isOwner && !isLocalPlaylist) {
+                togglePlaylistFavorite
+            } else {
+                null
+            },
             currentSort = state.sortType,
             onSortChange = { model.setSort(it) },
             onConvertToPlaylist = if (isDailyRecommend) { { showSaveDailyDialog = true } } else null,
@@ -500,7 +532,7 @@ fun PlaylistDetailContent(
             onDismiss = { showRenameDialog = false },
             onRenamed = {
                 showRenameDialog = false
-                model.refresh()
+                model.refresh(s)
             },
         )
     }
@@ -529,7 +561,7 @@ fun PlaylistDetailContent(
                 val index = displayTracks.indexOf(track)
                 if (index >= 0) model.playAt(index)
             },
-            onToggleFavorite = { model.toggleLike(track) },
+            onToggleFavorite = { model.toggleLike(track, s) },
             onAddToQueue = {
                 scope.launch {
                     AppModel.playback.addToQueue("${AppModel.activeProviderId()}://song/${track.id}")
@@ -549,8 +581,14 @@ fun PlaylistDetailContent(
                 shareText("「${track.name}」 https://music.163.com/#/song?id=${track.id}")
             },
             onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
-                { navigator.push(VideoPlayerScreen("netease://mv/$mvId", title = "${track.name} - MV")) }
+                { navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId", title = "${track.name} - MV")) }
             },
+            onDelete = if (isCloudDrive) {
+                { confirmDeleteCloudTrack(track) }
+            } else {
+                null
+            },
+            deleteLabel = if (isCloudDrive) s.account.cloudDelete else null,
             coverUrl = track.coverUrl,
         )
     }
@@ -600,7 +638,7 @@ fun PlaylistDetailContent(
             },
             onDismiss = { importSource = null },
             onAddSelected = { tracks ->
-                model.addTracks(tracks)
+                model.addTracks(tracks, s)
                 importSource = null
             },
         )
@@ -629,7 +667,7 @@ fun PlaylistDetailContent(
             initialSongs = queueTracks,
             onDismiss = { showQueueSelection = false },
             onAddSelected = { tracks ->
-                model.addTracks(tracks)
+                model.addTracks(tracks, s)
                 showQueueSelection = false
             },
         )
@@ -744,6 +782,8 @@ private fun NarrowLayout(
     durationStr: String,
     currentTrackId: String?,
     isOwner: Boolean,
+    isCloudDrive: Boolean,
+    canDeleteTracks: Boolean,
     isFavorite: Boolean,
     onToggleFavorite: (() -> Unit)?,
     onShare: (() -> Unit)?,
@@ -756,7 +796,7 @@ private fun NarrowLayout(
     onSongOptions: (TrackSummary) -> Unit,
     onOpenPlaylistSheet: () -> Unit,
     onAddSelectedToPlaylist: () -> Unit,
-    onAddTracks: () -> Unit,
+    onAddTracks: (() -> Unit)?,
     onRemoveSelected: (List<String>) -> Unit,
     buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem>,
     isDailyRecommend: Boolean = false,
@@ -791,9 +831,9 @@ private fun NarrowLayout(
                 )
                 add(
                     TopBarAction(
-                        icon = { Icon(Icons.Filled.QueueMusic, contentDescription = s.library.addToQueue) },
+                        icon = { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = s.library.addToQueue) },
                         onClick = {
-                            model.queueSelected()
+                            model.queueSelected(s)
                             model.exitSelection()
                         },
                     )
@@ -812,14 +852,23 @@ private fun NarrowLayout(
                 )
                 add(
                     TopBarAction(
-                        icon = { Icon(Icons.Filled.PlaylistAdd, contentDescription = s.player.addToPlaylist) },
+                        icon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = s.player.addToPlaylist) },
                         onClick = onAddSelectedToPlaylist,
                     )
                 )
-                if (isOwner) {
+                if (canDeleteTracks) {
                     add(
                         TopBarAction(
-                            icon = { Icon(Icons.Filled.Delete, contentDescription = s.library.removeFromPlaylist) },
+                            icon = {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    contentDescription = if (isCloudDrive) {
+                                        s.account.cloudDelete
+                                    } else {
+                                        s.library.removeFromPlaylist
+                                    },
+                                )
+                            },
                             onClick = { onRemoveSelected(state.selectedIds.toList()) },
                         )
                     )
@@ -932,7 +981,7 @@ private fun NarrowLayout(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        CpText(
+                        CpAutoSizeText(
                             text = summary.name,
                             style = if (collapsedFraction > 0.4f) {
                                 MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
@@ -940,6 +989,7 @@ private fun NarrowLayout(
                                 MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                             },
                             maxLines = if (collapsedFraction > 0.4f) 1 else 2,
+                            minFontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
                         if (coverFraction > 0.1f) {
@@ -954,7 +1004,12 @@ private fun NarrowLayout(
                                     color = MaterialTheme.colorScheme.surfaceContainerHighest,
                                 ) {
                                     CpText(
-                                        text = if (isOwner) "我创建的" else if (isFavorite) "已收藏" else "公开歌单",
+                            text = when {
+                                isCloudDrive -> s.library.cloudDrive
+                                isOwner -> "我创建的"
+                                isFavorite -> "已收藏"
+                                else -> "公开歌单"
+                            },
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -1080,6 +1135,8 @@ private fun WideLayout(
     durationStr: String,
     currentTrackId: String?,
     isOwner: Boolean,
+    isCloudDrive: Boolean,
+    canDeleteTracks: Boolean,
     isFavorite: Boolean,
     onToggleFavorite: (() -> Unit)?,
     onShare: (() -> Unit)?,
@@ -1093,7 +1150,7 @@ private fun WideLayout(
     onSongOptions: (TrackSummary) -> Unit,
     onOpenPlaylistSheet: () -> Unit,
     onAddSelectedToPlaylist: () -> Unit,
-    onAddTracks: () -> Unit,
+    onAddTracks: (() -> Unit)?,
     onRemoveSelected: (List<String>) -> Unit,
     playlistMenu: List<CpContextMenuItem>?,
     buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem>,
@@ -1169,11 +1226,12 @@ private fun WideLayout(
                     }
 
                     Spacer(Modifier.height(14.dp))
-                    CpText(
+                    CpAutoSizeText(
                         text = summary.name,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         maxLines = 2,
+                        minFontSize = 15.sp,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                     )
@@ -1224,6 +1282,17 @@ private fun WideLayout(
                     }
 
                     Spacer(Modifier.height(20.dp))
+
+                    // 2.5 歌单简介。宽栏本身可滚动 ⇒ 不截断，让用户一次读全
+                    // （窄屏为了不把曲目挤出首屏，另限 4 行，见 NarrowPlaylistHero）。
+                    CpExpandableText(
+                        text = state.description,
+                        // 左栏自身可滚动 ⇒ 不折叠，简介一次读全。
+                        collapsedMaxLines = Int.MAX_VALUE,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (!state.description.isNullOrBlank()) Spacer(Modifier.height(16.dp))
 
                     // 3. PixelPlayer 标志性非对称双胶囊主播放操作组（撑满左栏，桌面端更大）
                     M3EPlayShufflePillGroup(
@@ -1316,11 +1385,11 @@ private fun WideLayout(
                         }
                         IconButton(
                             onClick = {
-                                model.queueSelected()
+                                model.queueSelected(s)
                                 model.exitSelection()
                             },
                         ) {
-                            Icon(Icons.Filled.QueueMusic, contentDescription = s.library.addToQueue)
+                            Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = s.library.addToQueue)
                         }
                         IconButton(
                             onClick = {
@@ -1334,11 +1403,18 @@ private fun WideLayout(
                             Icon(Icons.Filled.Download, contentDescription = s.player.download)
                         }
                         IconButton(onClick = onAddSelectedToPlaylist) {
-                            Icon(Icons.Filled.PlaylistAdd, contentDescription = s.player.addToPlaylist)
+                            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = s.player.addToPlaylist)
                         }
-                        if (isOwner) {
+                        if (canDeleteTracks) {
                             IconButton(onClick = { onRemoveSelected(state.selectedIds.toList()) }) {
-                                Icon(Icons.Filled.Delete, contentDescription = s.library.removeFromPlaylist)
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    contentDescription = if (isCloudDrive) {
+                                        s.account.cloudDelete
+                                    } else {
+                                        s.library.removeFromPlaylist
+                                    },
+                                )
                             }
                         }
                     } else {
@@ -1414,7 +1490,7 @@ private fun TrackList(
     onToggleSearch: () -> Unit,
     onSongOptions: (TrackSummary) -> Unit,
     onSortClick: () -> Unit,
-    onAddTracks: () -> Unit,
+    onAddTracks: (() -> Unit)?,
     onDownloadAll: () -> Unit,
     onEnterSelection: () -> Unit,
     onMore: () -> Unit,
@@ -1454,7 +1530,7 @@ private fun TrackList(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    TextButton(onClick = { state.summary?.let { model.load(it, force = true) } }) {
+                    TextButton(onClick = { state.summary?.let { model.load(it, s, force = true) } }) {
                         CpText(s.library.retry)
                     }
                 }
@@ -1484,6 +1560,7 @@ private fun TrackList(
                         NarrowPlaylistHero(
                             summary = summary,
                             displayTracks = allTracks,
+                            description = state.description,
                             isOwner = isOwner,
                             isFavorite = isFavorite,
                             onToggleFavorite = onToggleFavorite,
@@ -1520,7 +1597,7 @@ private fun TrackList(
 
                 itemsIndexed(items = displayTracks, key = { _, track -> track.id }) { index, track ->
                     if (index >= displayTracks.size - 5 && state.hasMore && !state.fetchingMore && state.loadMoreError == null) {
-                        LaunchedEffect(index) { model.loadMore() }
+                        LaunchedEffect(index) { model.loadMore(s) }
                     }
                     SongItem(
                         track = track,
@@ -1558,10 +1635,18 @@ private fun TrackList(
                             ) {
                                 CpText(
                                     if (searchQuery.isNotBlank()) "未在歌单中找到与“$searchQuery”匹配的歌曲"
+                                    else if (summary.isCloudDrive) s.account.cloudEmpty
                                     else s.library.playlistEmpty,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                                if (summary.isCloudDrive && searchQuery.isBlank()) {
+                                    CpText(
+                                        s.account.cloudEmptyNote,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                                 if (searchQuery.isNotBlank()) {
                                     TextButton(onClick = { onSearchQueryChange("") }) {
                                         CpText("清空搜索")
@@ -1585,7 +1670,7 @@ private fun TrackList(
                     Surface(
                         onClick = {
                             model.clearLoadMoreError()
-                            model.loadMore()
+                            model.loadMore(s)
                         },
                         shape = MaterialTheme.shapes.large,
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -1625,6 +1710,7 @@ private fun TrackList(
 private fun NarrowPlaylistHero(
     summary: PlaylistSummary,
     displayTracks: List<TrackSummary>,
+    description: String?,
     isOwner: Boolean,
     isFavorite: Boolean,
     onToggleFavorite: (() -> Unit)?,
@@ -1638,7 +1724,7 @@ private fun NarrowPlaylistHero(
     onSortClick: () -> Unit,
     onPlayAll: () -> Unit,
     onShuffle: () -> Unit,
-    onAdd: () -> Unit,
+    onAdd: (() -> Unit)?,
     onDownloadAll: () -> Unit,
     onEnterSelection: () -> Unit,
     onMore: () -> Unit,
@@ -1682,6 +1768,15 @@ private fun NarrowPlaylistHero(
             onSaveDailyToPlaylist = onSaveDailyToPlaylist,
             useFlowLayout = true,
             modifier = Modifier.fillMaxWidth(),
+        )
+
+        // 3. 歌单简介：首屏只留 4 行，避免把曲目列表挤到屏幕外；超出时
+        // 「查看全部」可展开 —— 简介是唯一无法从别处得到的说明文字。
+        CpExpandableText(
+            text = description.orEmpty(),
+            collapsedMaxLines = 4,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         )
     }
 }
@@ -1900,7 +1995,7 @@ private fun AdaptiveSecondaryActionsFlow(
 @Composable
 private fun M3ESecondaryActionsRail(
     isOwner: Boolean,
-    onAdd: () -> Unit,
+    onAdd: (() -> Unit)?,
     isFavorite: Boolean,
     onToggleFavorite: (() -> Unit)?,
     onShare: (() -> Unit)?,
@@ -1927,12 +2022,12 @@ private fun M3ESecondaryActionsRail(
 ) {
     val items = buildList {
         // 1. 添加歌曲（虚拟每日推荐无添加歌曲操作）
-        if (!isDailyRecommend) {
+        if (!isDailyRecommend && onAdd != null) {
             add(
                 SecondaryActionItem(
                     id = "add",
                     label = "添加",
-                    icon = Icons.Filled.PlaylistAdd,
+                    icon = Icons.AutoMirrored.Filled.PlaylistAdd,
                     onClick = onAdd,
                 )
             )

@@ -215,6 +215,12 @@ interface ExtendedOperations {
     suspend fun getUserCommentHistory(request: UserCursorRequest): CommentPage = unsupported()
     /** Page liked track IDs with item offsets and explicit continuation; self addresses the current account. Use this operation for collections larger than 500 IDs. Capability: accounts.likes.page. Tag: 166. Undeclared or unimplemented capabilities fail with Unsupported. */
     suspend fun getLikeListPage(request: PagedIdRequest): IdPage = unsupported()
+    /** Set the current account's liked state for one typed social resource, including an event. Capability: social.likeResource. Tag: 167. Undeclared or unimplemented capabilities fail with Unsupported. */
+    suspend fun likeResource(request: ResourceLikeRequest): MutationResult = unsupported()
+    /** Resolve audio for one of the host-supported DRM key systems and return its resource plus license descriptor; unsupported key systems must fail explicitly. Capability: tracks.resolveDrm. Tag: 168. Undeclared or unimplemented capabilities fail with Unsupported. */
+    suspend fun resolveDrm(request: DrmResolveRequest): ResolvedMedia = unsupported()
+    /** Exchange one host CDM challenge for a provider license. Treat challenge and license bytes as sensitive and never log or persist them. Capability: tracks.exchangeLicense. Tag: 169. Undeclared or unimplemented capabilities fail with Unsupported. */
+    suspend fun exchangeLicense(request: LicenseRequest): LicenseResponse = unsupported()
 }
 
 object ExtendedCapability {
@@ -324,4 +330,7 @@ object ExtendedCapability {
     const val SENDRESOURCEMESSAGE = "messages.sendResource"
     const val GETUSERCOMMENTHISTORY = "comments.userHistory"
     const val GETLIKELISTPAGE = "accounts.likes.page"
+    const val LIKERESOURCE = "social.likeResource"
+    const val RESOLVEDRM = "tracks.resolveDrm"
+    const val EXCHANGELICENSE = "tracks.exchangeLicense"
 }

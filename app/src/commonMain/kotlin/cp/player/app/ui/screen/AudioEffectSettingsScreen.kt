@@ -1,6 +1,5 @@
 package cp.player.app.ui.screen
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -55,8 +54,6 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.isAndroidPlatform
@@ -70,7 +67,8 @@ import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSliderItem
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.settingsRowContainer
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.presentation.navigation.AppRoute
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.playback.AudioEffectConfig
 import cp.player.core.playback.AudioEffectPreset
 import cp.player.core.playback.EqBand
@@ -100,7 +98,7 @@ class AudioEffectSettingsScreen : Screen {
 
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val s = cpStrings()
 
         val capabilities = remember { AppModel.audioEffectCapabilities() }
@@ -128,19 +126,18 @@ class AudioEffectSettingsScreen : Screen {
                         // 本来就在 FlickEngine 的 DSP 管线里，`supported == false` 只有一种原因
                         // —— 原生库没加载起来（此时连播放都没声音）。
                         // 旧文案写「开启 FlickEngine Hi-Res 发烧内核」，会让人以为换个开关就能用。
-                        SettingsSection("音频内核状态") {
+                        SettingsSection(s.audioEffect.kernelStatusSection) {
                             SettingsClickItem(
-                                title = "FlickEngine 原生音频库未就绪",
-                                subtitle = "桌面端的解码、音效与输出全部由 FlickEngine 提供；库缺失时音效与播放都不可用。"
-                                    + "请确认安装完整，或到音频输出页查看引擎状态。",
+                                title = s.audioEffect.kernelNotReadyTitle,
+                                subtitle = s.audioEffect.kernelNotReadyNote,
                                 index = 0,
                                 total = 1,
                                 onClick = {
-                                    navigator.push(AudioEngineSettingsScreen())
+                                    navigator.push(AppRoute.AudioEngineSettings)
                                 },
                                 trailingContent = {
                                     CpText(
-                                        text = "查看状态",
+                                        text = s.audioEffect.viewStatus,
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.primary,
                                     )
@@ -172,7 +169,7 @@ class AudioEffectSettingsScreen : Screen {
                                     style = MaterialTheme.typography.titleMedium,
                                 )
                                 CpText(
-                                    text = if (eq.enabled) "已启用 · 5 段参数均衡生效中" else s.audioEffect.equalizerEnabledNote,
+                                    text = if (eq.enabled) s.audioEffect.equalizerEnabledSummary else s.audioEffect.equalizerEnabledNote,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -186,11 +183,11 @@ class AudioEffectSettingsScreen : Screen {
                                 ) {
                                     Icon(
                                         Icons.Filled.RestartAlt,
-                                        contentDescription = "重置平直",
+                                        contentDescription = s.audioEffect.resetFlat,
                                         modifier = Modifier.size(18.dp),
                                     )
                                     Spacer(Modifier.width(4.dp))
-                                    CpText("平直", style = MaterialTheme.typography.labelMedium)
+                                    CpText(s.audioEffect.presetFlat, style = MaterialTheme.typography.labelMedium)
                                 }
                                 androidx.compose.material3.Switch(
                                     checked = eq.enabled,
@@ -251,12 +248,12 @@ class AudioEffectSettingsScreen : Screen {
                         ) {
                             Column {
                                 CpText(
-                                    text = "高级：中心频点微调 (PEQ)",
+                                    text = s.audioEffect.advancedFrequencyTuning,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                                 CpText(
-                                    text = "逐段调整频段滤波截止频率",
+                                    text = s.audioEffect.advancedFrequencyTuningNote,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -268,11 +265,13 @@ class AudioEffectSettingsScreen : Screen {
                             )
                         }
 
-                        AnimatedVisibility(visible = showFrequencyTuning) {
+                        // The root Navigator already animates pages inside SharedTransitionLayout.
+                        // Keep this small, static control group out of a second nested subcomposition.
+                        if (showFrequencyTuning) {
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 eq.bands.forEachIndexed { bandIndex, band ->
                                     SettingsSliderItem(
-                                        title = "频段 ${bandIndex + 1} 中心频率",
+                                        title = s.audioEffect.bandCenterFrequency(bandIndex),
                                         subtitle = "${formatHz(band.frequencyHz)} (${formatGain(band.gainDb)} dB)",
                                         value = band.frequencyHz,
                                         onValueChange = { hz ->
@@ -377,7 +376,7 @@ class AudioEffectSettingsScreen : Screen {
 
         CpRouteScaffold(
             title = s.audioEffect.screenTitle,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier -> body(pageModifier) }
     }
 }

@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.resized
 import cp.player.core.music.AlbumSummary
 
@@ -49,6 +50,7 @@ fun AlbumItem(
     modifier: Modifier = Modifier,
     onOptionsClick: (() -> Unit)? = null,
 ) {
+    val s = cpStrings()
     // 缩略图圆角取 `shapes.medium`(12dp)。写成 Dp 常量是因为要同时喂给 clip 与占位块。
     val thumbCorner = 12.dp
     Surface(
@@ -76,7 +78,7 @@ fun AlbumItem(
                 )
                 // 副标题可能全空（歌手、曲目数、发行年份都没有）。那时**不画这一行** ——
                 // 画一个空 Text 会在标题下面留一条与行高同高的空白，整行看着像没对齐。
-                val subtitle = albumSubtitle(album)
+                val subtitle = albumSubtitle(album, s)
                 if (subtitle.isNotEmpty()) {
                     Spacer(Modifier.height(2.dp))
                     CpText(
@@ -98,7 +100,7 @@ fun AlbumItem(
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 Icons.Filled.MoreVert,
-                                contentDescription = "更多操作",
+                                contentDescription = s.contextMenu.moreActions,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp),
                             )
@@ -193,9 +195,9 @@ fun AlbumCoverThumb(
 }
 
 /** 专辑副标题：`歌手 · N 首 · yyyy`，缺项自动省略。 */
-internal fun albumSubtitle(album: AlbumSummary): String = buildList {
+internal fun albumSubtitle(album: AlbumSummary, s: cp.player.app.i18n.CpStrings): String = buildList {
     album.artistName?.takeIf { it.isNotBlank() }?.let(::add)
-    if (album.trackCount > 0) add("${album.trackCount} 首")
+    if (album.trackCount > 0) add(s.contextMenu.trackCount(album.trackCount))
     albumYear(album)?.let(::add)
 }.joinToString(" · ")
 

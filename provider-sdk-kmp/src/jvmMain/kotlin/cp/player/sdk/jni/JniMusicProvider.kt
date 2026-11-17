@@ -2,9 +2,10 @@ package cp.player.sdk.jni
 
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -22,62 +23,166 @@ interface JniProviderSession {
     fun close()
 }
 
-/** JNI transport shared by desktop JVM and Android; no worker process or business JSON. */
-class JniMusicProvider(private val session: JniProviderSession) : JniProviderMethods() {
-    private val executor = Executors.newSingleThreadExecutor { task ->
-        Thread(task, "provider-sdk-jni").apply { isDaemon = true }
-    }
-    private val mutex = Mutex()
-    private val closed = AtomicBoolean(false)
+/**
+ * JNI transport shared by desktop JVM and Android; no worker process or business JSON.
+ *
+ * 一个 handle 只能串行调用（见 docs/dev/providers/NATIVE.md §8），但「一次只用一个 handle」
+ * 不等于「整个音源一次只能跑一个请求」：首页会并发拉 7 个接口，单 handle 排队会把每个
+ * 请求的耗时叠成 1+2+…+7 次上游往返（实测上游单请求 ~150ms ⇒ 平均响应破 1s）。
+ * [pooled] 因此按需开最多 [MAX_CONCURRENCY] 个同上下文会话，每个会话仍严格单线程串行。
+ */
+class JniMusicProvider private constructor(
+    openSession: (() -> JniProviderSession)?,
+    firstSession: JniProviderSession?,
+    maxConcurrency: Int,
+) : JniProviderMethods() {
+    constructor(session: JniProviderSession) : this(null, session, 1)
 
-    override suspend fun dispatch(operation: Int, request: Any): Any = mutex.withLock {
-        check(!closed.get()) { "JNI provider closed" }
-        val drained = CompletableDeferred<Unit>()
+    private class Lane(val session: JniProviderSession) {
+        val executor = Executors.newSingleThreadExecutor { task ->
+            Thread(task, "provider-sdk-jni-${laneIds.incrementAndGet()}").apply { isDaemon = true }
+        }
+    }
+
+    private val openSession = openSession
+    private val permits = Semaphore(maxConcurrency.also { require(it in 1..MAX_CONCURRENCY) })
+    private val lock = Any()
+    private val idle = ArrayDeque<Lane>()
+    private val lanes = mutableSetOf<Lane>()
+    private val drained = CompletableDeferred<Unit>()
+    private val closeMutex = Mutex()
+    private var active = 0
+    private var closed = false
+    private var disposed = false
+
+    init {
+        require(firstSession != null || openSession != null) { "JNI provider needs a session source" }
+        if (firstSession != null) {
+            val lane = Lane(firstSession)
+            idle.addLast(lane)
+            // 预建会话也算在「待关闭」集合里，否则 close() 会遗漏它。
+            lanes.add(lane)
+        }
+    }
+
+    override suspend fun dispatch(operation: Int, request: Any): Any {
+        check(!isClosed()) { "JNI provider closed" }
+        val lane = acquireLane()
+        try {
+            return invokeOnLane(lane, operation, request)
+        } finally {
+            releaseLane(lane)
+        }
+    }
+
+    private fun isClosed(): Boolean = synchronized(lock) { closed }
+
+    private suspend fun acquireLane(): Lane {
+        permits.acquire()
+        return try {
+            synchronized(lock) {
+                check(!closed) { "JNI provider closed" }
+                val lane = idle.removeLastOrNull() ?: openLaneLocked()
+                lanes.add(lane)
+                active++
+                lane
+            }
+        } catch (error: Throwable) {
+            permits.release()
+            throw error
+        }
+    }
+
+    private fun openLaneLocked(): Lane {
+        val open = openSession ?: error("JNI provider has no session source")
+        return try {
+            Lane(open())
+        } catch (error: Throwable) {
+            throw IllegalStateException("Cannot open JNI provider session: ${error.message}", error)
+        }
+    }
+
+    private fun releaseLane(lane: Lane) {
+        val complete = synchronized(lock) {
+            active--
+            if (!closed) idle.addLast(lane)
+            closed && active == 0
+        }
+        permits.release()
+        if (complete) drained.complete(Unit)
+    }
+
+    private suspend fun invokeOnLane(lane: Lane, operation: Int, request: Any): Any {
+        val finished = CompletableDeferred<Unit>()
         val gate = Any()
         var running = false
         try {
-            suspendCancellableCoroutine { continuation ->
+            return suspendCancellableCoroutine { continuation ->
                 continuation.invokeOnCancellation {
                     synchronized(gate) {
-                        if (running) session.cancel()
+                        if (running) lane.session.cancel()
                     }
                 }
-                executor.execute {
+                lane.executor.execute {
                     try {
                         val execute = synchronized(gate) {
                             continuation.isActive.also { running = it }
                         }
                         if (execute) {
-                            val result = session.invoke(operation, request)
+                            val result = lane.session.invoke(operation, request)
                             synchronized(gate) { running = false }
                             continuation.resume(result)
                         }
                     } catch (e: Throwable) {
                         synchronized(gate) { running = false }
                         continuation.resumeWithException(e)
-                    } finally { drained.complete(Unit) }
+                    } finally { finished.complete(Unit) }
                 }
             }
         } finally {
             // Cancellation must signal native work immediately, then drain before releasing the call.
-            withContext(NonCancellable) { drained.await() }
+            withContext(NonCancellable) { finished.await() }
         }
     }
 
     override suspend fun close() {
         withContext(NonCancellable) {
-            mutex.withLock {
-                if (closed.compareAndSet(false, true)) {
-                    try {
-                        suspendCancellableCoroutine<Unit> { continuation ->
-                            executor.execute {
-                                try { session.close(); continuation.resume(Unit) }
-                                catch (e: Throwable) { continuation.resumeWithException(e) }
-                            }
-                        }
-                    } finally { executor.shutdown() }
+            closeMutex.withLock {
+                if (disposed) return@withLock
+                disposed = true
+                synchronized(lock) {
+                    closed = true
+                    if (active == 0) drained.complete(Unit)
                 }
+                drained.await()
+                val closing = synchronized(lock) { lanes.toList().also { lanes.clear(); idle.clear() } }
+                var failure: Throwable? = null
+                for (lane in closing) {
+                    try {
+                        lane.executor.submit { lane.session.close() }.get()
+                    } catch (error: Throwable) {
+                        val first = failure
+                        if (first == null) failure = error
+                        else if (first !== error) first.addSuppressed(error)
+                    } finally {
+                        lane.executor.shutdown()
+                    }
+                }
+                failure?.let { throw it }
             }
         }
+    }
+
+    companion object {
+        /** Matches the host's per-session call concurrency (`ProviderHost`). */
+        const val MAX_CONCURRENCY = 4
+        private val laneIds = AtomicInteger()
+
+        /**
+         * 同一 ProviderContext 下按需开多个会话。
+         * 会话必须只由凭据/设置决定（宿主把可变状态放在自己的存储里），否则不要用本入口。
+         */
+        fun pooled(maxConcurrency: Int = MAX_CONCURRENCY, openSession: () -> JniProviderSession): JniMusicProvider =
+            JniMusicProvider(openSession, null, maxConcurrency)
     }
 }

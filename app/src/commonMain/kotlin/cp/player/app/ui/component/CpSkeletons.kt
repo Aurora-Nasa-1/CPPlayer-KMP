@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import cp.player.app.ui.theme.cpCardSurface
 
 /**
  * 页面级骨架块集合 —— [CpSongRowSkeleton] 之外的「别的页面长什么样」。
@@ -299,7 +300,7 @@ fun CpCardRowSkeleton(
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.largeIncreased,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    color = cpCardSurface(),
                 ) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),

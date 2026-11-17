@@ -39,7 +39,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -56,9 +55,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
@@ -78,12 +80,17 @@ import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.CpConnectedChoice
 import cp.player.app.ui.component.CpContextMenu
 import cp.player.app.ui.component.CpContextMenuItem
+import cp.player.app.ui.component.CpAnchoredMenu
 import cp.player.app.ui.component.cpPressScale
 import cp.player.app.ui.component.CpSplitButton
+import cp.player.app.ui.component.legacySegmentGridShape
 import cp.player.app.ui.component.ProvideCpTextFullDisplay
 import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.LocalWindowChromeActive
 import cp.player.app.ui.component.PageHeader
 import cp.player.app.ui.component.PlaylistItem
+import cp.player.app.ui.component.PlaylistMenuActions
+import cp.player.app.ui.component.playlistContextMenuItems
 import cp.player.app.ui.component.desktopScrollbarGutter
 import cp.player.app.ui.model.LibraryUiState
 import cp.player.app.ui.util.resized
@@ -105,6 +112,7 @@ internal class DesktopLibraryActions(
     val onOpenPlaylist: (PlaylistSummary) -> Unit,
     val onPlaylistOptions: (PlaylistSummary) -> Unit,
     val isOwner: (PlaylistSummary) -> Boolean,
+    val menuActionsOf: (PlaylistSummary) -> PlaylistMenuActions?,
 )
 
 /**
@@ -126,8 +134,9 @@ internal fun DesktopLibraryLayout(
 ) {
     val s = cpStrings()
     val listState = rememberLazyListState()
-    val compactList = !gridView && state.selectedTab == 0
-    val sectionTail = if (compactList) CpSpacing.section - CpSpacing.listRowGap else 0.dp
+    val playlistList = !gridView && state.selectedTab == 0
+    val playlistGap = CpSpacing.playlistRowGap
+    val sectionTail = if (playlistList) CpSpacing.section - playlistGap else 0.dp
     LaunchedEffect(state.selectedTab, gridView) { listState.scrollToItem(0) }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         BoxWithConstraints(Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize()) {
@@ -143,7 +152,7 @@ internal fun DesktopLibraryLayout(
                     vertical = CpSpacing.pageTop,
                 ),
                 verticalArrangement = Arrangement.spacedBy(
-                    if (compactList) CpSpacing.listRowGap else CpSpacing.section,
+                    if (playlistList) playlistGap else CpSpacing.section,
                 ),
             ) {
                 item(key = "heading") {
@@ -180,30 +189,6 @@ internal fun DesktopLibraryLayout(
                                     trailingContent = { Icon(Icons.Filled.FileUpload, s.library.importPlaylist) },
                                     modifier = Modifier.width(236.dp).height(CpSpacing.touchTarget),
                                 )
-                            } else {
-                                Spacer(Modifier.height(4.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    FilledTonalButton(
-                                        onClick = actions.onCreatePlaylist,
-                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                                        shape = MaterialTheme.shapes.large,
-                                        modifier = Modifier.cpPressScale(),
-                                    ) {
-                                        Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        CpText(s.library.newPlaylist)
-                                    }
-                                    FilledTonalButton(
-                                        onClick = actions.onImport,
-                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                                        shape = MaterialTheme.shapes.large,
-                                        modifier = Modifier.cpPressScale(),
-                                    ) {
-                                        Icon(Icons.Filled.FileUpload, null, Modifier.size(18.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        CpText(s.library.importPlaylist)
-                                    }
-                                }
                             }
                         }
                         if (state.playlists.isNotEmpty()) {
@@ -227,12 +212,26 @@ internal fun DesktopLibraryLayout(
                         Modifier.padding(bottom = sectionTail),
                         verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
                     ) {
-                        shortcuts.chunked(if (compact) 3 else shortcuts.size).forEach { row ->
+                        val rows = shortcuts.chunked(if (compact) 3 else shortcuts.size)
+                        rows.forEachIndexed { rowIndex, row ->
                             Row(horizontalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap)) {
-                                row.forEach { (label, icon, onClick) ->
+                                row.forEachIndexed { columnIndex, (label, icon, onClick) ->
                                     DesktopLibraryShortcut(
                                         label, icon, onClick, Modifier.weight(1f),
-                                        prominent = icon == Icons.Filled.History,
+                                        // 手机端 2×3 网格里强调一格会像"选中态"，六格统一底色；
+                                        // 桌面单行仍保留「最近播放」作为唯一表达焦点。
+                                        prominent = !compact && icon == Icons.Filled.History,
+                                        // 手机端按 M3E list 拼接：外圈 20dp，相邻内角 4dp。
+                                        shape = if (compact) {
+                                            legacySegmentGridShape(
+                                                row = rowIndex,
+                                                rowCount = rows.size,
+                                                column = columnIndex,
+                                                rowSize = row.size,
+                                            )
+                                        } else {
+                                            MaterialTheme.shapes.large
+                                        },
                                     )
                                 }
                                 if (compact) repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
@@ -265,8 +264,8 @@ internal fun DesktopLibraryLayout(
                                 )
                             }
                             DesktopLibraryActionButton(s.library.searchLibrary, Icons.Filled.Search, actions.onSearch)
-                            DesktopLibraryActionButton(s.library.importPlaylist, Icons.Filled.FileUpload, actions.onImport)
                             if (compact) {
+                                DesktopLibraryActionButton(s.library.importPlaylist, Icons.Filled.FileUpload, actions.onImport)
                                 DesktopLibraryActionButton(s.library.newPlaylist, Icons.Filled.Add, actions.onCreatePlaylist)
                             }
                         }
@@ -315,7 +314,14 @@ internal fun DesktopLibraryLayout(
                         if (state.error != null) {
                             item(key = "refresh-error") {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    CpText(state.error, Modifier.weight(1f), color = MaterialTheme.colorScheme.error)
+                                    // 刷新失败的原因（后端返回体 / 网络异常）是用户唯一线索，
+                                    // 单行会把「HTTP 500 …」之后的内容全裁掉。
+                                    CpText(
+                                        state.error,
+                                        Modifier.weight(1f),
+                                        color = MaterialTheme.colorScheme.error,
+                                        maxLines = 3,
+                                    )
                                     TextButton(onClick = actions.onRetry) { CpText(s.library.retry) }
                                 }
                             }
@@ -328,6 +334,7 @@ internal fun DesktopLibraryLayout(
                                             playlist = playlist,
                                             onOpen = { actions.onOpenPlaylist(playlist) },
                                             onOptions = { actions.onPlaylistOptions(playlist) },
+                                            menuActions = actions.menuActionsOf(playlist),
                                             modifier = Modifier.weight(1f),
                                         )
                                     }
@@ -341,6 +348,7 @@ internal fun DesktopLibraryLayout(
                                     isOwner = actions.isOwner(playlist),
                                     onClick = { actions.onOpenPlaylist(playlist) },
                                     onOptionsClick = { actions.onPlaylistOptions(playlist) },
+                                    menuActions = actions.menuActionsOf(playlist),
                                 )
                             }
                         }
@@ -358,12 +366,13 @@ private fun DesktopLibraryShortcut(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     prominent: Boolean = false,
+    shape: Shape = MaterialTheme.shapes.large,
 ) {
     Surface(
         onClick = onClick,
         modifier = modifier.cpPressScale(),
-        shape = MaterialTheme.shapes.large,
-        color = if (prominent) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = shape,
+        color = if (prominent) MaterialTheme.colorScheme.secondaryContainer else cp.player.app.ui.theme.cpCardSurface(),
     ) {
         Column(
             Modifier.height(CpSpacing.musicShortcutHeight).padding(8.dp),
@@ -410,12 +419,22 @@ internal fun DesktopLibraryPlaylist(
     onOpen: () -> Unit,
     onOptions: () -> Unit,
     modifier: Modifier = Modifier,
+    menuActions: PlaylistMenuActions? = null,
 ) {
     val s = cpStrings()
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    var menuExpanded by remember { mutableStateOf(false) }
+    val desktopMenu = menuActions != null && LocalWindowChromeActive.current
+    val resolvedItems = menuActions?.let { playlistContextMenuItems(it) }
+        ?: listOf(CpContextMenuItem(s.player.more, Icons.Filled.MoreVert, onClick = onOptions))
+    val moreButton: @Composable () -> Unit = {
+        DesktopLibraryIcon(s.player.more, Icons.Filled.MoreVert) {
+            if (desktopMenu) menuExpanded = true else onOptions()
+        }
+    }
     CpContextMenu(
-        items = listOf(CpContextMenuItem(s.player.more, Icons.Filled.MoreVert, onClick = onOptions)),
+        items = resolvedItems,
         modifier = modifier.hoverable(interaction),
     ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -462,7 +481,15 @@ internal fun DesktopLibraryPlaylist(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            DesktopLibraryIcon(s.player.more, Icons.Filled.MoreVert, onOptions)
+            if (desktopMenu) {
+                CpAnchoredMenu(
+                    expanded = menuExpanded,
+                    onDismiss = { menuExpanded = false },
+                    items = resolvedItems,
+                ) { moreButton() }
+            } else {
+                moreButton()
+            }
         }
     }
     }

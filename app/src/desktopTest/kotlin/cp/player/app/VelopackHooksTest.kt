@@ -3,6 +3,7 @@ package cp.player.app
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Velopack 钩子参数的识别。
@@ -41,5 +42,31 @@ class VelopackHooksTest {
     @Test
     fun `missing version degrades to empty string instead of failing`() {
         assertEquals("", velopackHookOf(arrayOf("--veloapp-uninstall"))?.version)
+    }
+
+    @Test
+    fun `only the uninstall hook clears application data`() {
+        var cleanupCalls = 0
+
+        VelopackHookArgs.forEach { arg ->
+            clearDataForVelopackHook(VelopackHook(arg, "1.6.1")) {
+                cleanupCalls++
+                true
+            }
+        }
+
+        assertEquals(1, cleanupCalls, "安装/升级钩子不能碰用户数据")
+    }
+
+    @Test
+    fun `a failed cleanup does not escape the uninstall hook`() {
+        var cleanupCalled = false
+
+        clearDataForVelopackHook(VelopackHook(VELOPACK_UNINSTALL_ARG, "1.6.1")) {
+            cleanupCalled = true
+            throw IllegalStateException("file is locked")
+        }
+
+        assertTrue(cleanupCalled, "卸载钩子必须尝试清理")
     }
 }

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.DynamicFeed
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Download
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.DynamicFeed
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -109,8 +111,12 @@ import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.transitions.ScreenTransition
 import cp.player.app.AppModel
 import cp.player.app.auth.QrLoginStore
+import cp.player.app.i18n.NavigationStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
+import cp.player.app.presentation.navigation.AppRoute
+import cp.player.app.ui.navigation.LocalAppNavigator
+import cp.player.app.ui.navigation.VoyagerAppNavigator
 import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpBackButton
 import cp.player.app.ui.component.CpContextMenu
@@ -121,6 +127,7 @@ import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.observeBottomBarDrag
 import cp.player.app.ui.component.playlistShareText
 import cp.player.app.ui.util.resized
+import cp.player.core.provider.ProviderCapability
 import cp.player.core.music.PlaylistSummary
 
 /**
@@ -151,14 +158,22 @@ private var qrResumePromptShown = false
  * 数据量一变还会让恢复值落空 —— 「从详情页返回后界面回到顶部」的主因之一。
  * 实例稳定后，模型与数据跨 push/pop 存活，返回即出内容、结构零翻转，快照精确恢复。
  */
-private val MAIN_TABS = listOf(
-    TabItem(HomeScreen(), "首页", Icons.Filled.Home, Icons.Outlined.Home),
-    TabItem(SearchScreen(), "搜索", Icons.Filled.Search, Icons.Outlined.Search),
-    TabItem(LibraryScreen(), "我的", Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic),
-)
+private const val TAB_HOME = "home"
+private const val TAB_SEARCH = "search"
+private const val TAB_DYNAMIC = "dynamic"
+private const val TAB_LIBRARY = "library"
 
-private val LocalDesktopTabIndex = compositionLocalOf { 0 }
-private val LocalDesktopVisitedTabs = compositionLocalOf<List<Int>> { listOf(0) }
+private val HOME_TAB = TabItem(TAB_HOME, HomeScreen(), { it.tabHome }, Icons.Filled.Home, Icons.Outlined.Home)
+private val SEARCH_TAB = TabItem(TAB_SEARCH, SearchScreen(), { it.tabSearch }, Icons.Filled.Search, Icons.Outlined.Search)
+private val DYNAMIC_TAB =
+    TabItem(TAB_DYNAMIC, DynamicScreen(), { it.tabDynamic }, Icons.Filled.DynamicFeed, Icons.Outlined.DynamicFeed)
+private val LIBRARY_TAB =
+    TabItem(TAB_LIBRARY, LibraryScreen(), { it.tabLibrary }, Icons.Filled.LibraryMusic, Icons.Outlined.LibraryMusic)
+
+/** 稳定 tab 身份：搜索与动态共用第 2 个位置，但它们是两份独立的状态与模型。 */
+private val LocalDesktopTabs = compositionLocalOf<List<TabItem>> { emptyList() }
+private val LocalDesktopTabKey = compositionLocalOf { TAB_HOME }
+private val LocalDesktopVisitedTabs = compositionLocalOf<List<String>> { listOf(TAB_HOME) }
 
 /** Responsive application shell for the four primary destinations. */
 class MainScreen : Screen {
@@ -167,10 +182,28 @@ class MainScreen : Screen {
     override fun Content() {
         // 文案层（本页其余字面量属 I18N.md 批次 6，尚未迁移）。
         val s = cpStrings()
-        // 选中索引的状态本体要交给 [DesktopContentRootScreen]（内嵌 Navigator 的根页）
-        // 持引用，所以这里留一份实例、再用 `by` 委托出读写别名。
-        val selectedIndexState = rememberSaveable { mutableIntStateOf(0) }
-        var selectedIndex by selectedIndexState
+        // 导航策略与音源能力。搜索 / 动态共用第 2 个位置，但选中态存的是**稳定 key**
+        // 而不是索引：设置一切换，索引 1 的含义就从搜索变成动态，用索引会把选中页、
+        // 滚动快照和 ScreenModel 全部错配到另一页上。
+        val dynamicReplacesSearch by AppModel.dynamicReplacesSearchFlow.collectAsState()
+        val hideDynamicEntry by AppModel.hideDynamicEntryFlow.collectAsState()
+        val hideMessagesEntry by AppModel.hideMessagesEntryFlow.collectAsState()
+        val activeProvider by AppModel.activeProviderFlow.collectAsState()
+        val supportsDynamic = activeProvider?.isFeatureAvailable(ProviderCapability.SOCIAL_FEED) == true
+        val supportsMessages = activeProvider?.isFeatureAvailable(ProviderCapability.MESSAGES) == true
+        val dynamicAvailable = supportsDynamic && !hideDynamicEntry
+        val dynamicAsTab = dynamicAvailable && dynamicReplacesSearch
+        val searchAsTab = !dynamicAsTab
+        val showMessages = supportsMessages && !hideMessagesEntry
+        val tabs = remember(dynamicAsTab) {
+            if (dynamicAsTab) {
+                listOf(HOME_TAB, DYNAMIC_TAB, LIBRARY_TAB)
+            } else {
+                listOf(HOME_TAB, SEARCH_TAB, LIBRARY_TAB)
+            }
+        }
+        val selectedTabKeyState = rememberSaveable { mutableStateOf(TAB_HOME) }
+        var selectedTabKey by selectedTabKeyState
         // ⚠️ 必须是 saveable：MainScreen 被根栈 push 覆盖（手机端进专辑 / 设置 / 账号 …）
         // 时整棵组合被丢弃，非 saveable 的 remember 会把「访问过哪些 tab」清回只剩当前页 ——
         // 返回时其他 tab 不再参与组合，它们的滚动状态只能靠 saveable 快照**懒恢复**
@@ -181,16 +214,44 @@ class MainScreen : Screen {
         val visitedTabs = rememberSaveable(
             saver = listSaver(
                 save = { it.toList() },
-                restore = { mutableStateListOf<Int>().apply { addAll(it) } },
+                restore = { mutableStateListOf<String>().apply { addAll(it) } },
             ),
-        ) { mutableStateListOf(selectedIndex) }
+        ) { mutableStateListOf(TAB_HOME) }
         val navigator = LocalNavigator.current
-        val tabs = MAIN_TABS
+        val rootAppNavigator = LocalAppNavigator.current
+        // tab 集合切换（搜索 ↔ 动态）时，把选中 key 与访问历史收敛到当前真实存在的 tab。
+        // 搜索被替换成动态时，原本停在搜索上的用户自然落到动态；反向同理。
+        androidx.compose.runtime.LaunchedEffect(tabs.map { it.key }, selectedTabKey) {
+            val activeKeys = tabs.mapTo(mutableSetOf()) { it.key }
+            val effectiveKey = if (selectedTabKey in activeKeys) {
+                selectedTabKey
+            } else {
+                when (selectedTabKey) {
+                    TAB_SEARCH -> if (TAB_DYNAMIC in activeKeys) TAB_DYNAMIC else TAB_HOME
+                    TAB_DYNAMIC -> if (TAB_SEARCH in activeKeys) TAB_SEARCH else TAB_HOME
+                    else -> TAB_HOME
+                }
+            }
+            if (effectiveKey != selectedTabKey) selectedTabKey = effectiveKey
+            val pruned = visitedTabs.filter { it in activeKeys }.toMutableList()
+            if (effectiveKey !in pruned) pruned.add(effectiveKey)
+            if (pruned != visitedTabs) {
+                visitedTabs.clear()
+                visitedTabs.addAll(pruned)
+            }
+        }
+        val selectedIndex = tabs.indexOfFirst { it.key == selectedTabKey }
+            .takeIf { it >= 0 } ?: 0
         // 内容区的**内嵌 Navigator**（宽屏才有，见展开态分支）：详情页（专辑 / 歌手 / 歌单 /
         // 搜索结果 / 账号 …）都在这条栈里导航，左侧导航栏因此常驻。这里持有引用是为了三件事：
         // ① 发布 pageCanGoBack；② 消费标题栏的返回 / 账号 / 搜索指令；③ 切 tab 时弹回栈根。
         // 窄屏分支不装配内嵌 Navigator，此引用恒为 null，所有 `?.` 都是空操作。
         var contentNavigator by remember { mutableStateOf<Navigator?>(null) }
+        // 壳层同时持有两条栈：内容区（宽屏）与根栈（窄屏 / 全屏页）。
+        // 页面跳转一律经 AppRoute；`popUntilRoot()` 等栈维护仍由壳层直接做。
+        val contentAppNavigator = remember(contentNavigator) {
+            contentNavigator?.let { VoyagerAppNavigator(it) }
+        }
         val controller = AppModel.playback
         val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
         // 宽屏右侧面板的当前形态。原本是「desktopPlaylist + desktopSettingsOpen」两个
@@ -225,13 +286,35 @@ class MainScreen : Screen {
                 // 导致 MiniPlayer 沉到底部挡住导航栏。
             }
         }
-        val selectTab: (Int) -> Unit = { index ->
+        val selectTab: (String) -> Unit = { key ->
             desktopPane = DesktopPane.Tabs
             // 内容区若有内嵌详情页（专辑 / 搜索结果 …），切 tab 前先弹回栈根 ——
             // 否则目标 tab 被压在栈下，看起来「点了没反应」。
             contentNavigator?.popUntilRoot()
-            if (index !in visitedTabs) visitedTabs.add(index)
-            selectedIndex = index
+            if (key !in visitedTabs) visitedTabs.add(key)
+            selectedTabKey = key
+        }
+        // 搜索 / 动态不一定占 tab：设置里让动态替代搜索时，搜索移到顶栏动作位；
+        // 没启用替代时，动态也可以从顶栏 / 窗口标题栏直接打开。两者都走同一套落点。
+        val openSearch: () -> Unit = {
+            if (searchAsTab) {
+                selectTab(TAB_SEARCH)
+            } else {
+                desktopPane = DesktopPane.Tabs
+                val nav = contentNavigator
+                nav?.popUntilRoot()
+                (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Search())
+            }
+        }
+        val openDynamic: () -> Unit = {
+            if (dynamicAsTab) {
+                selectTab(TAB_DYNAMIC)
+            } else {
+                desktopPane = DesktopPane.Tabs
+                val nav = contentNavigator
+                nav?.popUntilRoot()
+                (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Dynamic())
+            }
         }
         val closeDesktopOverlay = { desktopPane = DesktopPane.Tabs }
 
@@ -248,12 +331,29 @@ class MainScreen : Screen {
 
         // 标题栏上的「消息」：与 settingsRequested 逐字同一套协议（入口在窗口 chrome 上，
         // 面板开关在这里）。消费时顺手刷一次未读数 —— 用户点它就是要看有没有新消息。
+        // 入口被设置隐藏、或当前音源不支持私信时，指令直接丢弃，且**不请求未读数**。
         val messagesRequested = cp.player.app.ui.util.DesktopShell.messagesRequested
-        androidx.compose.runtime.LaunchedEffect(messagesRequested) {
+        androidx.compose.runtime.LaunchedEffect(messagesRequested, showMessages) {
             if (messagesRequested) {
-                desktopPane = DesktopPane.Messages
-                AppModel.refreshUnreadMessages()
+                if (showMessages) {
+                    desktopPane = DesktopPane.Messages
+                    AppModel.refreshUnreadMessages()
+                }
                 cp.player.app.ui.util.DesktopShell.messagesRequested = false
+            }
+        }
+        androidx.compose.runtime.LaunchedEffect(showMessages) {
+            if (!showMessages && desktopPane == DesktopPane.Messages) {
+                desktopPane = DesktopPane.Tabs
+            }
+        }
+
+        // 标题栏上的「动态」：动态没占 tab 时，从窗口 chrome 打开内容区路由页。
+        val dynamicRequested = cp.player.app.ui.util.DesktopShell.dynamicRequested
+        androidx.compose.runtime.LaunchedEffect(dynamicRequested, dynamicAsTab) {
+            if (dynamicRequested) {
+                cp.player.app.ui.util.DesktopShell.dynamicRequested = false
+                if (dynamicAvailable) openDynamic()
             }
         }
 
@@ -266,22 +366,26 @@ class MainScreen : Screen {
             if (accountRequested) {
                 cp.player.app.ui.util.DesktopShell.accountRequested = false
                 desktopPane = DesktopPane.Tabs
-                val nav = contentNavigator
-                if (nav != null) nav.push(AccountScreen()) else navigator?.push(AccountScreen())
+                (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Account)
             }
         }
 
-        // 标题栏全局搜索框投递的关键词：这里**只切 tab、不消费** —— 关键词要留给
-        // SearchScreen 喂给它自己的 ScreenModel。两个消费者会互相抢，见 DesktopShell 的说明。
+        // 标题栏全局搜索框投递的关键词：搜索占 tab 时这里**只切 tab、不消费** —— 关键词
+        // 要留给 SearchScreen 喂给它自己的 ScreenModel；搜索被动态替代时，则把 SearchScreen
+        // 作为内容区路由页推出去，同样由它消费关键词。两个消费者会互相抢，见 DesktopShell 的说明。
         val pendingSearchQuery = cp.player.app.ui.util.DesktopShell.pendingSearchQuery
-        androidx.compose.runtime.LaunchedEffect(pendingSearchQuery) {
+        androidx.compose.runtime.LaunchedEffect(pendingSearchQuery, searchAsTab) {
             if (!pendingSearchQuery.isNullOrBlank()) {
                 desktopPane = DesktopPane.Tabs
-                // 与 selectTab 同理：先把内嵌详情页弹回栈根，否则搜索 tab 被压在栈下。
-                contentNavigator?.popUntilRoot()
-                // 索引 1 对应上面 tabs 里的「搜索」，与构造顺序绑定。
-                if (1 !in visitedTabs) visitedTabs.add(1)
-                selectedIndex = 1
+                if (searchAsTab) {
+                    // 与 selectTab 同理：先把内嵌详情页弹回栈根，否则搜索 tab 被压在栈下。
+                    contentNavigator?.popUntilRoot()
+                    if (TAB_SEARCH !in visitedTabs) visitedTabs.add(TAB_SEARCH)
+                    selectedTabKey = TAB_SEARCH
+                } else {
+                    contentNavigator?.popUntilRoot()
+                    (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Search())
+                }
             }
         }
 
@@ -293,16 +397,16 @@ class MainScreen : Screen {
         // 当前页面的标题：桌面标题栏要显示它，而标题栏在 Navigator 之上、拿不到这里的局部状态，
         // 所以用 SideEffect 发布到 DesktopShell。同值写入不触发重组，每次重组都写一遍没有开销。
         val pageTitle = when (val pane = desktopPane) {
-            DesktopPane.Tabs -> tabs[selectedIndex].label
-            DesktopPane.Settings -> "设置"
-            DesktopPane.Downloads -> "下载管理"
+            DesktopPane.Tabs -> tabs.firstOrNull { it.key == selectedTabKey }?.labelOf(s.navigation).orEmpty()
+            DesktopPane.Settings -> s.navigation.settings
+            DesktopPane.Downloads -> s.navigation.downloads
             is DesktopPane.LocalLibrary -> when (pane.initialTab) {
-                3 -> "本地喜欢"
-                4 -> "本地歌单"
-                else -> "本地音乐"
+                3 -> s.navigation.localLiked
+                4 -> s.navigation.localPlaylists
+                else -> s.navigation.localMusic
             }
-            DesktopPane.RecentPlays -> "最近播放"
-            DesktopPane.Messages -> "消息"
+            DesktopPane.RecentPlays -> s.navigation.recentPlays
+            DesktopPane.Messages -> s.navigation.messages
             is DesktopPane.Playlist -> pane.playlist.name
         }
         androidx.compose.runtime.SideEffect {
@@ -385,13 +489,13 @@ class MainScreen : Screen {
         //
         // 三个键覆盖「搜索页被盖住」的全部路径：切 tab（底栏 / 侧栏 / 标题栏搜索切到搜索 tab）、
         // 展开播放页、宽屏打开内嵌面板。**不含 push 出去的路由页**：那时 MainScreen 整棵组合被
-        // 丢弃（见 MAIN_TABS 的说明），焦点由组合自行释放，这里再判就是多余的分支。
+        // 丢弃（见稳定 tab 实例的说明），焦点由组合自行释放，这里再判就是多余的分支。
         //
         // 桌面端可见的副作用：切走再切回搜索 tab 不再自动聚焦（原先焦点被留在不可见的那一页上，
         // 回来时才显得「还记得」）—— 要打字点一下输入框即可。**进页面时的自动聚焦不受影响**：
         // 那条在 `SearchScreen` 自己的 `LaunchedEffect(Unit)` 里，页面重新进组合时照常请求焦点。
         val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
-        LaunchedEffect(selectedIndex, desktopPane) {
+        LaunchedEffect(selectedTabKey, desktopPane) {
             focusManager.clearFocus()
         }
 
@@ -425,8 +529,6 @@ class MainScreen : Screen {
             cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx = bottomBarHide.visibleHeightPx
         }
 
-        val activeProvider by AppModel.activeProviderFlow.collectAsState()
-
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val expanded = cp.player.app.ui.component.CpBreakpoints.isExpanded(maxWidth)
 
@@ -444,10 +546,11 @@ class MainScreen : Screen {
                             selectedIndex = selectedIndex,
                             selectedPane = desktopPane,
                             contentNavSize = contentNavSize,
+                            showMessages = showMessages,
                             onSelect = selectTab,
                             onOpenSettings = { desktopPane = DesktopPane.Settings },
                             onOpenPlaylist = {
-                                selectedIndex = 2
+                                selectTab(TAB_LIBRARY)
                                 desktopPane = DesktopPane.Playlist(it)
                             },
                             onOpenDownloads = { desktopPane = DesktopPane.Downloads },
@@ -455,10 +558,12 @@ class MainScreen : Screen {
                             onOpenLocalFavorites = { desktopPane = DesktopPane.LocalLibrary(3) },
                             onOpenRecentPlays = { desktopPane = DesktopPane.RecentPlays },
                             onOpenMessages = {
-                                desktopPane = DesktopPane.Messages
-                                AppModel.refreshUnreadMessages()
+                                if (showMessages) {
+                                    desktopPane = DesktopPane.Messages
+                                    AppModel.refreshUnreadMessages()
+                                }
                             },
-                            onOpenAllPlaylists = { selectTab(2) },
+                            onOpenAllPlaylists = { selectTab(TAB_LIBRARY) },
                             // 侧栏那份歌单列表换了内容（换账号 / 切音源 / 删除）之后，
                             // 右侧面板若还挂着其中一个已经消失的歌单就收掉它 ——
                             // 否则会出现「左边列表里已经没有这个歌单了，右边还开着」。
@@ -484,18 +589,24 @@ class MainScreen : Screen {
                                   // 旧行为整页 push 会把 MainScreen 整个覆盖、侧栏消失，与宽屏
                                   // 「保留左侧导航」的设计相反，也正是 N5 的「同名两落点」。
                                   onOpenMessages = {
-                                      desktopPane = DesktopPane.Messages
-                                      AppModel.refreshUnreadMessages()
+                                      if (showMessages) {
+                                          desktopPane = DesktopPane.Messages
+                                          AppModel.refreshUnreadMessages()
+                                      }
                                   },
                                   // 宽屏平板（无窗口 chrome）的账号入口与桌面标题栏语义一致：
                                   // 走内容区路由，侧栏保留。桌面 chrome 接管时整条顶栏不可见，
                                   // 这条分支只有平板用得上。
                                   onOpenAccount = {
                                       desktopPane = DesktopPane.Tabs
-                                      val nav = contentNavigator
-                                      if (nav != null) nav.push(AccountScreen()) else navigator?.push(AccountScreen())
+                                      (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Account)
                                   },
                                   tabIndex = selectedIndex,
+                                  showMessagesAction = showMessages,
+                                  showSearchAction = !searchAsTab,
+                                  onOpenSearch = openSearch,
+                                  showDynamicAction = dynamicAvailable && !dynamicAsTab,
+                                  onOpenDynamic = openDynamic,
                                   // 内容区有详情页时收起壳层顶栏：路由页自带 AppScaffold（平板
                                   // 无 chrome），不收就是双顶栏。桌面端 chrome 接管，无此问题。
                                   hide = contentNavSize > 1, ) },
@@ -513,7 +624,8 @@ class MainScreen : Screen {
                             // Tabs 时是透明占位 —— 空 Box 没有 pointer input，点击穿透到内容层。
                             Box(Modifier.fillMaxSize().padding(padding)) {
                                 CompositionLocalProvider(
-                                    LocalDesktopTabIndex provides selectedIndex,
+                                    LocalDesktopTabs provides tabs,
+                                    LocalDesktopTabKey provides selectedTabKey,
                                     LocalDesktopVisitedTabs provides visitedTabs.toList(),
                                 ) {
                                     Navigator(DesktopContentRootScreen) { nav ->
@@ -530,6 +642,10 @@ class MainScreen : Screen {
                                             contentNavigator = nav
                                             onDispose { if (contentNavigator === nav) contentNavigator = null }
                                         }
+                                        cp.player.app.ui.navigation.ProvideAppNavigator(
+                                            navigator = nav,
+                                            rootNavigator = cp.player.app.ui.util.LocalRootNavigator.current ?: nav,
+                                        ) {
                                         ScreenTransition(
                                             navigator = nav,
                                             transition = {
@@ -554,6 +670,7 @@ class MainScreen : Screen {
                                                 }
                                             },
                                         )
+                                        }
                                     }
                                 }
                                 AnimatedContent(
@@ -577,7 +694,9 @@ class MainScreen : Screen {
                                     } else {
                                         Box(
                                             Modifier.fillMaxSize()
-                                                .background(MaterialTheme.colorScheme.background)
+                                                // 面板与内容区是叠放关系，底色用页面层（不是 `background`），
+                                                // 否则面板里的卡片与它只差一级、整块糊住。
+                                                .background(cp.player.app.ui.theme.cpPageSurface())
                                         ) {
                                             // 输入黑洞垫底：盖住内容层，挡住穿透点击。
                                             // ⚠️ 必须是面板正文的**兄弟**（垫在同一 Box 最底下），
@@ -628,17 +747,24 @@ class MainScreen : Screen {
                             // 三个 tab 的顶栏完全一致：标题 = tab 名，动作一律在右侧。
                             // 「我的」页不再特殊化（昵称由页内问候区承担，见 LibraryScreen）。
                             AppTopBar(
-                                title = tabs[selectedIndex].label,
+                                title = tabs.firstOrNull { it.key == selectedTabKey }?.labelOf(s.navigation).orEmpty(),
                                 navigator = navigator,
                                 scrollBehavior = scrollBehavior,
-                                onOpenSettings = { navigator?.push(SettingsScreen()) },
-                                onOpenAccount = { navigator?.push(AccountScreen()) },
+                                onOpenSettings = { rootAppNavigator.push(AppRoute.Settings) },
+                                onOpenAccount = { rootAppNavigator.push(AppRoute.Account) },
                                 // 窄屏没有内嵌 Navigator、也没有面板，消息走整页 push（原行为）。
                                 onOpenMessages = {
-                                    navigator?.push(MessagesScreen())
-                                    AppModel.refreshUnreadMessages()
+                                    if (showMessages) {
+                                        rootAppNavigator.push(AppRoute.Messages)
+                                        AppModel.refreshUnreadMessages()
+                                    }
                                 },
                                 tabIndex = selectedIndex,
+                                showMessagesAction = showMessages,
+                                showSearchAction = !searchAsTab,
+                                onOpenSearch = openSearch,
+                                showDynamicAction = dynamicAvailable && !dynamicAsTab,
+                                onOpenDynamic = openDynamic,
                             )
                         },
                         bottomBar = {
@@ -651,7 +777,7 @@ class MainScreen : Screen {
                             val effectiveHideFraction = maxOf(bottomBarHide.fraction, navBarExitFraction).coerceIn(0f, 1f)
                             AppNavigationBar(
                                 tabs,
-                                selectedIndex,
+                                selectedTabKey,
                                 selectTab,
                                 hideFraction = effectiveHideFraction,
                                 onHeightChanged = { height ->
@@ -664,7 +790,7 @@ class MainScreen : Screen {
                         containerColor = Color.Transparent
                     ) { padding ->
                         TabContent(
-                            tabs, visitedTabs, selectedIndex,
+                            tabs, visitedTabs, selectedTabKey,
                             Modifier.fillMaxSize()
                                 .padding(padding)
                                 // 底栏自动隐藏的手势来源：只读观察内容区上的纵向位移，
@@ -700,6 +826,11 @@ private fun AppTopBar(
     navigator: cafe.adriel.voyager.navigator.Navigator?,
     scrollBehavior: androidx.compose.material3.TopAppBarScrollBehavior? = null,
     onOpenMessages: () -> Unit = {},
+    showMessagesAction: Boolean = true,
+    showSearchAction: Boolean = false,
+    onOpenSearch: () -> Unit = {},
+    showDynamicAction: Boolean = false,
+    onOpenDynamic: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenAccount: () -> Unit = {},
     showBack: Boolean = false,
@@ -715,6 +846,7 @@ private fun AppTopBar(
     // 不让位就是双顶栏。桌面端 chrome 判据已提前 return，此参数只对平板生效。
     if (cp.player.app.ui.component.LocalWindowChromeActive.current || hide) return
 
+    val s = cpStrings()
     val isDesktopExpanded = cp.player.app.ui.component.LocalIsExpanded.current
     val topBarInsets = if (isDesktopExpanded) WindowInsets.statusBars else TopAppBarDefaults.windowInsets
     // 账号信息在这里读一次：最左的账号入口要用它（右侧动作不再需要）。
@@ -737,26 +869,62 @@ private fun AppTopBar(
         {
             cp.player.app.ui.component.CpTopBarActionButton(
                 cp.player.app.ui.component.TopBarAction(
-                    icon = { AccountEntryContent(profile?.avatarUrl, "账号") },
+                    icon = { AccountEntryContent(profile?.avatarUrl, s.navigation.account) },
                     onClick = onOpenAccount,
                 ),
                 modifier = Modifier.padding(start = 8.dp),
             )
         }
     }
-    // 右侧动作固定两个：消息 / 设置，一律走 CpTopBarActionButton（与歌单详情页一致的
+    // 右侧动作：搜索 / 动态 / 消息 / 设置，一律走 CpTopBarActionButton（与歌单详情页一致的
     // 40dp 填充圆钮、surfaceContainerHighest 底色、onSurface 内容色、4dp 间距、cpPressScale 弹性按压缩放）。
     val actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
-        cp.player.app.ui.component.CpTopBarActionButton(
-            cp.player.app.ui.component.TopBarAction(
-                icon = { Icon(Icons.AutoMirrored.Outlined.Message, contentDescription = "消息", modifier = Modifier.size(20.dp)) },
-                onClick = onOpenMessages,
+        if (showSearchAction) {
+            cp.player.app.ui.component.CpTopBarActionButton(
+                cp.player.app.ui.component.TopBarAction(
+                    icon = {
+                        Icon(Icons.Filled.Search, contentDescription = s.navigation.tabSearch, modifier = Modifier.size(20.dp))
+                    },
+                    onClick = onOpenSearch,
+                )
             )
-        )
-        Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(4.dp))
+        }
+        if (showDynamicAction) {
+            cp.player.app.ui.component.CpTopBarActionButton(
+                cp.player.app.ui.component.TopBarAction(
+                    icon = {
+                        Icon(
+                            Icons.Filled.DynamicFeed,
+                            contentDescription = s.navigation.tabDynamic,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    },
+                    onClick = onOpenDynamic,
+                )
+            )
+            Spacer(Modifier.width(4.dp))
+        }
+        if (showMessagesAction) {
+            cp.player.app.ui.component.CpTopBarActionButton(
+                cp.player.app.ui.component.TopBarAction(
+                    icon = {
+                        Icon(
+                            Icons.AutoMirrored.Outlined.Message,
+                            contentDescription = s.navigation.messages,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    },
+                    onClick = onOpenMessages,
+                )
+            )
+            Spacer(Modifier.width(4.dp))
+        }
         cp.player.app.ui.component.CpTopBarActionButton(
             cp.player.app.ui.component.TopBarAction(
-                icon = { Icon(Icons.Filled.Settings, contentDescription = "设置", modifier = Modifier.size(20.dp)) },
+                icon = {
+                    Icon(Icons.Filled.Settings, contentDescription = s.navigation.settings, modifier = Modifier.size(20.dp))
+                },
                 onClick = onOpenSettings,
             )
         )
@@ -862,30 +1030,39 @@ private class TabSwitchState(initialAlpha: Float) {
 @Composable
 private fun TabContent(
     tabs: List<TabItem>,
-    visitedTabs: List<Int>,
-    selectedIndex: Int,
+    visitedTabs: List<String>,
+    selectedTabKey: String,
     modifier: Modifier = Modifier,
 ) {
     // 防御性合并：无论状态同步是否存在瞬间时差，选中的 tab 绝对常驻保留集合中，避免布局放置落空致页面全白。
-    val retainedIndices = (visitedTabs + selectedIndex).distinct().sorted()
-    val switchStates = remember { mutableStateMapOf<Int, TabSwitchState>() }
-    var lastSelected by remember { mutableStateOf(selectedIndex) }
+    // tab 集合本身会随「动态替代搜索」切换，因此这里按稳定 key 而不是索引工作。
+    val effectiveSelectedKey = selectedTabKey
+        .takeIf { key -> tabs.any { it.key == key } }
+        ?: tabs.firstOrNull()?.key
+        ?: TAB_HOME
+    val retainedTabs = (visitedTabs + effectiveSelectedKey)
+        .distinct()
+        .mapNotNull { key -> tabs.firstOrNull { it.key == key } }
+    val switchStates = remember { mutableStateMapOf<String, TabSwitchState>() }
+    var lastSelectedKey by remember { mutableStateOf(effectiveSelectedKey) }
     val effectsSpec = CpMotion.effects<Float>()
     val spatialSpec = CpMotion.spatial<Float>()
     val slideDistance = with(LocalDensity.current) { 32.dp.toPx() }
 
-    LaunchedEffect(selectedIndex) {
-        if (selectedIndex == lastSelected) {
-            switchStates[selectedIndex]?.let {
+    LaunchedEffect(effectiveSelectedKey) {
+        if (effectiveSelectedKey == lastSelectedKey) {
+            switchStates[effectiveSelectedKey]?.let {
                 it.alpha.snapTo(1f)
                 it.slide.snapTo(0f)
             }
             return@LaunchedEffect
         }
-        val direction = if (selectedIndex > lastSelected) 1f else -1f
-        val leaving = switchStates[lastSelected]
-        lastSelected = selectedIndex
-        val entering = switchStates.getOrPut(selectedIndex) { TabSwitchState(initialAlpha = 0f) }
+        val oldIndex = retainedTabs.indexOfFirst { it.key == lastSelectedKey }
+        val newIndex = retainedTabs.indexOfFirst { it.key == effectiveSelectedKey }
+        val direction = if (oldIndex < 0 || newIndex >= oldIndex) 1f else -1f
+        val leaving = switchStates[lastSelectedKey]
+        lastSelectedKey = effectiveSelectedKey
+        val entering = switchStates.getOrPut(effectiveSelectedKey) { TabSwitchState(initialAlpha = 0f) }
         entering.slide.snapTo(direction)
         entering.alpha.snapTo(0f)
         coroutineScope {
@@ -898,9 +1075,9 @@ private fun TabContent(
     Layout(
         modifier = modifier.fillMaxSize(),
         content = {
-            retainedIndices.forEach { index ->
-                val state = switchStates.getOrPut(index) {
-                    TabSwitchState(initialAlpha = if (index == selectedIndex) 1f else 0f)
+            retainedTabs.forEach { tab ->
+                val state = switchStates.getOrPut(tab.key) {
+                    TabSwitchState(initialAlpha = if (tab.key == effectiveSelectedKey) 1f else 0f)
                 }
                 Box(
                     Modifier
@@ -910,7 +1087,7 @@ private fun TabContent(
                             alpha = state.alpha.value
                             translationX = state.slide.value * slideDistance
                         },
-                ) { tabs[index].screen.Content() }
+                ) { tab.screen.Content() }
             }
         },
     ) { measurables, constraints ->
@@ -919,17 +1096,17 @@ private fun TabContent(
         // 就是 3 倍开销（N6）。零约束下的测量几乎不做事，而这些页本就不放置（见下方 place 逻辑）。
         val zeroConstraints = androidx.compose.ui.unit.Constraints.fixed(0, 0)
         val placeables = measurables.mapIndexed { i, m ->
-            val index = retainedIndices[i]
-            val alpha = switchStates[index]?.alpha?.value ?: 0f
-            if (index == selectedIndex || alpha > 0f) m.measure(constraints)
+            val tab = retainedTabs[i]
+            val alpha = switchStates[tab.key]?.alpha?.value ?: 0f
+            if (tab.key == effectiveSelectedKey || alpha > 0f) m.measure(constraints)
             else m.measure(zeroConstraints)
         }
         layout(constraints.maxWidth, constraints.maxHeight) {
-            // placeables 顺序与 retainedIndices 一致。淡出中的旧页垫底，选中页最后放置盖
+            // placeables 顺序与 retainedTabs 一致。淡出中的旧页垫底，选中页最后放置盖
             // 在最上层；完全透明的页不放置（不参与命中测试 —— 保持原「仅选中页可交互」语义）。
-            val selectedPos = retainedIndices.indexOf(selectedIndex)
-            val background = retainedIndices.indices.filter { it != selectedPos }
-                .filter { pos -> (switchStates[retainedIndices[pos]]?.alpha?.value ?: 0f) > 0f }
+            val selectedPos = retainedTabs.indexOfFirst { it.key == effectiveSelectedKey }
+            val background = retainedTabs.indices.filter { it != selectedPos }
+                .filter { pos -> (switchStates[retainedTabs[pos].key]?.alpha?.value ?: 0f) > 0f }
             (background + if (selectedPos >= 0) listOf(selectedPos) else emptyList())
                 .forEach { pos -> placeables[pos].placeRelative(0, 0) }
         }
@@ -949,11 +1126,12 @@ private fun TabContent(
 @Composable
 private fun AppNavigationBar(
     tabs: List<TabItem>,
-    selectedIndex: Int,
-    onSelect: (Int) -> Unit,
+    selectedTabKey: String,
+    onSelect: (String) -> Unit,
     hideFraction: Float = 0f,
     onHeightChanged: (Int) -> Unit = {},
 ) {
+    val s = cpStrings()
     Box(
         // ⚠️ 顺序不能反：`clipToBounds()` 必须在 `layout{}` **外侧**。
         // `layout{}` 会把它的整个子树（含内侧的裁切节点）一起平移，裁切框跟着内容走
@@ -981,7 +1159,8 @@ private fun AppNavigationBar(
         ) {
         val haptics = cp.player.app.ui.feedback.LocalCpHaptics.current
         tabs.forEachIndexed { index, tab ->
-            val selected = selectedIndex == index
+            val selected = selectedTabKey == tab.key
+            val label = tab.labelOf(s.navigation)
             // 选中图标「弹」一下 —— M3 Expressive 的导航反馈。
             // 指示器胶囊本身由 material3 内部驱动，这里只补图标这一层，
             // 两层叠起来才有「弹」的手感（只靠指示器会显得发闷）。
@@ -996,19 +1175,19 @@ private fun AppNavigationBar(
                     // 只在真的换了 tab 时给轻点：重复点当前 tab 没有状态变化，
                     // 给反馈反而是撒谎。
                     if (!selected) haptics.perform(cp.player.app.ui.feedback.CpHaptic.Tick)
-                    onSelect(index)
+                    onSelect(tab.key)
                 },
                 icon = {
                     Icon(
                         if (selected) tab.selectedIcon else tab.unselectedIcon,
-                        tab.label,
+                        label,
                         modifier = Modifier.graphicsLayer {
                             scaleX = iconScale
                             scaleY = iconScale
                         },
                     )
                 },
-                label = { CpText(tab.label) },
+                label = { CpText(label) },
                 colors = NavigationBarItemDefaults.colors(
                     indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
                 ),
@@ -1025,7 +1204,9 @@ private fun DesktopSidebar(
     selectedPane: DesktopPane,
     /** 内容区内嵌 Navigator 的栈深度：壳层顶栏是否可见取决于它（见 showMessagesEntry）。 */
     contentNavSize: Int,
-    onSelect: (Int) -> Unit,
+    /** 消息入口是否允许出现（音源支持且用户没隐藏）。 */
+    showMessages: Boolean,
+    onSelect: (String) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenPlaylist: (PlaylistSummary) -> Unit,
     onOpenDownloads: () -> Unit,
@@ -1045,6 +1226,7 @@ private fun DesktopSidebar(
     // 否则首页那一屏七八个并发请求会被整份重打一遍，侧栏还跟着首页一起刷。
     val homeModel = remember { cp.player.app.ui.model.HomeScreenModel(loadDiscovery = false) }
     val homeState by homeModel.state.collectAsState()
+    val s = cpStrings()
     // 进行中的下载条数：直接收集后端 StateFlow，不另建 ScreenModel ——
     // 侧栏不是 Screen，没有 ScreenModel 的生命周期可以托管它。
     val downloadTasks by AppModel.downloads.tasksFlow.collectAsState()
@@ -1063,7 +1245,7 @@ private fun DesktopSidebar(
     // 同名入口（N5）：桌面 → 标题栏有（chromeActive 为真），宽屏平板根页 → 顶栏有
     // （contentNavSize == 1、顶栏未 hide），此时侧栏都不该再画。只有宽屏平板进了内嵌详情页
     // （顶栏 hide）时才轮到侧栏。
-    val showMessagesEntry = !chromeActive && contentNavSize > 1
+    val showMessagesEntry = showMessages && !chromeActive && contentNavSize > 1
     val showSettingsEntry = !chromeActive && contentNavSize > 1
     // 收藏夹（「xx喜欢的音乐」）已经有独立入口，不再以歌单身份重复出现。
     val allPlaylists = homeState.sidebarPlaylists
@@ -1082,42 +1264,48 @@ private fun DesktopSidebar(
     val playlistMenu: (PlaylistSummary) -> List<CpContextMenuItem> = { playlist ->
         val owner = homeModel.isPlaylistOwner(playlist)
         buildList {
-            add(CpContextMenuItem("播放", Icons.Filled.PlayArrow, onClick = { homeModel.playPlaylist(playlist) }))
             add(
                 CpContextMenuItem(
-                    "加入队列", Icons.AutoMirrored.Filled.QueueMusic,
-                    onClick = { homeModel.queuePlaylist(playlist) },
+                    s.library.playAll,
+                    Icons.Filled.PlayArrow,
+                    onClick = { homeModel.playPlaylist(playlist, s) },
                 )
             )
             add(
                 CpContextMenuItem(
-                    "全部下载", Icons.Filled.Download,
-                    onClick = { homeModel.downloadPlaylist(playlist) },
+                    s.library.addToQueue, Icons.AutoMirrored.Filled.QueueMusic,
+                    onClick = { homeModel.queuePlaylist(playlist, s) },
+                )
+            )
+            add(
+                CpContextMenuItem(
+                    s.library.downloadAll, Icons.Filled.Download,
+                    onClick = { homeModel.downloadPlaylist(playlist, s) },
                 )
             )
             add(CpContextMenuSeparator)
             add(
                 CpContextMenuItem(
-                    "分享歌单", Icons.Filled.Share,
+                    s.library.sharePlaylist, Icons.Filled.Share,
                     onClick = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
                 )
             )
             // 与歌单详情页同一条可见性规则：owner 才谈得上「删除」，收藏来的只能「取消收藏」。
             add(
                 CpContextMenuItem(
-                    if (owner) "删除歌单" else "取消收藏",
+                    if (owner) s.library.deletePlaylist else s.library.unfavoritePlaylist,
                     Icons.Filled.Delete,
                     onClick = {
                         confirm.request(
-                            title = if (owner) "删除歌单" else "取消收藏",
+                            title = if (owner) s.library.deletePlaylist else s.library.unfavoritePlaylist,
                             message = if (owner) {
-                                "确定删除「${playlist.name}」吗？删除后无法恢复。"
+                                s.library.deletePlaylistMessage(playlist.name)
                             } else {
-                                "确定取消收藏「${playlist.name}」吗？之后仍可重新收藏。"
+                                s.library.unfavoritePlaylistMessage(playlist.name)
                             },
-                            confirmLabel = if (owner) "删除" else "取消收藏",
+                            confirmLabel = if (owner) s.common.confirm else s.library.unfavoritePlaylist,
                             destructive = owner,
-                            onConfirm = { homeModel.deleteOrUnsubscribePlaylist(playlist) },
+                            onConfirm = { homeModel.deleteOrUnsubscribePlaylist(playlist, s) },
                         )
                     },
                     danger = true,
@@ -1137,7 +1325,8 @@ private fun DesktopSidebar(
 
     Surface(
         modifier = Modifier.width(248.dp).fillMaxSize(),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        // 桌面侧栏与页面同层（靠右侧分隔线与内容区划界，不靠底色差）。
+        color = cp.player.app.ui.theme.cpPageSurface(),
     ) {
         Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 18.dp)) {
             SidebarHeader(profileName = profile?.nickname, avatarUrl = profile?.avatarUrl)
@@ -1154,17 +1343,22 @@ private fun DesktopSidebar(
                     bottom = cp.player.app.ui.component.LocalMiniPlayerTailSpace.current.coerceAtLeast(0.dp),
                 ),
             ) {
-                item { SidebarSection("发现音乐") }
+                item { SidebarSection(s.navigation.sectionDiscover) }
                 items(tabs.size) { index ->
                     val tab = tabs[index]
                     // 打开内嵌面板（设置 / 歌单 / 下载 …）时 tab 不再高亮：
                     // 否则「右侧已经是下载管理了，左边还亮着『我的』」看起来像没切过去。
                     val selected = selectedIndex == index && selectedPane is DesktopPane.Tabs
                     androidx.compose.material3.NavigationDrawerItem(
-                        label = { CpText(tab.label) },
+                        label = { CpText(tab.labelOf(s.navigation)) },
                         selected = selected,
-                        onClick = { onSelect(index) },
-                        icon = { Icon(if (selected) tab.selectedIcon else tab.unselectedIcon, tab.label) },
+                        onClick = { onSelect(tab.key) },
+                        icon = {
+                            Icon(
+                                if (selected) tab.selectedIcon else tab.unselectedIcon,
+                                tab.labelOf(s.navigation),
+                            )
+                        },
                         // Expressive 侧边栏用**全圆角胶囊**，而不是 12dp 的方角块。
                         shape = cp.player.app.ui.theme.CpShapes.full,
                         modifier = Modifier.padding(vertical = 2.dp),
@@ -1172,14 +1366,14 @@ private fun DesktopSidebar(
                 }
 
                 // 功能区：图标装在圆角方片里 —— 与下方歌单区的封面缩略图形成对照。
-                item { SidebarSection("我的音乐") }
+                item { SidebarSection(s.navigation.sectionMyMusic) }
                 item {
-                    val isLocalFav = selectedPane is DesktopPane.LocalLibrary && (selectedPane as DesktopPane.LocalLibrary).initialTab == 3
+                    val isLocalFav = selectedPane is DesktopPane.LocalLibrary && selectedPane.initialTab == 3
                     val isOnlineFav = selectedPlaylistId != null &&
                         selectedPlaylistId == homeState.likedPlaylist?.resourceId
                     SidebarAction(
                         icon = Icons.Filled.FavoriteBorder,
-                        label = "我喜欢的音乐",
+                        label = s.navigation.likedMusic,
                         selected = isOnlineFav || (homeState.likedPlaylist == null && isLocalFav),
                         onClick = {
                             homeState.likedPlaylist?.let(onOpenPlaylist) ?: onOpenLocalFavorites()
@@ -1189,7 +1383,7 @@ private fun DesktopSidebar(
                 item {
                     SidebarAction(
                         icon = Icons.Filled.FolderOpen,
-                        label = "本地音乐",
+                        label = s.navigation.localMusic,
                         selected = selectedPane is DesktopPane.LocalLibrary,
                         onClick = onOpenLocalLibrary,
                     )
@@ -1197,7 +1391,7 @@ private fun DesktopSidebar(
                 item {
                     SidebarAction(
                         icon = Icons.Filled.History,
-                        label = "最近播放",
+                        label = s.navigation.recentPlays,
                         selected = selectedPane is DesktopPane.RecentPlays,
                         onClick = onOpenRecentPlays,
                     )
@@ -1205,7 +1399,7 @@ private fun DesktopSidebar(
                 item {
                     SidebarAction(
                         icon = Icons.Filled.Download,
-                        label = "下载管理",
+                        label = s.navigation.downloads,
                         badge = activeDownloadCount,
                         selected = selectedPane is DesktopPane.Downloads,
                         onClick = onOpenDownloads,
@@ -1222,7 +1416,7 @@ private fun DesktopSidebar(
                     item {
                         SidebarAction(
                             icon = Icons.AutoMirrored.Filled.Message,
-                            label = "消息",
+                            label = s.navigation.messages,
                             // 不传 badge：与窗口标题栏 / 顶栏同一条决定（2026-10-02 去红点）。
                             // `SidebarAction` 的 badge 是「>0 才画」，不传即 0，等于关掉。
                             selected = selectedPane is DesktopPane.Messages,
@@ -1232,7 +1426,7 @@ private fun DesktopSidebar(
                 }
 
                 if (shownPlaylists.isNotEmpty()) {
-                    item { SidebarSection("我的歌单") }
+                    item { SidebarSection(s.navigation.sectionMyPlaylists) }
                     items(shownPlaylists.size) { index ->
                         val playlist = shownPlaylists[index]
                         // 右键菜单包在行**外面**（不是改 SidebarPlaylistRow 自己的签名）：
@@ -1252,7 +1446,7 @@ private fun DesktopSidebar(
                     item {
                         SidebarAction(
                             icon = Icons.Filled.LibraryMusic,
-                            label = "查看全部 ${allPlaylists.size} 个歌单",
+                            label = s.navigation.allPlaylists(allPlaylists.size),
                             selected = false,
                             onClick = onOpenAllPlaylists,
                         )
@@ -1264,7 +1458,7 @@ private fun DesktopSidebar(
             if (showSettingsEntry) {
                 SidebarAction(
                     icon = Icons.Filled.Settings,
-                    label = "设置",
+                    label = s.navigation.settings,
                     selected = selectedPane is DesktopPane.Settings,
                     onClick = onOpenSettings,
                 )
@@ -1501,8 +1695,11 @@ internal fun SidebarRowsPreview() {
 }
 
 private data class TabItem(
+    /** 稳定身份：搜索与动态会互换位置，不能用列表索引代替。 */
+    val key: String,
     val screen: Screen,
-    val label: String,
+    /** 取值函数而不是字符串：tab 实例是会话级常量，语言切换后要能重新求值。 */
+    val labelOf: (NavigationStrings) -> String,
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector,
 )
@@ -1573,7 +1770,7 @@ private val DesktopPaneSaver: Saver<DesktopPane, Any> = run {
 /**
  * 内容区内嵌 Navigator 的**根页**：三个 tab 的宿主（[TabContent]）。
  *
- * 通过 [LocalDesktopTabIndex] 和 [LocalDesktopVisitedTabs] 从外层 `MainScreen`
+ * 通过 [LocalDesktopTabs] / [LocalDesktopTabKey] / [LocalDesktopVisitedTabs] 从外层 `MainScreen`
  * 响应式消费最新的选中项和访问历史，自己不持有任何易失字段或陈旧状态引用。
  * 即使 `MainScreen` 被根栈 push 覆盖并弹出恢复后，内嵌 Navigator 复用此根页实例，
  * 其 `Content()` 也能立即根据最新的 CompositionLocal 渲染出正确的 tab 内容，
@@ -1582,8 +1779,9 @@ private val DesktopPaneSaver: Saver<DesktopPane, Any> = run {
 private data object DesktopContentRootScreen : Screen {
     @Composable
     override fun Content() {
-        val selectedIndex = LocalDesktopTabIndex.current
+        val tabs = LocalDesktopTabs.current
+        val selectedTabKey = LocalDesktopTabKey.current
         val visitedTabs = LocalDesktopVisitedTabs.current
-        TabContent(MAIN_TABS, visitedTabs, selectedIndex, Modifier.fillMaxSize())
+        TabContent(tabs, visitedTabs, selectedTabKey, Modifier.fillMaxSize())
     }
 }

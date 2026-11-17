@@ -1188,3 +1188,37 @@ suspend fun ProviderHost.getLikeListPage(request: PagedIdRequest): IdPage {
         }
     }
 }
+
+suspend fun ProviderHost.likeResource(request: ResourceLikeRequest): MutationResult {
+    validateExtendedRequest(request)
+    request.write(WireWriter())
+    return callExtended(ExtendedCapability.LIKERESOURCE) { provider ->
+        provider.likeResource(request).also {
+            validateExtendedResult(it.values(), request.values())
+            it.write(WireWriter())
+        }
+    }
+}
+
+suspend fun ProviderHost.resolveDrm(request: DrmResolveRequest): ResolvedMedia {
+    validateExtendedRequest(request)
+    request.write(WireWriter())
+    return callExtended(ExtendedCapability.RESOLVEDRM) { provider ->
+        provider.resolveDrm(request).also {
+            validateExtendedResult(it.values(), request.values())
+            it.write(WireWriter())
+        }
+    }
+}
+
+suspend fun ProviderHost.exchangeLicense(request: LicenseRequest): LicenseResponse {
+    val snapshot = LicenseRequest.fromValues(request.values())
+    validateExtendedRequest(snapshot)
+    snapshot.write(WireWriter())
+    return callExtended(ExtendedCapability.EXCHANGELICENSE) { provider ->
+        provider.exchangeLicense(snapshot).also {
+            validateExtendedResult(it.values(), snapshot.values())
+            it.write(WireWriter())
+        }
+    }
+}

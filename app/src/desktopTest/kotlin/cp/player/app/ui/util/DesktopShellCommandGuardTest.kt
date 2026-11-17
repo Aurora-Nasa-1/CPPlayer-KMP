@@ -38,6 +38,7 @@ class DesktopShellCommandGuardTest {
     private val commandFields = listOf(
         "settingsRequested",
         "messagesRequested",
+        "dynamicRequested",
         "pendingSearchQuery",
     )
 

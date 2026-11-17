@@ -28,15 +28,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.ui.text.font.FontWeight
+import cp.player.app.i18n.cpStrings
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -66,6 +70,8 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SliderState
+import androidx.compose.material3.rememberSliderState
 import androidx.compose.material3.SplitButtonDefaults
 import androidx.compose.material3.SplitButtonLayout
 import androidx.compose.material3.Surface
@@ -112,6 +118,7 @@ import androidx.graphics.shapes.RoundedPolygon
 import cp.player.app.ui.feedback.CpHaptic
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.util.formatTimeMs
+import cp.player.app.ui.util.DesktopShell
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -671,7 +678,40 @@ fun CpPlainSeekBar(
     )
 }
 
-/** Quiet mobile timeline, retaining Material Slider gestures and accessibility. */
+/** 时间轴轨道的粗细：静置（AM 的细线）与按住 / 拖动时。 */
+private val SeekTrackIdleHeight = 4.dp
+private val SeekTrackPressHeight = 12.dp
+
+/** 按住时两段轨道的透明度各提一档 —— 只变粗不提亮，粗了反而显得发灰。 */
+private const val SeekTrackIdleTrackAlpha = 0.16f
+private const val SeekTrackPressedTrackAlpha = 0.24f
+private const val SeekTrackIdleActiveAlpha = 0.7f
+private const val SeekTrackPressedActiveAlpha = 0.9f
+
+/**
+ * 移动播放页时间轴 —— **按 Apple Music 的进度条规格**画，不是 M3 `Slider` 的默认观感。
+ *
+ * 三条规格，缺一条就不像 AM：
+ * 1. **没有拇指圆点**：任何状态都不画点，播放头就是「已播轨道的末端」；
+ * 2. **按住变粗**：手指按下（还没滑动也算）整条轨道 4dp → 12dp，松手缩回 ——
+ *    AM 就是靠这一下变粗告诉用户「现在能拖」；
+ * 3. **变粗同时提亮**：见 [SeekTrackPressedActiveAlpha]。
+ *
+ * 实现仍是「`Slider` 接手势 + 自绘轨道」：拇指留空、轨道全透明，只借它的拖动 /
+ * 点击定位 / 无障碍 / 键盘支持。留空拇指还有第二个作用：M3 用拇指宽度做轨道左右
+ * 留白，拇指为 0 时轨道才像 AM 那样顶到两端。
+ *
+ * ⚠️ 粗细是**在绘制阶段**读动画值的（`Canvas` 的 draw lambda 里读
+ * `animateFloatAsState` 的结果），因此每帧变化只重绘、不重组。别把它提到组合期算
+ * `Dp` —— 那会让整条滑条（含 M3 交互层）在按住的一瞬间每秒重组几十次。
+ *
+ * seek 在**松手时**回调（理由同 [CpSeekBar]）；拖动期间只更新视觉，并通过
+ * [onScrubPreview] 把当前手指位置交给时间标签，让「已播 / 剩余」跟着动 ——
+ * 这也是 AM 的行为。
+ *
+ * @param onScrubPreview 拖动中的预览位置（毫秒）；松手 / 取消时回调 `null`。
+ *   调用方据此改动时间标签，条本身不显示气泡。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CpMinimalSeekBar(
@@ -681,6 +721,7 @@ fun CpMinimalSeekBar(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     trackKey: Any? = null,
+    onScrubPreview: ((Long?) -> Unit)? = null,
 ) {
     val duration = durationMs.coerceAtLeast(1L).toFloat()
     var dragging by remember(trackKey) { mutableStateOf(false) }
@@ -692,13 +733,33 @@ fun CpMinimalSeekBar(
         else -> positionMs.toFloat()
     }.coerceIn(0f, duration)
     val ink = MaterialTheme.colorScheme.onSurface
-    val trackColor = ink.copy(alpha = if (enabled) 0.16f else 0.08f)
-    val activeColor = ink.copy(alpha = if (enabled) 0.7f else 0.25f)
-    Slider(
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    // 0 = 静置细线，1 = 按住后的粗轨道。只在 draw lambda 里读（见 KDoc 的 ⚠️）。
+    val expansion = animateFloatAsState(
+        targetValue = if ((pressed || dragging) && enabled) 1f else 0f,
+        animationSpec = CpMotion.spatialFast(),
+        label = "seekTrackExpansion",
+    )
+    val idleTrackAlpha = if (enabled) SeekTrackIdleTrackAlpha else 0.08f
+    val idleActiveAlpha = if (enabled) SeekTrackIdleActiveAlpha else 0.25f
+    val sliderState = rememberSliderState(
         value = shown,
+        trackRange = 0f..duration,
+    )
+    LaunchedEffect(shown) {
+        if (!dragging) {
+            sliderState.value = shown
+        }
+    }
+    Slider(
+        state = sliderState,
+        modifier = modifier,
+        enabled = enabled,
         onValueChange = {
             dragging = true
             dragValue = it
+            onScrubPreview?.invoke(it.toLong())
         },
         onValueChangeFinished = {
             if (dragging && enabled) {
@@ -707,23 +768,35 @@ fun CpMinimalSeekBar(
                 onSeek(target)
             }
             dragging = false
+            onScrubPreview?.invoke(null)
         },
-        valueRange = 0f..duration,
-        enabled = enabled,
-        modifier = modifier,
-        thumb = {
-            Box(
-                Modifier.size(if (dragging) 12.dp else 6.dp)
-                    .clip(CircleShape).background(activeColor),
-            )
-        },
-        track = { sliderState ->
-            Canvas(Modifier.fillMaxWidth().height(4.dp)) {
-                val radius = CornerRadius(size.height / 2f)
-                drawRoundRect(trackColor, cornerRadius = radius)
+        colors = SliderDefaults.colors(
+            thumbColor = Color.Transparent,
+            activeTrackColor = Color.Transparent,
+            inactiveTrackColor = Color.Transparent,
+            activeTickColor = Color.Transparent,
+            inactiveTickColor = Color.Transparent,
+        ),
+        interactionSource = interactionSource,
+        // AM 没有拇指圆点：留空，轨道因此也顶到两端。
+        thumb = {},
+        track = { state: SliderState ->
+            Canvas(Modifier.fillMaxWidth().height(SeekTrackPressHeight)) {
+                val e = expansion.value.coerceIn(0f, 1f)
+                val thicknessPx = (SeekTrackIdleHeight + (SeekTrackPressHeight - SeekTrackIdleHeight) * e).toPx()
+                val top = (size.height - thicknessPx) / 2f
+                val radius = CornerRadius(thicknessPx / 2f)
+                val fraction = (state.value / duration).coerceIn(0f, 1f)
                 drawRoundRect(
-                    activeColor,
-                    size = Size(size.width * (sliderState.value / duration).coerceIn(0f, 1f), size.height),
+                    color = ink.copy(alpha = idleTrackAlpha + (SeekTrackPressedTrackAlpha - SeekTrackIdleTrackAlpha) * e),
+                    topLeft = Offset(0f, top),
+                    size = Size(size.width, thicknessPx),
+                    cornerRadius = radius,
+                )
+                drawRoundRect(
+                    color = ink.copy(alpha = idleActiveAlpha + (SeekTrackPressedActiveAlpha - SeekTrackIdleActiveAlpha) * e),
+                    topLeft = Offset(0f, top),
+                    size = Size(size.width * fraction, thicknessPx),
                     cornerRadius = radius,
                 )
             }
@@ -844,6 +917,122 @@ fun CpConnectedChoice(
     }
 }
 
+/** One destination in [CpViewSwitcher]. */
+data class CpViewSwitcherItem(
+    val label: String,
+    val icon: ImageVector,
+    val badge: String? = null,
+    val enabled: Boolean = true,
+)
+
+/**
+ * M3 Expressive 连通视图切换器。
+ *
+ * 用官方 [ToggleButton] 的 connected shapes 取代 `TabRow`：选中项不是「下面多一条
+ * 横线」，而是**药丸形状本身发生变形**，并按 Expressive 的 spatial motion 过渡。
+ *
+ * - 桌面 / 宽栏：[compact] = false，图标与文字横排，计数徽标跟在文字后。
+ * - 手机 / 窄栏：[compact] = true，图标在上、文字在下，四项也能在 360dp 内平分。
+ *
+ * 计数徽标只表达「有多少条」，为 0 时由调用方传 `null` —— 不要画一个「0」。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CpViewSwitcher(
+    items: List<CpViewSwitcherItem>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+    ) {
+        items.forEachIndexed { index, item ->
+            val checked = selectedIndex == index
+            ToggleButton(
+                checked = checked,
+                onCheckedChange = { onSelect(index) },
+                enabled = item.enabled,
+                shapes = when (index) {
+                    0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                    items.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                    else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = if (compact) 62.dp else 48.dp),
+                contentPadding = PaddingValues(
+                    horizontal = if (compact) 4.dp else 12.dp,
+                    vertical = if (compact) 6.dp else 8.dp,
+                ),
+            ) {
+                if (compact) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Icon(item.icon, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            CpText(
+                                text = item.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                            )
+                            item.badge?.let { SwitcherBadge(it, checked) }
+                        }
+                    }
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(item.icon, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        CpText(
+                            text = item.label,
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                        )
+                        item.badge?.let {
+                            Spacer(Modifier.width(6.dp))
+                            SwitcherBadge(it, checked)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SwitcherBadge(text: String, checked: Boolean) {
+    Surface(
+        shape = CircleShape,
+        color = if (checked) {
+            MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.18f)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerHighest
+        },
+    ) {
+        CpText(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (checked) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+        )
+    }
+}
+
 // ---------------------------------------------------------------- 状态标记
 
 /**
@@ -884,7 +1073,9 @@ fun CpPlayingEqualizer(
         horizontalArrangement = Arrangement.spacedBy(1.5.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
-        if (isPlaying) {
+        // 窗口隐藏到托盘时不挂无限动画：`rememberInfiniteTransition` 会逐帧请求新帧，
+        // 看不见的窗口没必要继续跳。展开成静态三根棒（与暂停态同形）。
+        if (isPlaying && !DesktopShell.isWindowHidden) {
             val transition = rememberInfiniteTransition(label = "cpEq")
             repeat(3) { index ->
                 // ⚠️ 不要写成 `by`：这里刻意保留 `State` 本体，让 `.value` 只在
@@ -1015,9 +1206,10 @@ fun CpPlayPauseButton(
                     },
                     label = "cpPlayPauseIcon",
                 ) { playing ->
+                    val playerStrings = cpStrings().player
                     Icon(
                         imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = if (playing) "暂停" else "播放",
+                        contentDescription = playerStrings.playOrPause(playing),
                         modifier = Modifier
                             .size(size * 0.46f)
                             .graphicsLayer {
@@ -1136,17 +1328,24 @@ fun CpSplitButton(
     BoxWithConstraints(modifier = modifier) {
         val totalWidth = maxWidth
         val isFullWidth = totalWidth > 0.dp && totalWidth != Dp.Infinity
+        val isFixedHeight = maxHeight > 0.dp && maxHeight != Dp.Infinity
+        val containerHeight = if (isFixedHeight) maxHeight else SplitButtonDefaults.MediumContainerHeight
         val actualTrailingWidth = trailingWidth ?: if (totalWidth >= 300.dp) 76.dp else 64.dp
         val leadingModifier = if (isFullWidth) {
-            Modifier.width((totalWidth - actualTrailingWidth - spacing).coerceAtLeast(0.dp)).fillMaxHeight()
+            Modifier.width((totalWidth - actualTrailingWidth - spacing).coerceAtLeast(0.dp))
         } else {
-            Modifier.fillMaxHeight()
-        }
-        val trailingModifier = if (isFullWidth) {
-            Modifier.width(actualTrailingWidth).fillMaxHeight()
+            Modifier
+        }.then(if (isFixedHeight) Modifier.fillMaxHeight() else Modifier.height(containerHeight))
+        val trailingModifier = (if (isFullWidth) {
+            Modifier.width(actualTrailingWidth)
         } else {
-            Modifier.fillMaxHeight()
-        }
+            Modifier
+        }).then(if (isFixedHeight) Modifier.fillMaxHeight() else Modifier.height(containerHeight))
+
+        val leadingShapes = SplitButtonDefaults.leadingButtonShapesFor(containerHeight)
+        val trailingShapes = SplitButtonDefaults.trailingButtonShapesFor(containerHeight)
+        val leadingPadding = SplitButtonDefaults.leadingButtonContentPaddingFor(containerHeight)
+        val trailingPadding = SplitButtonDefaults.trailingButtonContentPaddingFor(containerHeight)
 
         SplitButtonLayout(
             leadingButton = {
@@ -1155,6 +1354,8 @@ fun CpSplitButton(
                     enabled = enabled,
                     modifier = leadingModifier,
                     colors = colors,
+                    shapes = leadingShapes,
+                    contentPadding = leadingPadding,
                 ) {
                     leadingContent()
                 }
@@ -1165,10 +1366,13 @@ fun CpSplitButton(
                     enabled = enabled,
                     modifier = trailingModifier,
                     colors = colors,
+                    shapes = trailingShapes,
+                    contentPadding = trailingPadding,
                 ) {
                     trailingContent()
                 }
             },
+            modifier = if (isFixedHeight) Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(containerHeight),
             spacing = spacing,
         )
     }
@@ -1192,17 +1396,24 @@ fun CpTonalSplitButton(
     BoxWithConstraints(modifier = modifier) {
         val totalWidth = maxWidth
         val isFullWidth = totalWidth > 0.dp && totalWidth != Dp.Infinity
+        val isFixedHeight = maxHeight > 0.dp && maxHeight != Dp.Infinity
+        val containerHeight = if (isFixedHeight) maxHeight else SplitButtonDefaults.MediumContainerHeight
         val actualTrailingWidth = trailingWidth ?: if (totalWidth >= 300.dp) 76.dp else 64.dp
         val leadingModifier = if (isFullWidth) {
-            Modifier.width((totalWidth - actualTrailingWidth - spacing).coerceAtLeast(0.dp)).fillMaxHeight()
+            Modifier.width((totalWidth - actualTrailingWidth - spacing).coerceAtLeast(0.dp))
         } else {
-            Modifier.fillMaxHeight()
-        }
-        val trailingModifier = if (isFullWidth) {
-            Modifier.width(actualTrailingWidth).fillMaxHeight()
+            Modifier
+        }.then(if (isFixedHeight) Modifier.fillMaxHeight() else Modifier.height(containerHeight))
+        val trailingModifier = (if (isFullWidth) {
+            Modifier.width(actualTrailingWidth)
         } else {
-            Modifier.fillMaxHeight()
-        }
+            Modifier
+        }).then(if (isFixedHeight) Modifier.fillMaxHeight() else Modifier.height(containerHeight))
+
+        val leadingShapes = SplitButtonDefaults.leadingButtonShapesFor(containerHeight)
+        val trailingShapes = SplitButtonDefaults.trailingButtonShapesFor(containerHeight)
+        val leadingPadding = SplitButtonDefaults.leadingButtonContentPaddingFor(containerHeight)
+        val trailingPadding = SplitButtonDefaults.trailingButtonContentPaddingFor(containerHeight)
 
         SplitButtonLayout(
             leadingButton = {
@@ -1211,6 +1422,8 @@ fun CpTonalSplitButton(
                     enabled = enabled,
                     modifier = leadingModifier,
                     colors = colors,
+                    shapes = leadingShapes,
+                    contentPadding = leadingPadding,
                 ) {
                     leadingContent()
                 }
@@ -1222,10 +1435,13 @@ fun CpTonalSplitButton(
                     enabled = enabled,
                     modifier = trailingModifier,
                     colors = colors,
+                    shapes = trailingShapes,
+                    contentPadding = trailingPadding,
                 ) {
                     trailingContent()
                 }
             },
+            modifier = if (isFixedHeight) Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(containerHeight),
             spacing = spacing,
         )
     }
@@ -1260,7 +1476,6 @@ fun CpToggleChip(
         onCheckedChange = onCheckedChange,
         modifier = modifier,
         enabled = enabled,
-        shapes = ToggleButtonDefaults.shapes(),
     ) {
         ChipContent(icon = icon, label = label, badge = badge)
     }
@@ -1439,11 +1654,12 @@ fun CpRefreshablePage(
         // ⚠️ 返回项必须在这里（而不是在页面外面再包一层菜单）：
         // 本容器自己已经在处理空白处的右键，外面再包一层会被这里的 `passive` 抢先消费掉
         // （子级先于父级收到 Main 阶段的 Press），外层菜单**永远弹不出来**。
+        val refresh = cpStrings().common.refresh
         val backItem = rememberBackContextMenuItem()
-        val menuItems = remember(onRefresh, backItem) {
+        val menuItems = remember(onRefresh, backItem, refresh) {
             buildList {
                 if (backItem != null) add(backItem)
-                add(CpContextMenuItem("刷新", Icons.Filled.Refresh, onClick = onRefresh))
+                add(CpContextMenuItem(refresh, Icons.Filled.Refresh, onClick = onRefresh))
             }
         }
         CpContextMenu(items = menuItems, modifier = modifier, passive = true, content = content)

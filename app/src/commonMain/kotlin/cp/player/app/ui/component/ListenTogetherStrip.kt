@@ -26,9 +26,8 @@ import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
-import cp.player.app.ui.screen.ListenTogetherScreen
-import cp.player.app.ui.util.LocalRootNavigator
-import cp.player.app.ui.util.pushOrNotify
+import cp.player.app.presentation.navigation.AppRoute
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.listentogether.ListenTogetherState
 import cp.player.core.util.currentTimeMillis
 
@@ -45,7 +44,7 @@ import cp.player.core.util.currentTimeMillis
  *
  * ### 为什么它自己导航，而不是加回调参数
  * 加 `onOpenRoom: () -> Unit` 就必须回头改两个宿主把回调透传下来，
- * 而那两个文件当前正被其他会话占用。这里直接用 [LocalRootNavigator]：
+ * 而那两个文件当前正被其他会话占用。这里直接用 [LocalAppNavigator.pushRoot]：
  * 房间页是**整页**体验（要盖住窗口含侧栏），本来就该 push 到根 Navigator
  * （与 `PlayerMoreBottomSheet` 里那个入口同一条理由）。
  *
@@ -55,10 +54,10 @@ import cp.player.core.util.currentTimeMillis
 @Composable
 fun ListenTogetherStrip(modifier: Modifier = Modifier) {
     val state by AppModel.listenTogetherState.collectAsState()
-    val navigator = LocalRootNavigator.current
+    val navigator = LocalAppNavigator.current
     ListenTogetherStripContent(
         state = state,
-        onOpen = if (navigator == null) null else { { navigator.pushOrNotify(ListenTogetherScreen()) } },
+        onOpen = { navigator.pushRoot(AppRoute.ListenTogether) },
         modifier = modifier,
     )
 }
@@ -132,7 +131,7 @@ internal fun ListenTogetherStripContent(
 
         Icon(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = "进入一起听房间",
+            contentDescription = together.openRoom,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp),
         )

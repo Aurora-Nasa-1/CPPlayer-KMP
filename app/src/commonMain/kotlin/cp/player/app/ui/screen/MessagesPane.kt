@@ -18,14 +18,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.navigator.LocalNavigator
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.CpContactListSkeleton
 import cp.player.app.ui.component.CpSkeletonCaption
 import cp.player.app.ui.component.CpSpacing
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.CpTwoPane
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.MessageNotifyGuideSheet
@@ -63,29 +64,38 @@ import kotlinx.coroutines.launch
 fun MessagesPane(
     onChatOpenChanged: (Boolean) -> Unit = {},
 ) {
-    val navigator = LocalNavigator.current
+    val navigator = LocalAppNavigator.current
     val model = remember { MessagesModel() }
     val chatModel = remember { ChatModel() }
-    val state by model.state.collectAsState()
+    val observedState by model.state.collectAsState()
     val profile by AppModel.userProfileFlow.collectAsState()
     val loggedIn = profile != null
+    val activeProvider by AppModel.activeProviderFlow.collectAsState()
+    val providerId = activeProvider?.id ?: AppModel.activeProviderId()
+    val sourceGeneration by AppModel.sourceGeneration.collectAsState()
+    val sessionKey = MessagesSessionKey(providerId, sourceGeneration, profile?.uid)
+    val state = model.stateFor(sessionKey, observedState)
     val scope = rememberCoroutineScope()
     val strings = cpStrings()
 
     // 当前选中的会话。刻意**不自动选第一个**：进消息面板先看到一句「选择左侧会话」，
     // 比替用户决定看谁的私信更合适（也和设置页宽屏一致）。
     var selected by remember { mutableStateOf<Contact?>(null) }
+    val visibleSelected = if (model.isCurrentSession(sessionKey)) selected else null
 
     // 右栏一旦有对话就给宿主发「让位」信号（见 onChatOpenChanged 的 KDoc）。
-    LaunchedEffect(selected) { onChatOpenChanged(selected != null) }
+    LaunchedEffect(visibleSelected) { onChatOpenChanged(visibleSelected != null) }
     // 面板被收起 / 切到别的 tab / 窗口缩窄时这个组合位置会消失，信号必须跟着复位 ——
     // 否则离开消息面板之后小播放器会一直不出现。
     DisposableEffect(Unit) { onDispose { onChatOpenChanged(false) } }
 
-    LaunchedEffect(loggedIn) {
+    LaunchedEffect(sessionKey) {
+        selected = null
         if (loggedIn) {
-            model.load(strings = strings)
+            model.load(strings = strings, sessionKey = sessionKey)
             AppModel.refreshUnreadMessages()
+        } else {
+            model.reset()
         }
     }
 
@@ -104,17 +114,17 @@ fun MessagesPane(
             model.markReadLocally(contact.userId)
             scope.launch { AppModel.socialRepository.markRead(contact.userId) }
             AppModel.refreshUnreadMessages()
-            if (wide) selected = contact else navigator?.push(ChatScreen(contact.userId, contact.nickname))
+            if (wide) selected = contact else navigator.push(AppRoute.Chat(contact.userId, contact.nickname))
         }
 
         val list: @Composable (Modifier) -> Unit = { listModifier ->
             ContactList(
                 loggedIn = loggedIn,
                 state = state,
-                selectedUserId = selected?.userId,
+                selectedUserId = visibleSelected?.userId,
                 onOpenContact = openContact,
                 onSetNotify = { uid, enabled -> model.setNotifySubscribed(uid, enabled) },
-                onRetry = { model.load(strings = strings) },
+                onRetry = { model.load(strings = strings, sessionKey = sessionKey) },
                 modifier = listModifier,
             )
         }
@@ -130,7 +140,7 @@ fun MessagesPane(
                 list(railModifier)
             },
             detail = {
-                val contact = selected
+                val contact = visibleSelected
                 if (contact == null) {
                     ContentState(
                         title = strings.social.messages.selectConversation,

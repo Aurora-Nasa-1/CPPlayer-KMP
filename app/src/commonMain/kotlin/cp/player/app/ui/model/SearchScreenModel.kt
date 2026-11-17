@@ -2,190 +2,44 @@ package cp.player.app.ui.model
 
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
-import cp.player.app.AppModel
-import cp.player.core.BackendResult
-import cp.player.app.repository.SearchType
-import cp.player.core.music.SearchResult
-import cp.player.core.music.TrackSummary
-import cp.player.core.music.AlbumSummary
-import cp.player.core.music.ArtistSummary
-import cp.player.core.media.MediaType
-import cp.player.core.local.LocalLibraryAggregator
-import cp.player.core.local.LocalGridSort
-import cp.player.app.repository.HotSearch
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
+import cp.player.app.presentation.search.SearchPresenter
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+
+// 兼容现有引用的类型别名
+typealias SearchUiState = cp.player.app.presentation.search.SearchUiState
 
 /**
- * 搜索历史的持久化键。
+ * 搜索页的 Voyager 适配层（Thin Adapter）。
  *
- * ⚠️ 必须与 `AppModel` 里登出清理用的同名键**字面量一致**（那边是 private，
- * 跨文件引用不到）。两处漂移的后果是「登出后搜索历史清不掉」——
- * 界面看起来正常，只有换号之后才暴露。
+ * 核心状态机与业务逻辑全部交由 [SearchPresenter]（UI 框架无关层），
+ * 本类只负责在 Voyager 的 [screenModelScope] 中桥接生命周期。
  */
-private const val SEARCH_HISTORY_KEY = "search_history"
-private const val MAX_SEARCH_HISTORY = 10
+class SearchScreenModel(initialQuery: String = "") : ScreenModel {
 
-data class SearchUiState(
-    val query: String = "",
-    val searchType: Int = SearchType.SONG,
-    val result: SearchResult? = null,
-    val loading: Boolean = false,
-    val error: String? = null,
-    val hotSearches: List<HotSearch> = emptyList(),
-    val suggestions: List<String> = emptyList(),
-    val searchHistory: List<String> = emptyList(),
-)
+    private val presenter = SearchPresenter(
+        initialQuery = initialQuery,
+        scope = screenModelScope,
+    )
 
-/**
- * 搜索页的状态与取数。
- *
- * ⚠️ [initialQuery] **只在模型构造时读一次**（见 `init`）：调用方必须保证
- * 「一个 `SearchScreen` 实例一份模型」，否则这个参数会被静默丢弃 ——
- * 落点是 `SearchScreen.modelTag`（Voyager 的 ScreenModel 按 Screen 类名键控，
- * 不传 `tag` 时常驻的搜索 tab 会与首页 push 出来的搜索页共用一份模型）。
- */
-class SearchScreenModel(private val initialQuery: String = "") : ScreenModel {
-    private val _state = MutableStateFlow(SearchUiState(query = initialQuery))
-    val state: StateFlow<SearchUiState> = _state.asStateFlow()
-    private var suggestionJob: Job? = null
-
-    init {
-        _state.value = _state.value.copy(searchHistory = readHistory())
-        loadHotSearches()
-        if (initialQuery.isNotBlank()) search(initialQuery)
-    }
-
-    private fun readHistory(): List<String> = AppModel.settings
-        .getString(SEARCH_HISTORY_KEY)
-        ?.split("\n")
-        ?.map(String::trim)
-        ?.filter(String::isNotEmpty)
-        ?.distinct()
-        ?.take(MAX_SEARCH_HISTORY)
-        ?: emptyList()
-
-    private fun saveHistory(history: List<String>) {
-        AppModel.settings.putString(SEARCH_HISTORY_KEY, history.joinToString("\n"))
-    }
-
-    private fun loadHotSearches() {
-        screenModelScope.launch {
-            val hot = runCatching { AppModel.musicRepository.getHotSearches() }.getOrNull().orEmpty()
-            _state.value = _state.value.copy(
-                hotSearches = hot.ifEmpty {
-                    listOf(HotSearch("热门歌曲"), HotSearch("流行音乐"), HotSearch("古典乐"))
-                },
-            )
-        }
-    }
+    val state: StateFlow<SearchUiState> get() = presenter.state
 
     fun setQuery(query: String) {
-        _state.value = _state.value.copy(query = query, error = null, result = null)
-        suggestionJob?.cancel()
-        if (query.isBlank()) {
-            _state.value = _state.value.copy(suggestions = emptyList())
-            return
-        }
-        suggestionJob = screenModelScope.launch {
-            val requestedQuery = query.trim()
-            val suggestions = if (AppModel.activeProvider() == null) {
-                val localItems = AppModel.localMedia.items().value
-                    .filter { it.mediaType == MediaType.AUDIO }
-                LocalLibraryAggregator.search(localItems, requestedQuery).map { it.title }.distinct().take(10)
-            } else {
-                loadSearchSuggestions(requestedQuery).orEmpty()
-            }
-            // 归属校验：`suggestionJob?.cancel()` 是协作式的，结果回来时关键词可能又变了。
-            if (_state.value.query.trim() != requestedQuery) return@launch
-            _state.value = _state.value.copy(suggestions = suggestions)
-        }
+        presenter.setQuery(query)
     }
 
     fun clear() {
-        suggestionJob?.cancel()
-        _state.value = _state.value.copy(query = "", result = null, error = null, suggestions = emptyList())
+        presenter.clear()
     }
 
     fun clearHistory() {
-        saveHistory(emptyList())
-        _state.value = _state.value.copy(searchHistory = emptyList())
+        presenter.clearHistory()
     }
 
     fun selectSearchType(type: Int) {
-        if (type == _state.value.searchType) return
-        _state.value = _state.value.copy(searchType = type)
-        if (_state.value.query.isNotBlank()) search()
+        presenter.selectSearchType(type)
     }
 
-    fun search(keyword: String = _state.value.query, type: Int = _state.value.searchType) {
-        val finalKeyword = keyword.trim()
-        if (finalKeyword.isEmpty() || _state.value.loading) return
-        suggestionJob?.cancel()
-        val history = listOf(finalKeyword) + _state.value.searchHistory.filterNot { it.equals(finalKeyword, true) }
-        val trimmedHistory = history.take(MAX_SEARCH_HISTORY)
-        saveHistory(trimmedHistory)
-        _state.value = _state.value.copy(
-            query = finalKeyword,
-            searchType = type,
-            searchHistory = trimmedHistory,
-            suggestions = emptyList(),
-            result = null,
-        )
-        screenModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = null)
-            if (AppModel.activeProvider() == null) {
-                val localItems = AppModel.localMedia.items().value
-                    .filter { it.mediaType == MediaType.AUDIO }
-                val matchedSongs = LocalLibraryAggregator.search(localItems, finalKeyword).map { item ->
-                    TrackSummary(
-                        id = "local://audio/${item.path}",
-                        name = item.title,
-                        artist = item.artist ?: "未知歌手",
-                        album = item.album,
-                        coverUrl = item.coverUri,
-                        durationMs = item.durationMs,
-                    )
-                }
-                val matchedAlbums = LocalLibraryAggregator.albums(localItems, LocalGridSort.NAME, finalKeyword)
-                    .map { album ->
-                        AlbumSummary(
-                            id = album.name.hashCode().toLong(),
-                            name = album.name,
-                            artistName = album.artist,
-                            coverUrl = album.coverUri,
-                            trackCount = album.songCount,
-                        )
-                    }
-                val matchedArtists = LocalLibraryAggregator.artists(localItems, LocalGridSort.NAME, finalKeyword)
-                    .map { artist ->
-                        ArtistSummary(
-                            id = artist.name.hashCode().toLong(),
-                            name = artist.name,
-                            avatarUrl = artist.coverUri,
-                        )
-                    }
-                _state.value = _state.value.copy(
-                    result = SearchResult(
-                        songs = matchedSongs,
-                        playlists = emptyList(),
-                        artists = matchedArtists,
-                        albums = matchedAlbums,
-                    ),
-                    loading = false,
-                )
-                return@launch
-            }
-            val response = runCatching { AppModel.musicRepository.search(finalKeyword, type) }
-                .getOrElse { BackendResult.Error(it.message ?: "搜索失败") }
-            _state.value = when (response) {
-                is BackendResult.Success -> _state.value.copy(result = response.data, loading = false)
-                is BackendResult.Error -> _state.value.copy(error = response.message, loading = false)
-                is BackendResult.Unsupported -> _state.value.copy(error = response.message, loading = false)
-            }
-        }
+    fun search(keyword: String = state.value.query, type: Int = state.value.searchType) {
+        presenter.search(keyword, type)
     }
 }

@@ -11,9 +11,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import java.io.ByteArrayInputStream
 import java.io.File
-import javax.imageio.ImageIO
+import cp.player.app.readPng
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -114,7 +113,7 @@ class RouteScaffoldFabTest {
         return try {
             val bytes = scene.render().encodeToData()?.bytes ?: error("encode failed")
             savePreview(bytes, "embedded-tail-${tail.value.toInt()}")
-            val png = ImageIO.read(ByteArrayInputStream(bytes)) ?: error("decode failed")
+            val png = readPng(bytes)
             val argb = IntArray(png.width * png.height)
             png.getRGB(0, 0, png.width, png.height, argb, 0, png.width)
             Pixels(png.width, png.height, argb)

@@ -6,9 +6,9 @@ build/
 .externalNativeBuild/
 /captures
 
-# 文档站构建产物（scripts/build-docs-site.py 输出）。源文档在 docs/，
-# 站点每次由 CI 重新生成，不入库。
-site/
+# 文档站构建产物（VitePress）。源文档在 docs/，站点由 CI 构建，不入库。
+docs/.vitepress/dist/
+docs/.vitepress/cache/
 
 # Verification scratch dirs used to bypass a locked Gradle cache.
 # The tag suffix is per-session (see AGENTS.md §3): the Groovy init script is
@@ -65,6 +65,13 @@ reference/Kazumi/
 #   先把那两个提交推到 fork，再 git submodule add。
 reference/netease-module-rust/
 
+# --- 本地实验目录（不入库） ---------------------------------------------
+# dev/provider-lab：用来端到端验「原生包能不能被宿主真正加载」的实验工程
+# （Rust fixture + JS fixture + dist/*.zip + 编译产物，约 97 MB）。
+# 它的结论已经写进 docs/dev/PROVIDER_NATIVE_WIRE.md，工程本身按需重建，
+# 不必进版本库。
+dev/provider-lab/
+
 # --- AI tooling output (local only, regenerated on demand) ---------------
 # Qoder's generated repo wiki + one-off git diff dumps. Kept on disk for
 # local use, but they drift out of date with the code and duplicate
@@ -102,6 +109,9 @@ native/*.dll
 native/*.so
 native/*.dylib
 native/target*/
+
+# Rust SDK crate 的本地 cargo 产物（provider-sdk-kmp/rust 本身入库）。
+provider-sdk-kmp/rust/target/
 
 # 放行发布所需的预编译二进制库
 !app/native/

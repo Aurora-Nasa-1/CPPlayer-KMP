@@ -141,13 +141,44 @@ object DesktopHiResEngine {
 
         val searchCandidates = linkedSetOf<File>()
 
-        // (a) 当前正在运行的可执行程序（CPPlayer.exe）所在目录探测 (Java 9+ ProcessHandle)
+        // (a) 当前正在运行的可执行程序（CPPlayer.exe）所在目录探测 (Win32 API + Java 9+ ProcessHandle)
+        try {
+            if (os.contains("win")) {
+                java.lang.foreign.Arena.ofConfined().use { arena ->
+                    val kernel32 = java.lang.foreign.SymbolLookup.libraryLookup("kernel32", arena)
+                    val getModuleFileName = java.lang.foreign.Linker.nativeLinker().downcallHandle(
+                        kernel32.find("GetModuleFileNameW").orElseThrow(),
+                        java.lang.foreign.FunctionDescriptor.of(
+                            java.lang.foreign.ValueLayout.JAVA_INT,
+                            java.lang.foreign.ValueLayout.ADDRESS,
+                            java.lang.foreign.ValueLayout.ADDRESS,
+                            java.lang.foreign.ValueLayout.JAVA_INT,
+                        ),
+                    )
+                    val pathBuf = arena.allocate(1024L)
+                    val len = getModuleFileName.invokeWithArguments(java.lang.foreign.MemorySegment.NULL, pathBuf, 512) as Int
+                    if (len > 0) {
+                        val exePath = pathBuf.getString(0, java.nio.charset.StandardCharsets.UTF_16LE)
+                        val appRoot = File(exePath).parentFile
+                        if (appRoot != null && appRoot.exists()) {
+                            searchCandidates += File(appRoot, libFileName)
+                            searchCandidates += File(appRoot, "native/$libFileName")
+                            searchCandidates += File(appRoot, "runtime/bin/$libFileName")
+                            searchCandidates += File(appRoot, "app/$libFileName")
+                        }
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+        }
+
         try {
             ProcessHandle.current().info().command().ifPresent { exePath ->
                 val exeFile = File(exePath)
                 val appRoot = exeFile.parentFile
                 if (appRoot != null && appRoot.exists()) {
                     searchCandidates += File(appRoot, libFileName)
+                    searchCandidates += File(appRoot, "native/$libFileName")
                     searchCandidates += File(appRoot, "runtime/bin/$libFileName")
                     searchCandidates += File(appRoot, "app/$libFileName")
                 }
@@ -522,6 +553,19 @@ object DesktopHiResEngine {
                     val path = extractJsonString(jsonStr, "path") ?: ""
                     _audioEvents.tryEmit(DesktopAudioEvent.TrackEnded(path))
                 }
+                jsonStr.contains("\"CrossfadeStarted\"") -> {
+                    val fromPath = extractJsonString(jsonStr, "from_path")
+                        ?: extractJsonString(jsonStr, "fromPath")
+                        ?: ""
+                    val toPath = extractJsonString(jsonStr, "to_path")
+                        ?: extractJsonString(jsonStr, "toPath")
+                        ?: ""
+                    _audioEvents.tryEmit(DesktopAudioEvent.CrossfadeStarted(fromPath, toPath))
+                }
+                jsonStr.contains("\"NextTrackReady\"") -> {
+                    val path = extractJsonString(jsonStr, "path") ?: ""
+                    _audioEvents.tryEmit(DesktopAudioEvent.NextTrackReady(path))
+                }
                 jsonStr.contains("\"Error\"") -> {
                     val msg = extractJsonString(jsonStr, "message") ?: "Unknown error"
                     _audioEvents.tryEmit(DesktopAudioEvent.Error(msg))
@@ -541,8 +585,51 @@ object DesktopHiResEngine {
     }
 
     private fun extractJsonString(json: String, key: String): String? {
-        val pattern = "\"$key\"\\s*:\\s*\"([^\"]*)\"".toRegex()
-        return pattern.find(json)?.groupValues?.get(1)
+        val pattern = "\"$key\"\\s*:\\s*\"((?:\\\\\"|[^\"])*)\"".toRegex()
+        val raw = pattern.find(json)?.groupValues?.get(1) ?: return null
+        return unescapeJson(raw)
+    }
+
+    private fun unescapeJson(raw: String): String {
+        if ('\\' !in raw) return raw
+        val sb = StringBuilder(raw.length)
+        var i = 0
+        while (i < raw.length) {
+            val c = raw[i]
+            if (c == '\\' && i + 1 < raw.length) {
+                when (val next = raw[i + 1]) {
+                    '\\' -> { sb.append('\\'); i += 2 }
+                    '"' -> { sb.append('"'); i += 2 }
+                    '/' -> { sb.append('/'); i += 2 }
+                    'b' -> { sb.append('\b'); i += 2 }
+                    'f' -> { sb.append('\u000C'); i += 2 }
+                    'n' -> { sb.append('\n'); i += 2 }
+                    'r' -> { sb.append('\r'); i += 2 }
+                    't' -> { sb.append('\t'); i += 2 }
+                    'u' -> {
+                        if (i + 5 < raw.length) {
+                            val hex = raw.substring(i + 2, i + 6)
+                            val code = hex.toIntOrNull(16)
+                            if (code != null) {
+                                sb.append(code.toChar())
+                                i += 6
+                            } else {
+                                sb.append(c)
+                                i++
+                            }
+                        } else {
+                            sb.append(c)
+                            i++
+                        }
+                    }
+                    else -> { sb.append(next); i += 2 }
+                }
+            } else {
+                sb.append(c)
+                i++
+            }
+        }
+        return sb.toString()
     }
 
     private fun extractJsonDouble(json: String, key: String): Double? {

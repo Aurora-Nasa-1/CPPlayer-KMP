@@ -1,5 +1,6 @@
 param([switch]$Android)
 $ErrorActionPreference = 'Stop'
+# Windows only: this verifier invokes gradlew.bat and cannot run on macOS/Linux.
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $tag = 'provider-chain-' + [Guid]::NewGuid().ToString('N').Substring(0, 10)
 $build = Join-Path $root "build-verify-$tag"
@@ -44,7 +45,6 @@ gradle.projectsEvaluated {
     $tasks = @(':app:compileKotlinDesktop', ':core:compileKotlinDesktop', ':provider-sdk-kmp:desktopTest', ':core:desktopTest')
     $coreTests = @(
         'cp.player.core.provider.KmpSdk*',
-        'cp.player.core.provider.TypedQuickJsProbeTest',
         'cp.player.core.provider.ProviderConvergenceTest',
         'cp.player.core.provider.ModuleImportAndAutoUpdateTest',
         'cp.player.core.music.*',

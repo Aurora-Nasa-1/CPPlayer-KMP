@@ -52,6 +52,7 @@ import cafe.adriel.voyager.core.stack.StackEvent
 import cafe.adriel.voyager.navigator.Navigator
 import cafe.adriel.voyager.transitions.ScreenTransition
 import cp.player.app.ui.anim.CoverFlightHost
+import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.CpTitleBarHeight
 import cp.player.app.ui.component.MiniPlayer
 import cp.player.app.ui.component.ProvideIsExpanded
@@ -62,6 +63,7 @@ import cp.player.app.ui.screen.OnboardingScreen
 import cp.player.app.ui.screen.PlayerScreen
 import cp.player.app.ui.screen.StartupScreen
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.PlatformMediaControlsEffect
 import cp.player.app.update.AppUpdateHost
 import cp.player.app.ui.util.popToMainShell
@@ -134,9 +136,12 @@ fun App(
     }
 
     AppTheme {
+        val s = cpStrings()
         Surface(
             modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background,
+            // 整窗底板走「页面层」而不是 `background`：后者与卡片只差 1~2 个 tone，
+            // 浅色下卡片会糊在页面上。层级定义见 `cpPageSurface`。
+            color = cp.player.app.ui.theme.cpPageSurface(),
         ) {
             val initialized by AppModel.initialized.collectAsState()
             val state by AppModel.backendState.collectAsState()
@@ -146,19 +151,22 @@ fun App(
             val startDestination = remember(initialized, state, onboardingDone) {
                 AppState.startDestination(initialized, state, onboardingDone)
             }
-            val start = remember(startDestination) {
+            val start = remember(startDestination, s) {
                 when (startDestination) {
-                    AppStartDestination.Loading -> StartupScreen("正在初始化后端…")
+                    AppStartDestination.Loading -> StartupScreen(s.common.initializingBackend)
                     AppStartDestination.Onboarding -> OnboardingScreen()
                     AppStartDestination.Main -> MainScreen()
                     is AppStartDestination.Error -> BackendErrorScreen(startDestination.message)
                 }
             }
             Navigator(start) { navigator ->
+                val appNavigator = remember(navigator) {
+                    cp.player.app.ui.navigation.VoyagerAppNavigator(navigator, navigator)
+                }
                 // 当 state 变为 Ready 时自动替换为 MainScreen
                 LaunchedEffect(startDestination) {
                     val target = when (startDestination) {
-                        AppStartDestination.Loading -> StartupScreen("正在初始化后端…")
+                        AppStartDestination.Loading -> StartupScreen(s.common.initializingBackend)
                         AppStartDestination.Onboarding -> OnboardingScreen()
                         AppStartDestination.Main -> MainScreen()
                         is AppStartDestination.Error -> BackendErrorScreen(startDestination.message)
@@ -183,13 +191,42 @@ fun App(
                 // 那层之上，用户返回时看到的还是原来的页面，观感像「跳歪了」。
                 // 引导流程（尚未进主壳层）里不导航：那时还没有消息页可回。
                 val pendingOpen = AppModel.pendingMessageOpenFlow.collectAsState().value
-                LaunchedEffect(pendingOpen) {
+                LaunchedEffect(pendingOpen, startDestination) {
                     val target = pendingOpen ?: return@LaunchedEffect
+                    if (!MessageDeepLinkRouting.shouldHandle(
+                            isMain = startDestination is AppStartDestination.Main,
+                            hasPendingRequest = true,
+                        )
+                    ) return@LaunchedEffect
+                    val provider = MessageDeepLinkRouting.resolveProvider(
+                        requestedProviderId = target.providerId,
+                        providers = AppModel.availableProviders(),
+                        providerId = { it.id },
+                    )
+                    if (provider == null) {
+                        AppModel.consumePendingMessageOpen()
+                        println("通知会话未打开：找不到音源 ${target.providerId}")
+                        return@LaunchedEffect
+                    }
+                    if (!MessageDeepLinkRouting.isAlreadyActive(target.providerId, AppModel.activeProviderId())) {
+                        when (val result = AppModel.switchProvider(provider)) {
+                            is cp.player.core.BackendResult.Success -> Unit
+                            is cp.player.core.BackendResult.Error -> {
+                                AppModel.consumePendingMessageOpen()
+                                println("通知会话未打开：切换音源失败 (${result.message})")
+                                return@LaunchedEffect
+                            }
+                            is cp.player.core.BackendResult.Unsupported -> {
+                                AppModel.consumePendingMessageOpen()
+                                println("通知会话未打开：音源不支持切换 (${result.message})")
+                                return@LaunchedEffect
+                            }
+                        }
+                    }
                     AppModel.consumePendingMessageOpen()
-                    if (startDestination !is AppStartDestination.Main) return@LaunchedEffect
                     navigator.popToMainShell()
-                    navigator.push(
-                        cp.player.app.ui.screen.ChatScreen(
+                    appNavigator.push(
+                        AppRoute.Chat(
                             peerUid = target.peerUid,
                             peerName = target.title.ifBlank { null },
                         )
@@ -295,6 +332,8 @@ fun App(
                                 // 页面读 LocalNavigator 拿到的是内嵌那一条；要整窗路由（播放页）
                                 // 的调用点必须显式用这一条。见 LocalRootNavigator 的 KDoc。
                                 cp.player.app.ui.util.LocalRootNavigator provides navigator,
+                                // 根导航契约：所有页面与组件通过 AppRoute 表达跳转意图。
+                                cp.player.app.ui.navigation.LocalAppNavigator provides appNavigator,
                                 // 播放页要补回来的顶部内边距 = 标题栏让出的量（见 LocalPlayerTopInset）。
                                 // 两者之和恒等于 CpTitleBarHeight ⇒ 内容不动，只有背景在长高。
                                 cp.player.app.ui.component.LocalPlayerTopInset provides
@@ -349,13 +388,14 @@ fun App(
                                                 // 小播放器浮层会把它盖住并吞掉点击。
                                                 // 桌面宽屏的对话在 `MessagesPane` 右栏里、不在这条根栈上，
                                                 // 由 `MainScreen` 自己那份宿主处理。
-                                                show = startDestination is AppStartDestination.Main &&
-                                                    navigator.lastItem !is PlayerScreen &&
-                                                    navigator.lastItem !is ChatScreen &&
-                                                    navigator.lastItem !is cp.player.app.ui.screen.VideoPlayerScreen &&
-                                                    !cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat,
+                                                show = shouldShowGlobalMiniPlayer(
+                                                    startDestination = startDestination,
+                                                    lastItem = navigator.lastItem,
+                                                    miniPlayerBlockedByChat =
+                                                        cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat,
+                                                ),
                                                 mainScreenVisible = navigator.lastItem is MainScreen,
-                                                onClick = { navigator.push(PlayerScreen()) },
+                                                onClick = { appNavigator.push(AppRoute.Player) },
                                             ) {
                                                 val isDesktopExpanded = cp.player.app.ui.component.LocalIsExpanded.current
                                                 val isDesktop = isDesktopExpanded || titleBar != null
@@ -502,6 +542,24 @@ fun App(
         }
     }
 }
+
+/**
+ * 根栈当前页是否应该显示全局迷你播放器。
+ *
+ * 首次启动时 `startDestination` 还不是 [AppStartDestination.Main]，本来就不会显示；
+ * 真正漏的是「从设置里重看引导」——那时 `startDestination` 仍是 Main，只有按当前
+ * 路由排除 [OnboardingScreen] 才能把它藏掉。
+ */
+internal fun shouldShowGlobalMiniPlayer(
+    startDestination: AppStartDestination,
+    lastItem: Any?,
+    miniPlayerBlockedByChat: Boolean,
+): Boolean = startDestination is AppStartDestination.Main &&
+    lastItem !is PlayerScreen &&
+    lastItem !is ChatScreen &&
+    lastItem !is cp.player.app.ui.screen.VideoPlayerScreen &&
+    lastItem !is OnboardingScreen &&
+    !miniPlayerBlockedByChat
 
 /**
  * 全局 MiniPlayer 宿主（根 Navigator 上的路由页通用底栏；MainScreen 自己有一份）。

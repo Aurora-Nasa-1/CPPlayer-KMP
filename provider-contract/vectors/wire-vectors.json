@@ -1,0 +1,229 @@
+{
+  "protocolVersion": 1,
+  "vectors": [
+    {
+      "name": "SearchRequest",
+      "type": "SearchRequest",
+      "value": {
+        "keyword": "音乐",
+        "limit": 30,
+        "offset": 2
+      },
+      "hex": "06000000e99fb3e4b9901e00000002000000"
+    },
+    {
+      "name": "Track",
+      "type": "Track",
+      "value": {
+        "id": "001",
+        "title": "Track 音乐",
+        "artists": [
+          {
+            "id": null,
+            "name": "Artist"
+          },
+          {
+            "id": "artist-B",
+            "name": "B"
+          }
+        ],
+        "durationMs": 9500,
+        "album": null,
+        "coverUrl": "https://example.test/cover.png"
+      },
+      "hex": "030000003030310c000000547261636b20e99fb3e4b99002000000000600000041727469737401080000006172746973742d4201000000421c2500000000000000011e00000068747470733a2f2f6578616d706c652e746573742f636f7665722e706e67"
+    },
+    {
+      "name": "TrackPage",
+      "type": "TrackPage",
+      "value": {
+        "items": [
+          {
+            "id": "A",
+            "title": "A",
+            "artists": [],
+            "durationMs": 1,
+            "album": null,
+            "coverUrl": null
+          }
+        ],
+        "total": null,
+        "hasMore": false
+      },
+      "hex": "01000000010000004101000000410000000001000000000000000000000100"
+    },
+    {
+      "name": "MediaResource",
+      "type": "MediaResource",
+      "value": {
+        "url": "https://cdn.example.test/track.flac",
+        "actualQuality": "lossless",
+        "headers": [
+          {
+            "name": "X-Stream-Token",
+            "value": "token"
+          }
+        ],
+        "expiresAtEpochMs": null,
+        "format": "FLAC",
+        "bitrate": 1411200,
+        "sizeBytes": null
+      },
+      "hex": "2300000068747470733a2f2f63646e2e6578616d706c652e746573742f747261636b2e666c6163080000006c6f73736c657373010000000e000000582d53747265616d2d546f6b656e05000000746f6b656e000104000000464c4143018088150000"
+    },
+    {
+      "name": "DrmDescriptor",
+      "type": "DrmDescriptor",
+      "value": {
+        "keySystem": "widevine",
+        "licenseUrl": "https://play.itunes.apple.com/WebObjects/MZPlay.woa/wa/acquireWebPlaybackLicense",
+        "headers": [
+          {
+            "name": "X-License-Token",
+            "value": "opaque"
+          }
+        ],
+        "schemeIdUri": "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed",
+        "initData": [
+          0,
+          1,
+          2,
+          255
+        ],
+        "keyId": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "keyUri": "data:application/octet-stream;base64,AQID",
+        "serverCertificate": null,
+        "persistent": false
+      },
+      "hex": "080000007769646576696e65015000000068747470733a2f2f706c61792e6974756e65732e6170706c652e636f6d2f5765624f626a656374732f4d5a506c61792e776f612f77612f61637175697265576562506c61796261636b4c6963656e7365010000000f000000582d4c6963656e73652d546f6b656e060000006f7061717565012d00000075726e3a757569643a65646566386261392d373964362d346163652d613363382d3237646364353164323165640104000000000102ff0110000000000102030405060708090a0b0c0d0e0f0129000000646174613a6170706c69636174696f6e2f6f637465742d73747265616d3b6261736536342c415149440000"
+    },
+    {
+      "name": "ResolvedMedia",
+      "type": "ResolvedMedia",
+      "value": {
+        "resource": {
+          "url": "https://cdn.example.test/track.m3u8",
+          "actualQuality": "lossless",
+          "headers": [],
+          "expiresAtEpochMs": null,
+          "format": "hls",
+          "bitrate": 1411200,
+          "sizeBytes": null
+        },
+        "drm": null
+      },
+      "hex": "2300000068747470733a2f2f63646e2e6578616d706c652e746573742f747261636b2e6d337538080000006c6f73736c65737300000000000103000000686c7301808815000000"
+    },
+    {
+      "name": "LicenseRequest",
+      "type": "LicenseRequest",
+      "value": {
+        "id": "269573303",
+        "keySystem": "widevine",
+        "challenge": [
+          0,
+          1,
+          2,
+          255
+        ],
+        "licenseUrl": null,
+        "headers": [],
+        "keyUri": "data:application/octet-stream;base64,AQID"
+      },
+      "hex": "09000000323639353733333033080000007769646576696e6504000000000102ff00000000000129000000646174613a6170706c69636174696f6e2f6f637465742d73747265616d3b6261736536342c41514944"
+    },
+    {
+      "name": "LicenseResponse",
+      "type": "LicenseResponse",
+      "value": {
+        "license": [
+          0,
+          127,
+          128,
+          255
+        ]
+      },
+      "hex": "04000000007f80ff"
+    },
+    {
+      "name": "BatchRequest",
+      "type": "BatchRequest",
+      "value": {
+        "ids": [
+          "A",
+          "a",
+          "A"
+        ]
+      },
+      "hex": "03000000010000004101000000610100000041"
+    },
+    {
+      "name": "Bytes",
+      "type": "Bytes",
+      "value": {
+        "value": [
+          0,
+          127,
+          128,
+          255
+        ]
+      },
+      "hex": "04000000007f80ff"
+    },
+    {
+      "name": "SocialEvent (nested)",
+      "type": "SocialEvent",
+      "value": {
+        "id": "event-1",
+        "user": {
+          "id": "u1",
+          "nickname": "User",
+          "avatarUrl": null
+        },
+        "text": "text",
+        "publishedAtEpochMs": 1,
+        "resourceId": null,
+        "resourceType": null,
+        "resourceTitle": null,
+        "resourceCoverUrl": null,
+        "resourceSubtitle": null,
+        "imageUrls": [],
+        "liked": false,
+        "likedCount": 0,
+        "commentCount": 0,
+        "forwardCount": 0,
+        "forwardedFrom": null,
+        "location": null
+      },
+      "hex": "070000006576656e742d3102000000753104000000557365720004000000746578740100000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "Capabilities",
+      "type": "Capabilities",
+      "value": {
+        "supported": [
+          "tracks.search",
+          "tracks.resolve"
+        ]
+      },
+      "hex": "020000000d000000747261636b732e7365617263680e000000747261636b732e7265736f6c7665"
+    }
+  ]
+}

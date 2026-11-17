@@ -5,6 +5,8 @@ import java.io.ByteArrayOutputStream
 import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import java.io.Serializable
+import cp.player.core.provider.ProviderSettingItemSchema
+import cp.player.core.provider.ProviderSettingOption
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -59,5 +61,25 @@ class JavaSerializableTest {
         }
         val restored = ObjectInputStream(ByteArrayInputStream(bytes)).use { it.readObject() }
         assertEquals(track, restored)
+    }
+
+    @Test
+    fun providerSettingSchemaAndNestedOptionsRoundTripThroughObjectStream() {
+        val schema = ProviderSettingItemSchema(
+            key = "quality",
+            label = "音质",
+            type = "select",
+            options = listOf(
+                ProviderSettingOption(label = "标准", value = "standard"),
+                ProviderSettingOption(label = "无损", value = "lossless"),
+            ),
+        )
+        assertSerializable(schema, *schema.options!!.toTypedArray())
+        val bytes = ByteArrayOutputStream().use { out ->
+            ObjectOutputStream(out).use { it.writeObject(schema) }
+            out.toByteArray()
+        }
+        val restored = ObjectInputStream(ByteArrayInputStream(bytes)).use { it.readObject() }
+        assertEquals(schema, restored)
     }
 }

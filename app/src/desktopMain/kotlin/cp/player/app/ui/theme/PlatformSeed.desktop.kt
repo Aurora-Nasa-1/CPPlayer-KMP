@@ -3,10 +3,11 @@ package cp.player.app.ui.theme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import cp.player.core.util.stable.DesktopStableValue
 import java.io.File
 import java.util.concurrent.TimeUnit
-import javax.imageio.ImageIO
+import org.jetbrains.skia.Image
 
 /** 桌面没有壁纸 Monet：系统只给「一个强调色」和「一张壁纸图」，都要经 materialkolor 展开。 */
 @Composable
@@ -95,40 +96,41 @@ internal fun parseWallpaperPath(output: String): String? =
     WALLPAPER_PATTERN.find(output)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
 
 /**
- * 解码壁纸并取种子色。
+ * 用 Skia 解码壁纸并取种子色，不经过 `javax.imageio` / `java.awt.image.BufferedImage`。
  *
- * **降采样解码是这里的重点**：4K 壁纸全解会分配约 3300 万个 int（~130 MB），
- * 只为取一个主色完全不值。`setSourceSubsampling` 让解码器**一开始就只输出**
- * 约 [CoverSampleSizePx] 见方的像素 —— 内存和解码时间都降两个数量级。
+ * **抽样是这里的重点**：4K 壁纸全量转 `IntArray` 要 ~33 MB，只为取一个主色不值。
+ * Skia 没有降采样解码入口，所以逐行 `readPixels` 只取一行（4K 也只有 ~15 KB），
+ * 再按 `step` 抽成约 [CoverSampleSizePx] 见方的数组交给量化器。
  *
- * 任何一步失败都返回 null（文件损坏 / 不是图片 / 没有可用的 ImageIO reader /
- * 是动态壁纸且副本也是视频），主题继续回退到 [DefaultSeedColor]。
+ * 任何一步失败都返回 null（文件损坏 / 不是图片 / 动态壁纸的副本是视频），
+ * 主题继续回退到 [DefaultSeedColor]。
  */
 internal fun extractWallpaperSeed(file: File): Color? = runCatching {
-    ImageIO.createImageInputStream(file)?.use { stream ->
-        val readers = ImageIO.getImageReaders(stream)
-        if (!readers.hasNext()) return@use null
-        val reader = readers.next()
-        try {
-            reader.input = stream
-            val fullWidth = reader.getWidth(0)
-            val fullHeight = reader.getHeight(0)
-            if (fullWidth <= 0 || fullHeight <= 0) return@use null
-            // 只解到 ~112px 就够量化用了，step 至少为 1（小图不能放大成 0）。
-            val step = (minOf(fullWidth, fullHeight) / CoverSampleSizePx).coerceAtLeast(1)
-            val param = reader.defaultReadParam
-            param.setSourceSubsampling(step, step, 0, 0)
-            val image = reader.read(0, param) ?: return@use null
-            val width = image.width
-            val height = image.height
-            if (width <= 0 || height <= 0) return@use null
-            val pixels = IntArray(width * height)
-            image.getRGB(0, 0, width, height, pixels, 0, width)
-            extractSeedColor(pixels, width, height)
-        } finally {
-            reader.dispose()
+    val bitmap = Image.makeFromEncoded(file.readBytes()).toComposeImageBitmap()
+    val fullWidth = bitmap.width
+    val fullHeight = bitmap.height
+    if (fullWidth <= 0 || fullHeight <= 0) return@runCatching null
+    // 只取 ~112px 就够量化用了，step 至少为 1（小图不能放大成 0）。
+    val step = (minOf(fullWidth, fullHeight) / CoverSampleSizePx).coerceAtLeast(1)
+    val sampleWidth = (fullWidth + step - 1) / step
+    val sampleHeight = (fullHeight + step - 1) / step
+    val pixels = IntArray(sampleWidth * sampleHeight)
+    val row = IntArray(fullWidth)
+    var y = 0
+    var outY = 0
+    while (y < fullHeight && outY < sampleHeight) {
+        bitmap.readPixels(row, 0, y, fullWidth, 1)
+        var x = 0
+        var outX = 0
+        while (x < fullWidth && outX < sampleWidth) {
+            pixels[outY * sampleWidth + outX] = row[x]
+            x += step
+            outX++
         }
+        y += step
+        outY++
     }
+    extractSeedColor(pixels, sampleWidth, sampleHeight)
 }.getOrNull()
 
 private fun readWindowsAccentColor(): Color? =

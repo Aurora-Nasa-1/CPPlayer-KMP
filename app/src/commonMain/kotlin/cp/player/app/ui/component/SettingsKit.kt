@@ -69,12 +69,15 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpText
 import cp.player.app.ui.theme.LocalIsDarkTheme
@@ -100,7 +103,7 @@ import kotlinx.coroutines.delay
  * | 行水平内边距 | 16dp | `CpSpacing.formRowHorizontal` |
  * | 行垂直内边距 | 10dp | `CpSpacing.formRowVertical` |
  * | 行内横向间隔 | 14dp | `CpSpacing.formRowGap` |
- * | 组内行距 | 4dp | `CpSpacing.listRowGap` |
+ * | 组内行距 | 2dp | `CpSpacing.listRowGap` |
  *
  * ⚠️ **页面容器只认 [SettingsPage]（静态）与 [SettingsLazyPage]（长列表）**，
  * 不要在页面里自行拼装自定义容器，以保证所有设置页的宽度上限、页边距与区块间距一致。
@@ -151,11 +154,8 @@ fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) 
         )
         Column(
             modifier = Modifier.fillMaxWidth(),
-            // 组内行距。**2026-10-01 从 2dp 改到 4dp（= CpSpacing.listRowGap）**，理由：
-            // 行现在按下时圆角会从 4dp 撑到 20dp，2dp 的缝太窄 —— 变形后的行会与
-            // 邻行视觉粘连，"这一行弹出来了"读不出来。4dp 也是 Kazumi `SplitListRow`
-            // 的缝宽（`reference/Kazumi/lib/bean/widget/split_list_row.dart`）。
-            // ⚠️ 这不是"随手改数字"：缝宽与形状变形是**一对**参数，改一个要回头看另一个。
+            // 组内行距统一取 CpSpacing.listRowGap（2dp），与全应用 segmented list 保持一致。
+            // 形状变形由行本身处理，列表容器只负责提供紧凑且可见的间隔。
             verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
             content = content,
         )
@@ -262,19 +262,16 @@ fun MonetIcon(icon: ImageVector, containerColor: Color, contentColor: Color) {
 /**
  * 选项行的默认容器色。
  *
- * ⚠️ **必须读 [LocalIsDarkTheme]，不要读 `isSystemInDarkTheme()`。** 两者在「跟随系统」时
- * 恰好相等，但本应用允许用户显式指定浅色 / 深色 —— 用户选了深色而系统是浅色时，
- * `isSystemInDarkTheme()` 返回 false，于是这里会去取**浅色**色板的角色色，
- * 与页面背景撞色、分组卡片整块糊住。
+ * 走 [cpCardSurface]：页面底色是 `surfaceContainer`（浅色 Tone 94），
+ * 卡片是 `surfaceContainerLowest`（Tone 100），两者**隔开三级**。
+ * 早先卡片取 `surfaceContainerLow`（Tone 96），与当时的 `surface` 页面只差一级，
+ * 分组卡片在浅色下几乎不可见（离屏取像素实测：行内与页面都是 #FBF8FF）。
  *
- * ⚠️ 浅色分支**不能返回 `surface`**：设置页背景本身就是 `surface`，
- * 两者相同 ⇒ 分组卡片完全不可见（离屏取像素实测：行内与页面都是 #FBF8FF）。
- * 取 `surfaceContainerLow` 才是 M3 里「卡片浮在页面之上」的标准关系。
+ * ⚠️ 不要在这里直接写角色名 —— 深浅两套层级是**反的**，分散写必然漂移，
+ * 见 [cpCardSurface] 的层级表。
  */
 @Composable
-fun settingsRowContainer(): Color =
-    if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHighest
-    else MaterialTheme.colorScheme.surfaceContainerLow
+fun settingsRowContainer(): Color = cpCardSurface()
 
 /**
  * 「**当前生效 / 当前选中**」的行容器色。
@@ -306,6 +303,13 @@ private fun RowTitle(text: String, color: Color) {
     )
 }
 
+/**
+ * 行内副标题：允许换行完整显示。
+ *
+ * 设置行的 subtitle 常是操作说明、缓存路径、音源能力或失败原因 —— 这些信息被
+ * 固定行数截断后没有展开入口，触屏端也没有 hover 可救。设置页本身可滚动，
+ * 让行高随内容增长比静默省略更可靠。
+ */
 @Composable
 private fun RowSubtitle(text: String, color: Color) {
     CpText(
@@ -313,7 +317,7 @@ private fun RowSubtitle(text: String, color: Color) {
         style = MaterialTheme.typography.bodyMedium,
         color = color,
         fontWeight = FontWeight.Normal,
-        maxLines = 4,
+        maxLines = Int.MAX_VALUE,
     )
 }
 
@@ -908,6 +912,7 @@ fun SettingsTextInputItem(
     subtitle: String? = null,
     placeholder: String? = null,
     keyboardType: KeyboardType = KeyboardType.Text,
+    obscureText: Boolean = false,
     enabled: Boolean = true,
     containerColor: Color = Color.Unspecified,
 ) {
@@ -947,6 +952,11 @@ fun SettingsTextInputItem(
                     placeholder = placeholder?.let { hint -> { CpText(hint) } },
                     keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
                     supportingText = error?.let { msg -> { CpText(msg) } },
+                    visualTransformation = if (obscureText) {
+                        PasswordVisualTransformation()
+                    } else {
+                        VisualTransformation.None
+                    },
                     modifier = Modifier.weight(1f),
                 )
                 if (dirty) {
@@ -1067,7 +1077,10 @@ fun SettingsConfirmItem(
         AlertDialog(
             onDismissRequest = { showDialog = false },
             title = { CpText(confirmTitle) },
-            text = { CpText(confirmMessage) },
+            // 确认框正文经常是「删多少 / 迁到哪个目录 / 会发生什么」这类**必须读完才能
+            // 决定按不按**的信息，而 CpText 默认 maxLines = 1 会把第二行起全部吃掉。
+            // 这里显式放开；对话框宽度有限，原文自己换行即可。
+            text = { CpText(confirmMessage, maxLines = Int.MAX_VALUE) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -1111,7 +1124,8 @@ fun SettingsFieldGroup(
 ) {
     Surface(
         shape = MaterialTheme.shapes.largeIncreased,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        // 字段组是卡片内部的次级容器：与卡片同色就分不出层级（见 cpNestedSurface）。
+        color = cp.player.app.ui.theme.cpNestedSurface(),
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(
@@ -1342,6 +1356,7 @@ fun SettingsSearchBar(
     placeholder: String,
     modifier: Modifier = Modifier,
 ) {
+    val strings = cpStrings()
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -1390,7 +1405,7 @@ fun SettingsSearchBar(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Close,
-                        contentDescription = "清空搜索",
+                        contentDescription = strings.common.clearSearch,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
                     )

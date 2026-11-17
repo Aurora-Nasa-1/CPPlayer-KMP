@@ -47,7 +47,7 @@ private const val ARTIST_ANNOTATION = "track-artist"
  * 3. 某一位歌手 `id == 0L`（上游数组里缺 id）⇒ 那一位**单独**不可点，其余照常；
  *    若**全部**缺 id，则整行都退回纯文本（点击区盖住整行却无处可跳，最糟）。
  *
- * 「点了没反应」比「看着就不像能点」糟糕得多（参见 `pushOrNotify` 的 KDoc），
+ * 「点了没反应」比「看着就不像能点」糟糕得多（参见 `AppNavigator` 的失败提示契约），
  * 所以没有 id 的时候宁可不挂点击。
  *
  * 显式启用 [CpTextReveal.Marquee] 时，移动中的字形不作为点击坐标：
@@ -117,6 +117,7 @@ fun TrackArtistText(
     var overflow by remember(annotated, resolvedStyle, maxLines) { androidx.compose.runtime.mutableStateOf(false) }
 
     val clickable = @Composable {
+        @Suppress("DEPRECATION")
         ClickableText(
             text = annotated,
             modifier = modifier,

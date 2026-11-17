@@ -3,9 +3,11 @@ package cp.player.core.playback
 import cp.player.core.util.SettingsStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -78,30 +80,48 @@ internal class PlaybackSessionStore(
      * 下次启动不该把已清掉的队列又摆回来。开关关闭时同样删除，避免关掉后
      * 旧快照一直躺着、用户再打开开关时恢复到一份早已过期的队列。
      *
-     * 快照决定在调用线程同步做完（极廉价，且语义是「此刻」），实际写盘派发到 IO 并串行化。
+     * 快照决定在调用线程同步做完（极廉价，且语义是「此刻」），实际写盘派发到 IO，
+     * 并在调用点立即按序进入共享 Mutex 排队。
      */
     fun persistSession(snapshotSupplier: () -> Session?) {
         val storage = settings ?: return
         val remove = !isKeepLastPlaybackEnabled()
         val snapshot = if (remove) null else snapshotSupplier()
         val encoded = if (snapshot == null) null else encodeSession(snapshot)
-        scope.launch(Dispatchers.IO) {
-            persistMutex.withLock {
-                writeSession(storage, remove || encoded == null, encoded)
-            }
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            writeSessionInOrder(storage, remove || encoded == null, encoded)
         }
     }
 
     /**
      * [persistSession] 的同步版本：只在 [PlaybackController.release] 用。
      * 释放是最后一次写快照的机会，异步派发到 IO 可能赶不上 backendScope 随后的取消。
+     * 锁在 IO 写入完成时释放，不能等恢复到可能正被 runBlocking 阻塞的 UI/EDT dispatcher。
      */
     fun persistSessionBlocking(snapshotSupplier: () -> Session?) {
         val storage = settings ?: return
         val remove = !isKeepLastPlaybackEnabled()
         val snapshot = if (remove) null else snapshotSupplier()
         val encoded = if (snapshot == null) null else encodeSession(snapshot)
-        writeSession(storage, remove || encoded == null, encoded)
+        runBlocking {
+            writeSessionInOrder(storage, remove || encoded == null, encoded)
+        }
+    }
+
+    /**
+     * 先在调用顺序上取得锁，再在 IO context 中写入并释放锁。
+     * 若在 IO 写完后才切回 scope dispatcher 解锁，release() 从该单线程 dispatcher
+     * 调用时会因 runBlocking 阻塞它而与正在等待恢复的协程互锁。
+     */
+    private suspend fun writeSessionInOrder(storage: SettingsStorage, remove: Boolean, encoded: String?) {
+        persistMutex.lock()
+        withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
+            try {
+                writeSession(storage, remove, encoded)
+            } finally {
+                persistMutex.unlock()
+            }
+        }
     }
 
     private fun writeSession(storage: SettingsStorage, remove: Boolean, encoded: String?) {

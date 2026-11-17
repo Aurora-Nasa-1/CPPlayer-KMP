@@ -9,26 +9,22 @@ import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
-import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.PlatformCloseBehaviorSetting
 import cp.player.app.platform.canPostMessageNotifications
 import cp.player.app.platform.messageNotificationsSupported
 import cp.player.app.platform.requestMessageNotificationPermission
+import cp.player.app.presentation.messagenotify.MessageNotifyContract
+import cp.player.app.presentation.messagenotify.MessageNotifyPresenter
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSwitchItem
-import cp.player.app.ui.util.popOrNotify
-import cp.player.core.BackendResult
-import cp.player.core.model.Contact
-import kotlinx.coroutines.flow.MutableStateFlow
+import cp.player.app.ui.navigation.LocalAppNavigator
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
 
 /**
  * 消息通知设置页。
@@ -49,14 +45,15 @@ import kotlinx.coroutines.launch
 class MessageNotifySettingsScreen : Screen {
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val model = rememberScreenModel { MessageNotifySettingsModel() }
         val state by model.state.collectAsState()
-        val strings = cpStrings().messageNotify
+        val allStrings = cpStrings()
+        val strings = allStrings.messageNotify
 
         LaunchedEffect(Unit) { model.load() }
 
-        CpRouteScaffold(title = strings.settingsTitle, onBack = { navigator.popOrNotify() }) { pageModifier ->
+        CpRouteScaffold(title = strings.settingsTitle, onBack = { navigator.pop() }) { pageModifier ->
             SettingsPage(pageModifier) {
                 if (!messageNotificationsSupported()) {
                     SettingsSection(strings.settingsTitle) {
@@ -94,7 +91,7 @@ class MessageNotifySettingsScreen : Screen {
                         } else {
                             followed.forEachIndexed { index, contact ->
                                 SettingsSwitchItem(
-                                    title = contact.nickname.ifBlank { "未知用户" },
+                                    title = contact.nickname.ifBlank { allStrings.account.unknownUser },
                                     subtitle = contact.lastMessage,
                                     checked = true,
                                     onCheckedChange = { on -> model.setSubscribed(contact.userId, on) },
@@ -113,44 +110,16 @@ class MessageNotifySettingsScreen : Screen {
     }
 }
 
-internal data class MessageNotifySettingsState(
-    val loading: Boolean = true,
-    val contacts: List<Contact> = emptyList(),
-    val subscribed: Set<Long> = emptySet(),
-    val master: Boolean = AppModel.messageNotifyMasterEnabled(),
-)
+internal typealias MessageNotifySettingsState =
+    cp.player.app.presentation.messagenotify.MessageNotifySettingsState
 
-internal class MessageNotifySettingsModel : ScreenModel {
-    private val _state = MutableStateFlow(MessageNotifySettingsState())
-    val state: StateFlow<MessageNotifySettingsState> = _state
+internal class MessageNotifySettingsModel : ScreenModel, MessageNotifyContract {
+    private val presenter = MessageNotifyPresenter(scope = screenModelScope)
 
-    fun load() {
-        screenModelScope.launch {
-            _state.value = _state.value.copy(loading = true)
-            val contacts = when (val result = runCatching { AppModel.socialRepository.getContacts() }
-                .getOrElse { BackendResult.Error(it.message ?: "") }) {
-                is BackendResult.Success -> result.data
-                else -> emptyList()
-            }
-            _state.value = MessageNotifySettingsState(
-                loading = false,
-                contacts = contacts,
-                subscribed = AppModel.messageNotifySubscribedUids(),
-                master = AppModel.messageNotifyMasterEnabled(),
-            )
-        }
-    }
+    override val state: StateFlow<MessageNotifySettingsState> get() = presenter.state
+    override val scope: CoroutineScope get() = presenter.scope
 
-    fun setMaster(enabled: Boolean) {
-        AppModel.setMessageNotifyMasterEnabled(enabled)
-        _state.value = _state.value.copy(master = enabled)
-    }
-
-    fun setSubscribed(uid: Long, enabled: Boolean) {
-        AppModel.toggleMessageNotify(uid, enabled)
-        _state.value = _state.value.copy(
-            subscribed = AppModel.messageNotifySubscribedUids(),
-            master = AppModel.messageNotifyMasterEnabled(),
-        )
-    }
+    override fun load() = presenter.load()
+    override fun setMaster(enabled: Boolean) = presenter.setMaster(enabled)
+    override fun setSubscribed(uid: Long, enabled: Boolean) = presenter.setSubscribed(uid, enabled)
 }

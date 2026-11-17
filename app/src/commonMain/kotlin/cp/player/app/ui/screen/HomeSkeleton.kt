@@ -245,7 +245,7 @@ fun MobileHomeSkeleton(modifier: Modifier = Modifier) {
             repeat(3) {
                 Row(
                     modifier = Modifier.fillMaxWidth().background(
-                        MaterialTheme.colorScheme.surfaceContainerLow,
+                        cp.player.app.ui.theme.cpCardSurface(),
                         MaterialTheme.shapes.medium,
                     ).padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically,

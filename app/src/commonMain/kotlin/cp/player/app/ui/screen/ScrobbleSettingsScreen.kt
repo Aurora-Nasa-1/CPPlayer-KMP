@@ -37,8 +37,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.openUrl
@@ -54,7 +52,7 @@ import cp.player.app.ui.component.SettingsTextInputItem
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.settingsRowContainer
 import cp.player.app.ui.util.UiEvents
-import cp.player.app.ui.util.popOrNotify
+import cp.player.app.ui.navigation.LocalAppNavigator
 import kotlinx.coroutines.launch
 
 /**
@@ -64,7 +62,7 @@ class ScrobbleSettingsScreen : Screen {
 
     @Composable
     override fun Content() {
-        val navigator = LocalNavigator.currentOrThrow
+        val navigator = LocalAppNavigator.current
         val s = cpStrings()
         val strings = s.scrobble
         val hub = AppModel.scrobbleHub
@@ -83,7 +81,7 @@ class ScrobbleSettingsScreen : Screen {
 
         CpRouteScaffold(
             title = strings.screenTitle,
-            onBack = { navigator.popOrNotify() },
+            onBack = { navigator.pop() },
         ) { pageModifier ->
             SettingsPage(pageModifier) {
                 // 顶部说明卡
@@ -163,7 +161,7 @@ class ScrobbleSettingsScreen : Screen {
                                                     }
                                                     .onFailure { err ->
                                                         val msg = err.message ?: strings.lastFmAuthFailToast
-                                                        UiEvents.notify("发起授权失败: $msg")
+                                                        UiEvents.notify(strings.lastFmAuthStartFailed(msg))
                                                     }
                                                 isAuthorizing = false
                                             }
@@ -193,8 +191,8 @@ class ScrobbleSettingsScreen : Screen {
 
                     // 预留更多平台扩展卡片
                     SettingsClickItem(
-                        title = "ListenBrainz / Libre.fm",
-                        subtitle = "即将支持更多开放打卡与自由音乐档案服务",
+                        title = strings.morePlatformsTitle,
+                        subtitle = strings.morePlatformsNote,
                         index = 0,
                         total = 1,
                         onClick = {},
@@ -273,7 +271,7 @@ class ScrobbleSettingsScreen : Screen {
                                         FilledTonalButton(
                                             onClick = {
                                                 hub.flushPendingQueue()
-                                                UiEvents.notify("已开始同步离线打卡队列")
+                                                UiEvents.notify(strings.flushQueueStarted)
                                             },
                                         ) {
                                             Icon(
@@ -357,7 +355,8 @@ class ScrobbleSettingsScreen : Screen {
             AlertDialog(
                 onDismissRequest = { authPendingToken = null },
                 title = { CpText(strings.lastFmAuthDialogTitle) },
-                text = { CpText(strings.lastFmAuthDialogMessage) },
+                // 授权步骤是三句话的操作指引，默认单行只会留下第一句。
+                text = { CpText(strings.lastFmAuthDialogMessage, maxLines = Int.MAX_VALUE) },
                 confirmButton = {
                     Button(
                         onClick = {
@@ -369,7 +368,7 @@ class ScrobbleSettingsScreen : Screen {
                                     }
                                     .onFailure { err ->
                                         val msg = err.message ?: strings.lastFmAuthFailToast
-                                        UiEvents.notify("授权未完成: $msg")
+                                        UiEvents.notify(strings.lastFmAuthIncomplete(msg))
                                     }
                             }
                         },

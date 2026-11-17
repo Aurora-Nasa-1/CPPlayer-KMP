@@ -47,7 +47,6 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.resized
 import kotlin.math.roundToInt
 
@@ -332,16 +331,12 @@ internal fun WallTile(
     coverSize: Int,
     modifier: Modifier = Modifier,
 ) {
-    val dark = LocalIsDarkTheme.current
     val corner = 18.dp
 
     Box(
         modifier
             .clip(RoundedCornerShape(corner))
-            .background(
-                if (dark) MaterialTheme.colorScheme.surfaceContainerHighest
-                else MaterialTheme.colorScheme.surfaceContainerLow,
-            ),
+            .background(cp.player.app.ui.theme.cpCardSurface()),
     ) {
         when (span) {
             WallSpan.Square -> {

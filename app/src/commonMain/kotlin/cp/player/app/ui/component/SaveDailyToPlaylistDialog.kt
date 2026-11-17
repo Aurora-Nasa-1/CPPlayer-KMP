@@ -54,7 +54,7 @@ fun SaveDailyToPlaylistDialog(
     val defaultName = remember(now) {
         val m = now.month.toString().padStart(2, '0')
         val d = now.day.toString().padStart(2, '0')
-        "每日推荐 · ${now.year}-$m-$d"
+        s.playlistSheet.dailyRecommendationPlaylistName("${now.year}-$m-$d")
     }
 
     var name by remember { mutableStateOf(defaultName) }
@@ -149,7 +149,7 @@ fun SaveDailyToPlaylistDialog(
                                     if (allOk) {
                                         UiEvents.notify(s.playlistSheet.saveDailyToPlaylistSuccess(playlistName, rawIds.size))
                                     } else {
-                                        UiEvents.notify("歌单「$playlistName」已创建，但部分歌曲添加失败")
+                                        UiEvents.notify(s.playlistSheet.saveDailyToPlaylistPartial(playlistName))
                                     }
                                     onSaved(newId)
                                 }

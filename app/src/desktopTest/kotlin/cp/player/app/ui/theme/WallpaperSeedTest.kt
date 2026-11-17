@@ -1,8 +1,9 @@
 package cp.player.app.ui.theme
 
-import java.awt.image.BufferedImage
+import java.io.ByteArrayOutputStream
 import java.io.File
-import javax.imageio.ImageIO
+import java.util.zip.CRC32
+import java.util.zip.Deflater
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.test.AfterTest
@@ -171,7 +172,7 @@ class WallpaperSeedTest {
         File.createTempFile(prefix, suffix).also { tempFiles += it }
 
     /**
-     * 造一张纯色 PNG。
+     * 造一张纯色 PNG，**手写 PNG 字节**，不碰 `BufferedImage` / `ImageIO`。
      *
      * `extensionless = true` 时用**没有点号**的名字 —— 这才是 `TranscodedWallpaper` 的真实形态。
      * （`File.createTempFile(prefix, null)` 会补上 `.tmp`，测不出「不依赖扩展名」。）
@@ -182,18 +183,79 @@ class WallpaperSeedTest {
         height: Int,
         extensionless: Boolean = false,
     ): File {
-        val image = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
-        for (y in 0 until height) {
-            for (x in 0 until width) image.setRGB(x, y, argb)
-        }
         val file = if (extensionless) {
             File(System.getProperty("java.io.tmpdir"), "cpplayer-wallpaper-${System.nanoTime()}")
                 .also { tempFiles += it }
         } else {
             tempFile("cpplayer-wallpaper-", ".png")
         }
-        ImageIO.write(image, "png", file)
+        file.writeBytes(encodeSolidPng(argb, width, height))
         return file
+    }
+
+    /** PNG = 签名 + IHDR + IDAT(zlib) + IEND；IHDR 声明 8bit RGBA、非交错。 */
+    private fun encodeSolidPng(argb: Int, width: Int, height: Int): ByteArray {
+        val ihdr = ByteArray(13)
+        writeBigEndianInt(ihdr, 0, width)
+        writeBigEndianInt(ihdr, 4, height)
+        ihdr[8] = 8 // bit depth
+        ihdr[9] = 6 // color type RGBA
+
+        val stride = 1 + width * 4
+        val raw = ByteArray(stride * height)
+        for (y in 0 until height) {
+            val base = y * stride
+            // 每行首字节是 PNG filter type（0 = None）。
+            for (x in 0 until width) {
+                val p = base + 1 + x * 4
+                raw[p] = (argb ushr 16).toByte()
+                raw[p + 1] = (argb ushr 8).toByte()
+                raw[p + 2] = argb.toByte()
+                raw[p + 3] = (argb ushr 24).toByte()
+            }
+        }
+
+        val out = ByteArrayOutputStream()
+        out.write(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A))
+        out.write(pngChunk("IHDR", ihdr))
+        out.write(pngChunk("IDAT", deflate(raw)))
+        out.write(pngChunk("IEND", ByteArray(0)))
+        return out.toByteArray()
+    }
+
+    private fun pngChunk(type: String, data: ByteArray): ByteArray {
+        val typeBytes = type.toByteArray(Charsets.US_ASCII)
+        val length = ByteArray(4)
+        writeBigEndianInt(length, 0, data.size)
+        val crc = ByteArray(4)
+        writeBigEndianInt(crc, 0, CRC32().apply { update(typeBytes); update(data) }.value.toInt())
+        val out = ByteArrayOutputStream()
+        out.write(length)
+        out.write(typeBytes)
+        out.write(data)
+        out.write(crc)
+        return out.toByteArray()
+    }
+
+    private fun deflate(input: ByteArray): ByteArray {
+        val deflater = Deflater()
+        deflater.setInput(input)
+        deflater.finish()
+        val out = ByteArrayOutputStream()
+        val buffer = ByteArray(4096)
+        while (!deflater.finished()) {
+            val count = deflater.deflate(buffer)
+            out.write(buffer, 0, count)
+        }
+        deflater.end()
+        return out.toByteArray()
+    }
+
+    private fun writeBigEndianInt(target: ByteArray, offset: Int, value: Int) {
+        target[offset] = (value ushr 24).toByte()
+        target[offset + 1] = (value ushr 16).toByte()
+        target[offset + 2] = (value ushr 8).toByte()
+        target[offset + 3] = value.toByte()
     }
 
     /**

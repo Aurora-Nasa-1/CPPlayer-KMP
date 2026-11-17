@@ -88,6 +88,32 @@ class DesktopDataDirTest {
         assertFalse(file.exists(), "file() 只给路径，不该有副作用")
     }
 
+    @Test
+    fun `deleteAllData removes current and legacy roots but leaves sibling files`() = withDataHome { home ->
+        val current = File(home, DesktopDataDir.CURRENT_NAME)
+        File(current, "local-media").mkdirs()
+        File(current, "local-media/index.json").writeText("""{"items":[]}""")
+        val legacy = seedLegacy(home)
+        val sibling = File(home, "keep.txt").apply { writeText("not app data") }
+
+        assertTrue(DesktopDataDir.deleteAllData())
+
+        assertFalse(current.exists(), "卸载必须清掉当前数据根目录")
+        assertFalse(legacy.exists(), "卸载也必须清掉未迁移的历史根目录")
+        assertTrue(sibling.isFile, "只删应用目录，不能碰用户目录里的其它文件")
+    }
+
+    @Test
+    fun `deleteAllData does not create roots when none exist`() = withDataHome { home ->
+        assertTrue(DesktopDataDir.deleteAllData())
+
+        assertFalse(
+            File(home, DesktopDataDir.CURRENT_NAME).exists(),
+            "清理入口不能经过 root()，否则会把刚删掉的目录又建出来",
+        )
+        assertFalse(File(home, DesktopDataDir.LEGACY_NAME).exists())
+    }
+
     // ======================== 迁移 ========================
 
     @Test

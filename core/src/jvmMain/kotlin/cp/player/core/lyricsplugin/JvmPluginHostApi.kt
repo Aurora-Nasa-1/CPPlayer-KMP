@@ -47,7 +47,8 @@ class JvmPluginHostApi(
     private val json = Json { ignoreUnknownKeys = true }
     // ⚠️ 原来是 LinkedHashMap + synchronized：虚拟线程在 object monitor 上等锁时会
     // 钉住（pin）载体平台线程，导致 carrier 线程池被耗尽。换成 ConcurrentHashMap：
-    // get/put/remove/clear 均无锁，且保持 O(1) 均摊时间复杂度。
+    // get/put/remove/clear 均无锁，且保持 O(1) 均摊时间复杂度。提供磁盘 cacheRootDir 时，
+    // 持久缓存只落盘，不再把同一份大型字符串复制留在 Java heap；无磁盘目录时仍以内存回退。
     private val memoryCache = java.util.concurrent.ConcurrentHashMap<String, CacheEntry>()
 
 
@@ -272,13 +273,17 @@ class JvmPluginHostApi(
 
     private fun cacheSet(key: String, value: String) {
         if (key.isBlank()) return
-        memoryCache[key] = CacheEntry(value, 0L)
-        cacheRootDir?.let { dir ->
-            runCatching {
-                dir.mkdirs()
-                File(dir, key.safeCacheName()).writeText(value)
-            }
+        val dir = cacheRootDir
+        if (dir == null) {
+            memoryCache[key] = CacheEntry(value, 0L)
+            return
         }
+        val persisted = runCatching {
+            dir.mkdirs()
+            File(dir, key.safeCacheName()).writeText(value)
+            true
+        }.getOrDefault(false)
+        if (persisted) memoryCache.remove(key) else memoryCache[key] = CacheEntry(value, 0L)
     }
 
     private fun cacheRemove(key: String) {

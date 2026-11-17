@@ -25,8 +25,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import cp.player.app.ui.theme.CpTheme
 import cp.player.app.ui.theme.ThemeMode
-import java.io.ByteArrayInputStream
-import javax.imageio.ImageIO
+import cp.player.app.readPng
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -79,7 +78,12 @@ class CpContextMenuRightClickTest {
     }
 
     /** 副键按下 → （按 [release] 决定是否松开）→ 返回「相对初始画面变化了多少像素」。 */
-    private fun changedPixels(release: Boolean, dark: Boolean = false, passive: Boolean = false): Int {
+    private fun changedPixels(
+        release: Boolean,
+        dark: Boolean = false,
+        passive: Boolean = false,
+        clickAt: Offset = Offset(40f, 16f),
+    ): Int {
         val scene = ImageComposeScene(width = 420, height = 420, density = Density(1f)) {
             CpTheme(themeMode = if (dark) ThemeMode.DARK else ThemeMode.LIGHT) { Content(passive) }
         }
@@ -89,7 +93,7 @@ class CpContextMenuRightClickTest {
             val before = scene.render(t).toRgb()
             t += 16_000_000L
 
-            val at = Offset(40f, 16f)
+            val at = clickAt
             scene.sendPointerEvent(
                 PointerEventType.Press, at, Offset.Zero, 0L,
                 PointerType.Mouse, button = PointerButton.Secondary,
@@ -142,11 +146,25 @@ class CpContextMenuRightClickTest {
         println("[context-menu] passive 右键后变化像素 = $changed")
         assertTrue(changed > 3000, "passive 菜单在空白处没弹出（只变了 $changed 个像素）")
     }
+
+    /**
+     * 验证靠近软件窗口右下角右键时，菜单动态向左和向上翻转，完整显示在软件窗口内。
+     * 若未动态翻转而直接向右下伸展，在 420x420 的窗口中位于 (400, 400) 的菜单只有极小角落可见。
+     */
+    @Test
+    fun `右下角右键时动态翻转 保证菜单完整显示在软件窗口内`() {
+        val changed = changedPixels(release = true, passive = true, clickAt = Offset(400f, 400f))
+        println("[context-menu] 右下角动态翻转后变化像素 = $changed")
+        assertTrue(
+            changed > 30000,
+            "靠近右下角时菜单未动态翻转至窗口内显示（实际变化像素 $changed，预期 > 30000）",
+        )
+    }
 }
 
 /** 把一帧渲染结果解成 ARGB 像素数组（走 PNG 编解码，避免依赖 Skia 内部布局）。 */
 private fun org.jetbrains.skia.Image.toRgb(): IntArray {
-    val png = ImageIO.read(ByteArrayInputStream(encodeToData()?.bytes ?: error("encode failed")))
+    val png = readPng(encodeToData()?.bytes ?: error("encode failed"))
     return IntArray(png.width * png.height).also { out ->
         png.getRGB(0, 0, png.width, png.height, out, 0, png.width)
     }

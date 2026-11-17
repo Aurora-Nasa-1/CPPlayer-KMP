@@ -1,6 +1,7 @@
 package cp.player.core.provider
 
 import cp.player.core.pluginrepo.*
+import cp.player.core.provider.typed.NativePackageRuntime
 import cp.player.core.provider.typed.createSdkRuntime
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.PlatformSupport
@@ -202,6 +203,29 @@ class NativeSdkInstallationTest {
             }
         } finally {
             manager.getAvailableProviders().forEach { it.close() }
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `native runtime deletes snapshot and preserves loader close failure`() {
+        val root = Files.createTempDirectory("native-runtime-close-").toFile()
+        val snapshot = File(root, "snapshot").apply { mkdirs(); resolve("payload.bin").writeText("runtime") }
+        val closeCalls = java.util.concurrent.atomic.AtomicInteger()
+        val closeFailure = IllegalStateException("classloader close failed")
+        val loader = object : java.net.URLClassLoader(emptyArray(), null) {
+            override fun close() {
+                closeCalls.incrementAndGet()
+                throw closeFailure
+            }
+        }
+        val runtime = NativePackageRuntime(loader, snapshot) { error("factory must not be called") }
+        try {
+            assertSame(closeFailure, assertFailsWith<IllegalStateException> { runtime.close() })
+            assertFalse(snapshot.exists(), "snapshot should be deleted even when loader.close throws")
+            runtime.close()
+            assertEquals(1, closeCalls.get(), "retired runtime must not retry cleanup")
+        } finally {
             root.deleteRecursively()
         }
     }

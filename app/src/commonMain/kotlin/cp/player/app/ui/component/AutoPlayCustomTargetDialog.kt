@@ -147,7 +147,7 @@ fun AutoPlayCustomTargetDialog(
                             onSetTarget(
                                 AutoPlayCustomType.PLAYLIST,
                                 currentSourceId,
-                                "歌单 $currentSourceId",
+                                s.playback.autoPlayPlaylistLabel(currentSourceId),
                             )
                         },
                         shape = MaterialTheme.shapes.medium,

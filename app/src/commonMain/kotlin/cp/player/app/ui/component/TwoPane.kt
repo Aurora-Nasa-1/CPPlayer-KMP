@@ -57,7 +57,7 @@ object CpPaneWidth {
  * 「320dp + 右栏」，窄窗口下会互相挤压。
  *
  * @param rail 左栏内容。收到的是已经带上宽度与满高的 `Modifier`，直接挂到自己的根节点上。
- * @param railBackground 左栏底色。默认与页面背景一致（左栏靠分隔线划出层次，
+ * @param railBackground 左栏底色。默认与页面层一致（[cpPageSurface]，左栏靠分隔线划出层次，
  *   而不是靠底色 —— 底色一旦与右栏不同，两栏就变成"两个页面"而不是"一个页面的两栏"）。
  * @param detail 右栏内容。接收者是 `BoxScope`，所以可以直接用 `Modifier.align(...)`
  *   —— 歌单详情右栏的返回键与多选条都靠它压在列表左上角。
@@ -67,7 +67,7 @@ fun CpTwoPane(
     rail: @Composable (Modifier) -> Unit,
     modifier: Modifier = Modifier,
     railWidth: Dp = CpPaneWidth.rail,
-    railBackground: Color = MaterialTheme.colorScheme.background,
+    railBackground: Color = cp.player.app.ui.theme.cpPageSurface(),
     detail: @Composable BoxScope.() -> Unit,
 ) {
     Row(modifier.fillMaxSize()) {

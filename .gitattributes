@@ -35,3 +35,8 @@ gradlew text eol=lf
 *.zip  binary
 *.apk  binary
 *.klib binary
+
+# GraalVM PGO profile（app/graalvm/pgo/default.iprof）。
+# GraalVM 写出的是**单行 JSON**，一旦被 `text=auto eol=lf` 当文本处理，
+# 任何行尾/编码规范化都会让 native-image 读不出来（--pgo 解析失败）。
+*.iprof binary
