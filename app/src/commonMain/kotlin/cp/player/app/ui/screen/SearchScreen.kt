@@ -63,6 +63,7 @@ import cp.player.app.ui.component.CpSkeletonCaption
 import cp.player.app.ui.component.CpSongRowSkeleton
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.PageHeader
+import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LazyScrollRow
 import cp.player.app.ui.component.SectionHeader
@@ -709,7 +710,7 @@ private fun SearchHistoryCard(
             .width(historyCardWidth(keyword))
             .height(HistoryCardHeight)
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(cpCardSurface())
             .cpBounceClickable(onClick = onClick)
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,

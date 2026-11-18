@@ -42,6 +42,8 @@ import cp.player.core.music.PlaylistSummary
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.anim.coverFlightSource
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.util.resized
 
 /**
@@ -89,7 +91,7 @@ fun PlaylistItem(
             // 卡片圆角取 `shapes.largeIncreased`(20dp) —— "次级卡片"那一档：
             // 比列表行（large=16）大、比主卡片（extraLarge=28）小。
             shape = MaterialTheme.shapes.largeIncreased,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = cpCardSurface(),
         ) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -97,7 +99,7 @@ fun PlaylistItem(
             ) {
                 Box(
                     Modifier.size(60.dp).aspectRatio(1f).clip(RoundedCornerShape(thumbCorner))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .background(cpNestedSurface())
                         .coverFlightSource(CoverFlight.playlistKey(playlist.resourceId), thumbCorner),
                     contentAlignment = Alignment.Center,
                 ) {

@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.theme.cpCardSurface
 import kotlinx.coroutines.delay
 
 /** 主控件行的三个槽位 —— 记住「刚按下的是哪一个」，用来驱动权重联动。 */
@@ -132,10 +133,8 @@ fun PlaybackControls(
     Surface(
         modifier = modifier,
         shape = CircleShape,
-        // 用**不透明**的 surfaceContainerHigh，而不是 surfaceContainerHighest 再压 50% 透明：
-        // 播放页背景是一条竖向渐变，半透明容器透出来的底色随位置变化，
-        // 同一颗按钮在页面上下两侧看起来是两种颜色。
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        // M3 Expressive: 抬升药丸表面（浅色 Tone 100 / 深色 Tone 22）
+        color = cpCardSurface(),
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),

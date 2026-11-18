@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
 import cp.player.app.ui.util.UiEvents
+import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.core.BackendResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -44,7 +45,7 @@ fun CreatePlaylistDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = cpSheetSurface(),
         shape = MaterialTheme.shapes.extraLarge,
         title = {
             CpText(

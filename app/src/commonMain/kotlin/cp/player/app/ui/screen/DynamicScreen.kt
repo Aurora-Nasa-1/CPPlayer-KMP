@@ -97,6 +97,8 @@ import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpShapes
 import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpNestedSurface
+import cp.player.app.ui.theme.cpSheetInnerSurface
+import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.ui.util.formatChatTime
 import cp.player.app.ui.util.resized
 import cp.player.core.music.AlbumSummary
@@ -690,7 +692,7 @@ private fun DynamicForwardCard(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.65f),
+        color = cpNestedSurface(),
     ) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1036,12 +1038,14 @@ private fun ForwardDialog(
     var text by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = cpSheetSurface(),
+        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText("转发动态") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Surface(
                     shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = cpSheetInnerSurface(),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(Modifier.padding(10.dp)) {

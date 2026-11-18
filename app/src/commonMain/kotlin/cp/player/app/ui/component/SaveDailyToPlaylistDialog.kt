@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.UiEvents
+import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.core.BackendResult
 import cp.player.core.music.TrackSummary
 import cp.player.core.util.currentTimeMillis
@@ -63,7 +64,7 @@ fun SaveDailyToPlaylistDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = cpSheetSurface(),
         shape = MaterialTheme.shapes.extraLarge,
         title = {
             Row(

@@ -21,6 +21,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.formatBytes
+import cp.player.app.ui.theme.cpSheetSurface
 
 /**
  * 自定义歌曲缓存上限对话框。
@@ -59,7 +60,7 @@ fun CustomCapacityDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = cpSheetSurface(),
         shape = MaterialTheme.shapes.extraLarge,
         title = {
             CpText(

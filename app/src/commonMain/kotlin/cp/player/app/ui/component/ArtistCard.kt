@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.util.resized
 import cp.player.core.music.ArtistSummary
 
@@ -44,7 +46,7 @@ fun ArtistItem(
         total = 1,
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = cpCardSurface(),
         leadingContent = { ArtistAvatar(artist.avatarUrl, 56.dp) },
         headlineContent = {
             CpText(
@@ -90,7 +92,7 @@ fun ArtistAvatar(
         modifier
             .then(if (size != null) Modifier.size(size) else Modifier.fillMaxSize())
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            .background(cpNestedSurface()),
         contentAlignment = Alignment.Center,
     ) {
         Icon(

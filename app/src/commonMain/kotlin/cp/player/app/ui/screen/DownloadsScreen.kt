@@ -83,6 +83,8 @@ import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.StateSurface
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.component.desktopPagerMouseControl
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.settingsRowContainer
@@ -534,7 +536,7 @@ private fun SelectionControlBar(
     val s = cpStrings()
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpCardSurface(),
         modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
     ) {
         Row(
@@ -1243,7 +1245,7 @@ private fun TaskCover(coverUrl: String?, mediaType: MediaType, modifier: Modifie
         Surface(
             Modifier.fillMaxSize(),
             shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            color = cpNestedSurface(),
         ) {
             if (!coverUrl.isNullOrBlank()) {
                 AsyncImage(

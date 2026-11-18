@@ -27,6 +27,7 @@ import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.VipActivationDialog
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.core.license.VipLicenseManager
 import cp.player.core.playback.PlaybackSessionSettings
 import cafe.adriel.voyager.core.screen.Screen
@@ -422,7 +423,7 @@ private fun StatusBadge(text: String, active: Boolean) {
     } else {
         SettingsBadge(
             text = text,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            containerColor = cpNestedSurface(),
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }

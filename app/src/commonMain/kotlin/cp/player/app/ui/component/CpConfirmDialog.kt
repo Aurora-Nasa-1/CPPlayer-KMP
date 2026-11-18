@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.cpSheetSurface
 
 /**
  * 一次二次确认请求。
@@ -123,6 +124,8 @@ fun CpConfirmDialog(
     val strings = cpStrings()
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = cpSheetSurface(),
+        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(title) },
         text = { CpText(message, maxLines = Int.MAX_VALUE) },
         confirmButton = {

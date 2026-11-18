@@ -15,6 +15,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.MaterialTheme
+import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.UiEvents
@@ -97,6 +99,8 @@ fun SongDetailInfoDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = cpSheetSurface(),
+        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(s.library.songDetails, maxLines = 1) },
         text = {
             val current = info

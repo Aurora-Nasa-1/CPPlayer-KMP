@@ -48,6 +48,7 @@ import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.component.SectionHeader
 import cp.player.app.ui.component.SongItem
+import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.component.SongMenuActions
 import cp.player.app.ui.component.SongOptionsSheet
 import cp.player.app.ui.component.songContextMenuItems
@@ -264,7 +265,7 @@ private fun AlbumDetailContent(
                             androidx.compose.material3.Surface(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                 shape = androidx.compose.foundation.shape.CircleShape,
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                color = cpCardSurface(),
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),

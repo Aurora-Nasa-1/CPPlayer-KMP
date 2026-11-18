@@ -1,5 +1,8 @@
 package cp.player.app.ui.component
 
+import cp.player.app.ui.theme.cpElevatedSurface
+import cp.player.app.ui.theme.cpSheetSurface
+
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
@@ -203,9 +206,9 @@ fun SharedTransitionScope.MiniPlayer(
                 sharedContentState = rememberSharedContentState(key = "player-container"),
                 animatedVisibilityScope = animatedVisibilityScope
             ),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 2.dp,
-        shadowElevation = 2.dp,
+        color = cpElevatedSurface(),
+        tonalElevation = 0.dp,
+        shadowElevation = 4.dp,
     ) {
         Column {
             // 「一起听」条：只在已经在房间里时绘制（见 ListenTogetherStrip 的 KDoc）。
@@ -752,8 +755,8 @@ internal fun MiniVolumePopupCard(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 3.dp,
+        color = cpSheetSurface(),
+        tonalElevation = 0.dp,
         shadowElevation = 8.dp,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
     ) {

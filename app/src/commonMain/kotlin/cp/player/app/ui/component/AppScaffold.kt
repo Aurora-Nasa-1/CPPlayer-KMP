@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
+import cp.player.app.ui.theme.cpCardSurface
 
 data class TopBarAction(
     val icon: @Composable () -> Unit,
@@ -45,7 +46,7 @@ fun CpTopBarActionButton(
         onClick = action.onClick,
         modifier = modifier.size(40.dp).cpPressScale(),
         colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            containerColor = cpCardSurface(),
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
     ) {

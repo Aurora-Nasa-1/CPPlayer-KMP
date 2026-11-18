@@ -62,6 +62,10 @@ fun cpSheetSurface(): Color =
     if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHigh
     else MaterialTheme.colorScheme.surfaceContainerLowest
 
+/** 浮动工具条 / 悬浮控制胶囊 / 悬浮播放条的底色。与 [cpSheetSurface] 同层。 */
+@Composable
+fun cpElevatedSurface(): Color = cpSheetSurface()
+
 /**
  * **浮层内部**的次级块（对话框里的说明块、可选行，底部弹层里的行）。
  *

@@ -1281,7 +1281,7 @@ fun SettingsHeroCard(
     badgeText: String? = null,
     badgeContainerColor: Color = MaterialTheme.colorScheme.primaryContainer,
     badgeContentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    containerColor: Color = cpCardSurface(),
     action: (@Composable () -> Unit)? = null,
     content: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
@@ -1359,7 +1359,7 @@ fun SettingsSearchBar(
     val strings = cpStrings()
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpCardSurface(),
         modifier = modifier
             .fillMaxWidth()
             .height(48.dp),

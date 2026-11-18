@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.UiEvents
+import cp.player.app.ui.theme.cpSheetSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -49,7 +50,7 @@ fun RenamePlaylistDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = cpSheetSurface(),
         shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(s.library.renamePlaylist, style = MaterialTheme.typography.headlineSmall) },
         text = {

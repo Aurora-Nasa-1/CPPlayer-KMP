@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
+import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.i18n.cpStrings
 import cp.player.core.util.currentTimeMillis
 import cp.player.core.util.localDateTimeOf
@@ -66,7 +67,7 @@ fun SleepTimerDialog(
     } else {
         AlertDialog(
             onDismissRequest = onDismiss,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = cpSheetSurface(),
             shape = MaterialTheme.shapes.extraLarge,
             title = {
                 CpText(
@@ -199,7 +200,7 @@ fun SleepCustomTimeDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = cpSheetSurface(),
         shape = MaterialTheme.shapes.extraLarge,
         title = {
             Row(

@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.util.resized
 import cp.player.core.music.AlbumSummary
 
@@ -57,7 +59,7 @@ fun AlbumItem(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.largeIncreased,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpCardSurface(),
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -94,7 +96,7 @@ fun AlbumItem(
                 IconButton(onClick = onOptionsClick) {
                     Surface(
                         shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        color = cpNestedSurface(),
                         modifier = Modifier.size(36.dp),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -174,7 +176,7 @@ fun AlbumCoverThumb(
         modifier
             .aspectRatio(1f)
             .clip(RoundedCornerShape(corner))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .background(cpNestedSurface()),
         contentAlignment = Alignment.Center,
     ) {
         Icon(

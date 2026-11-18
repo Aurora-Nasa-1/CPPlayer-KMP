@@ -117,6 +117,9 @@ import androidx.graphics.shapes.Morph
 import androidx.graphics.shapes.RoundedPolygon
 import cp.player.app.ui.feedback.CpHaptic
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpElevatedSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.DesktopShell
 import kotlin.math.abs
@@ -298,7 +301,7 @@ fun CpLoadingIndicator(
 @Composable
 fun CpContainedLoadingIndicator(
     modifier: Modifier = Modifier,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    containerColor: Color = cpCardSurface(),
     indicatorColor: Color = MaterialTheme.colorScheme.primary,
 ) {
     ContainedLoadingIndicator(
@@ -1016,7 +1019,7 @@ private fun SwitcherBadge(text: String, checked: Boolean) {
         color = if (checked) {
             MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.18f)
         } else {
-            MaterialTheme.colorScheme.surfaceContainerHighest
+            cpNestedSurface()
         },
     ) {
         CpText(
@@ -1291,7 +1294,7 @@ fun CpCoverPlaceholder(
 fun CpFloatingToolbar(
     modifier: Modifier = Modifier,
     expanded: Boolean = true,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    containerColor: Color = cpElevatedSurface(),
     content: @Composable RowScope.() -> Unit,
 ) {
     HorizontalFloatingToolbar(

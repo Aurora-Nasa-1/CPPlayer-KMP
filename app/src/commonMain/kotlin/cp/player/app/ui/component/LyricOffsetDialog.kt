@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.sp
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.LocalIsDarkTheme
+import cp.player.app.ui.theme.cpSheetInnerSurface
+import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.ui.util.LyricOffsetManager
 import cp.player.core.music.TrackSummary
 
@@ -74,7 +76,7 @@ fun LyricOffsetDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         shape = MaterialTheme.shapes.extraLarge,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = cpSheetSurface(),
         icon = {
             Surface(
                 shape = MaterialTheme.shapes.medium,
@@ -122,7 +124,7 @@ fun LyricOffsetDialog(
                     targetValue = when {
                         offsetMs > 0 -> MaterialTheme.colorScheme.primaryContainer
                         offsetMs < 0 -> MaterialTheme.colorScheme.tertiaryContainer
-                        else -> MaterialTheme.colorScheme.surfaceContainerHighest
+                        else -> cpSheetInnerSurface()
                     },
                     animationSpec = CpMotion.effects(),
                     label = "offsetBadgeBg",

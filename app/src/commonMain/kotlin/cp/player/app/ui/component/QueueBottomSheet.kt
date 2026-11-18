@@ -48,6 +48,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpSheetInnerSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -256,7 +257,7 @@ fun QueueContent(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 4.dp),
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = cpSheetInnerSurface(),
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
@@ -592,7 +593,7 @@ fun QueueContent(
 private fun QueueFloatingToolbar(content: @Composable RowScope.() -> Unit) {
     Surface(
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpSheetInnerSurface(),
         tonalElevation = 3.dp,
         shadowElevation = 6.dp,
     ) {
@@ -699,7 +700,7 @@ private fun QueueRow(
         if (isDark) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f)
         else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
     } else {
-        cp.player.app.ui.theme.cpCardSurface()
+        cpSheetInnerSurface()
     }
     val animatedBg by animateColorAsState(
         targetValue = targetBg,

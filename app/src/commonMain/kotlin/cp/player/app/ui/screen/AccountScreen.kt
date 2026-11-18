@@ -1,6 +1,7 @@
 package cp.player.app.ui.screen
 
 import cp.player.app.ui.component.CpText
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -669,7 +670,7 @@ private fun LoginChannelSelector(
 
         Surface(
             shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            color = cpNestedSurface(),
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(MaterialTheme.shapes.large),
@@ -1008,7 +1009,7 @@ private fun PhoneLoginPanel(
                 )
                 Surface(
                     shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    color = cpNestedSurface(),
                     modifier = Modifier.width(110.dp).height(54.dp).clip(MaterialTheme.shapes.small),
                 ) {
                     AsyncImage(
@@ -1302,7 +1303,7 @@ private fun AccountHeroCard(
 
             Surface(
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                color = cpNestedSurface(),
                 modifier = Modifier.padding(vertical = 4.dp),
             ) {
                 CpText(
@@ -1359,7 +1360,7 @@ private fun AccountAvatar(
 ) {
     Surface(
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = cpNestedSurface(),
         modifier = Modifier.size(size).clip(CircleShape),
     ) {
         if (!url.isNullOrBlank()) {

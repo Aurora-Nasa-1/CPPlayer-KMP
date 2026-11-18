@@ -48,6 +48,8 @@ import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.Surface
 import androidx.compose.material3.rememberTooltipState
@@ -460,7 +462,7 @@ internal fun DesktopLibraryPlaylist(
                 Surface(
                     modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp),
                     shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = cpNestedSurface(),
                 ) {
                     Icon(Icons.Filled.ChevronRight, null, Modifier.padding(8.dp).size(24.dp))
                 }
@@ -519,7 +521,7 @@ private fun DesktopLibraryActionButton(
             onClick = onClick,
             modifier = modifier.size(40.dp).cpPressScale(),
             colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                containerColor = cpCardSurface(),
                 contentColor = MaterialTheme.colorScheme.onSurface,
             ),
         ) {

@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpShapes
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 
 /**
  * 全应用统一的搜索输入框胶囊组件。
@@ -65,8 +67,8 @@ fun CpSearchField(
     onFocusChange: (Boolean) -> Unit = {},
     placeholder: String? = null,
     textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    focusedContainerColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    containerColor: Color = cpCardSurface(),
+    focusedContainerColor: Color = cpNestedSurface(),
     focusRequester: FocusRequester? = null,
     height: Dp = CpSearchFieldHeight,
 ) {

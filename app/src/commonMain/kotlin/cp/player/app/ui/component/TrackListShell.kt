@@ -61,6 +61,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import kotlinx.coroutines.delay
 
 /**
@@ -514,7 +516,7 @@ private fun LoadMoreError(message: String, onRetry: (() -> Unit)?) {
         onClick = { onRetry?.invoke() },
         enabled = onRetry != null,
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpCardSurface(),
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
     ) {
         Column(
@@ -601,7 +603,7 @@ private fun TrackActionChip(
     }
     Surface(
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpCardSurface(),
         modifier = modifier
             .height(TrackListMetrics.secondaryRowHeight)
             .then(if (enabled) Modifier.cpBounceClickable(onClick = onClick) else Modifier),
@@ -790,7 +792,7 @@ private fun TrackTopBarIconButton(
         onClick = onClick,
         modifier = Modifier.size(40.dp),
         colors = IconButtonDefaults.filledIconButtonColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            containerColor = cpCardSurface(),
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
     ) {
@@ -839,7 +841,7 @@ private fun TrackTopBarSearch(
     Surface(
         modifier = modifier.width(width).height(40.dp),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = cpCardSurface(),
         onClick = { if (!spec.active) spec.onToggle(true) },
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = if (spec.active) Alignment.CenterStart else Alignment.Center) {
@@ -883,7 +885,7 @@ private fun TrackTopBarSearch(
                         },
                     )
                     if (spec.query.isNotEmpty()) {
-                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                        Surface(shape = CircleShape, color = cpNestedSurface()) {
                             CpText(
                                 text = s.library.trackSearchResultCount(spec.resultCount),
                                 style = MaterialTheme.typography.labelSmall,

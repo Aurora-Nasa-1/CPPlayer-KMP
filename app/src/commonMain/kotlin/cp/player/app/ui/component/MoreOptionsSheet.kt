@@ -58,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.cpSheetInnerSurface
 import cp.player.app.ui.util.resized
 
 /** Playlist sort order shared by the playlist options sheet and screen models. */
@@ -558,7 +559,7 @@ private fun SheetIconButton(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    containerColor: Color = cpSheetInnerSurface(),
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     shape: Shape = RoundedCornerShape(24.dp),
 ) {

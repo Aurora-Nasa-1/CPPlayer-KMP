@@ -32,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.cpSheetInnerSurface
+import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.core.playback.AutoPlayCustomType
 import cp.player.core.playback.PlaybackUiState
 
@@ -71,7 +73,7 @@ fun AutoPlayCustomTargetDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        containerColor = cpSheetSurface(),
         shape = MaterialTheme.shapes.extraLarge,
         title = {
             CpText(
@@ -109,7 +111,7 @@ fun AutoPlayCustomTargetDialog(
                             onSetTarget(AutoPlayCustomType.TRACK, currentTrack.id, trackTitle)
                         },
                         shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        color = cpSheetInnerSurface(),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
@@ -151,7 +153,7 @@ fun AutoPlayCustomTargetDialog(
                             )
                         },
                         shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        color = cpSheetInnerSurface(),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(

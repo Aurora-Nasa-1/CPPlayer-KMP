@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cp.player.core.license.VipLicenseManager
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.cpSheetSurface
 
 /**
  * VIP 发烧友特权卡密激活弹层。
@@ -36,6 +37,8 @@ fun VipActivationDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = cpSheetSurface(),
+        shape = MaterialTheme.shapes.extraLarge,
         icon = {
             Icon(
                 imageVector = Icons.Filled.WorkspacePremium,

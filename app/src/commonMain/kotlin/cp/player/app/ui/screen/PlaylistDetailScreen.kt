@@ -85,6 +85,8 @@ import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.SubcomposeLayout
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.cpBounceClickable
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -132,7 +134,6 @@ import cp.player.app.ui.component.SongOptionsSheet
 import cp.player.app.ui.component.SourceSongsSelectionSheet
 import cp.player.app.ui.component.TopBarAction
 import cp.player.app.ui.component.CpTopBarActionButton
-import cp.player.app.ui.component.cpBounceClickable
 import cp.player.app.ui.component.playlistShareText
 import cp.player.app.ui.component.playlistContextMenuItems
 import cp.player.app.ui.component.songContextMenuItems
@@ -1001,7 +1002,7 @@ private fun NarrowLayout(
                             ) {
                                 Surface(
                                     shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    color = cpNestedSurface(),
                                 ) {
                                     CpText(
                             text = when {
@@ -1060,7 +1061,7 @@ private fun NarrowLayout(
                         enabled = searchProgress < 0.5f,
                         modifier = Modifier.size(40.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            containerColor = cpCardSurface(),
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                     ) {
@@ -1076,7 +1077,7 @@ private fun NarrowLayout(
                         enabled = searchProgress < 0.5f,
                         modifier = Modifier.size(40.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            containerColor = cpCardSurface(),
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                     ) {
@@ -1245,7 +1246,7 @@ private fun WideLayout(
                         if (!summary.creatorName.isNullOrBlank()) {
                             Surface(
                                 shape = CircleShape,
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                color = cpCardSurface(),
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -1264,7 +1265,7 @@ private fun WideLayout(
                         }
                         Surface(
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            color = cpCardSurface(),
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -1673,7 +1674,7 @@ private fun TrackList(
                             model.loadMore(s)
                         },
                         shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        color = cpCardSurface(),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                     ) {
                         Column(
@@ -1876,7 +1877,7 @@ private fun AdaptiveSecondaryActionsFlow(
                     label = item.label,
                     icon = item.icon,
                     onClick = item.onClick,
-                    containerColor = item.containerColor ?: MaterialTheme.colorScheme.surfaceContainerHigh,
+                    containerColor = item.containerColor ?: cpCardSurface(),
                     contentColor = item.contentColor ?: MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -1887,7 +1888,7 @@ private fun AdaptiveSecondaryActionsFlow(
                 label = moreItem.label,
                 icon = moreItem.icon,
                 onClick = moreItem.onClick,
-                containerColor = moreItem.containerColor ?: MaterialTheme.colorScheme.surfaceContainerHigh,
+                containerColor = moreItem.containerColor ?: cpCardSurface(),
                 contentColor = moreItem.contentColor ?: MaterialTheme.colorScheme.onSurface,
             )
         }.first().measure(constraints.copy(minWidth = 0, minHeight = 0))
@@ -1937,7 +1938,7 @@ private fun AdaptiveSecondaryActionsFlow(
                     label = "", // 去掉"更多"字样
                     icon = moreItem.icon,
                     onClick = moreItem.onClick,
-                    containerColor = moreItem.containerColor ?: MaterialTheme.colorScheme.surfaceContainerHigh,
+                    containerColor = moreItem.containerColor ?: cpCardSurface(),
                     contentColor = moreItem.contentColor ?: MaterialTheme.colorScheme.onSurface,
                 )
             }.first().measure(constraints.copy(minWidth = 0, minHeight = 0))
@@ -2054,7 +2055,7 @@ private fun M3ESecondaryActionsRail(
                     id = "search",
                     label = "搜索",
                     icon = Icons.Filled.Search,
-                    containerColor = if (searchActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    containerColor = if (searchActive) MaterialTheme.colorScheme.primaryContainer else cpCardSurface(),
                     contentColor = if (searchActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                     onClick = onToggleSearch,
                 )
@@ -2093,7 +2094,7 @@ private fun M3ESecondaryActionsRail(
                     id = "select",
                     label = "多选",
                     icon = Icons.Filled.SelectAll,
-                    containerColor = if (selectionMode) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    containerColor = if (selectionMode) MaterialTheme.colorScheme.primaryContainer else cpCardSurface(),
                     contentColor = if (selectionMode) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                     onClick = onEnterSelection,
                 )
@@ -2127,7 +2128,7 @@ private fun M3ESecondaryActionsRail(
                     label = item.label,
                     icon = item.icon,
                     onClick = item.onClick,
-                    containerColor = item.containerColor ?: MaterialTheme.colorScheme.surfaceContainerHigh,
+                    containerColor = item.containerColor ?: cpCardSurface(),
                     contentColor = item.contentColor ?: MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -2135,7 +2136,7 @@ private fun M3ESecondaryActionsRail(
                 label = moreItem.label,
                 icon = moreItem.icon,
                 onClick = moreItem.onClick,
-                containerColor = moreItem.containerColor ?: MaterialTheme.colorScheme.surfaceContainerHigh,
+                containerColor = moreItem.containerColor ?: cpCardSurface(),
                 contentColor = moreItem.contentColor ?: MaterialTheme.colorScheme.onSurface,
             )
         }
@@ -2147,7 +2148,7 @@ private fun ActionChip(
     label: String,
     icon: ImageVector,
     onClick: () -> Unit,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    containerColor: Color = cpCardSurface(),
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     modifier: Modifier = Modifier,
 ) {
@@ -2213,7 +2214,7 @@ private fun PlaylistTopBarSearchBar(
     Surface(
         modifier = modifier.width(width).height(40.dp),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = cpCardSurface(),
         onClick = {
             if (!isActive) onToggleActive()
         },
@@ -2271,7 +2272,7 @@ private fun PlaylistTopBarSearchBar(
                         if (query.isNotEmpty()) {
                             Surface(
                                 shape = CircleShape,
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                color = cpNestedSurface(),
                             ) {
                                 CpText(
                                     text = "$resultCount 首",
@@ -2330,7 +2331,7 @@ private fun InPlaylistSearchBar(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpCardSurface(),
         tonalElevation = 2.dp,
     ) {
         Row(
@@ -2376,7 +2377,7 @@ private fun InPlaylistSearchBar(
             if (query.isNotEmpty()) {
                 Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    color = cpNestedSurface(),
                 ) {
                     CpText(
                         text = "$resultCount 首",
@@ -2388,7 +2389,7 @@ private fun InPlaylistSearchBar(
                 Spacer(Modifier.width(6.dp))
                 Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    color = cpNestedSurface(),
                     modifier = Modifier.size(26.dp).clickable { onQueryChange("") },
                 ) {
                     Box(contentAlignment = Alignment.Center) {

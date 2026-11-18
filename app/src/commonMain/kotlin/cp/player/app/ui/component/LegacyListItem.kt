@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.theme.cpCardSurface
 
 /** 分组列表的**外**圆角：分组首/末行朝外的那两个角，也是按下时整行撑到的目标值。 */
 private val SegmentOuterRadius = 20.dp
@@ -53,7 +54,7 @@ fun LegacyListItem(
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    containerColor: Color = cpCardSurface(),
     shape: Shape? = null,
     emphasized: Boolean = false,
     leadingContent: (@Composable () -> Unit)? = null,

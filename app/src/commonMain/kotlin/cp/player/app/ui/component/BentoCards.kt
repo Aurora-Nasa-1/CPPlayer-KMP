@@ -34,6 +34,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 
 /**
  * Material 3 Expressive「Bento」卡片族。
@@ -80,7 +82,7 @@ private fun bentoContentColor(container: Color): Color {
 fun BentoCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    containerColor: Color = cpCardSurface(),
     contentColor: Color = bentoContentColor(containerColor),
     border: BorderStroke? = bentoOutline(),
     contentPadding: PaddingValues = PaddingValues(18.dp),
@@ -208,7 +210,7 @@ fun BentoActionCard(
     icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    containerColor: Color = cpCardSurface(),
 ) {
     BentoCard(
         onClick = onClick,
@@ -256,7 +258,7 @@ fun BentoStatCard(
     label: String,
     stats: List<Pair<String, String>>,
     modifier: Modifier = Modifier,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    containerColor: Color = cpCardSurface(),
 ) {
     val contentColor = bentoContentColor(containerColor)
     Surface(
@@ -324,7 +326,7 @@ fun BentoMiniTile(
         onClick = onClick,
         modifier = modifier.then(pressModifier),
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = cpNestedSurface(),
         border = bentoOutline(),
         interactionSource = interactionSource,
     ) {
@@ -362,7 +364,7 @@ fun BentoPill(
         onClick = onClick,
         modifier = modifier.then(pressModifier),
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpCardSurface(),
         border = bentoOutline(),
         interactionSource = interactionSource,
     ) {

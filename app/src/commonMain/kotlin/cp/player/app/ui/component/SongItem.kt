@@ -303,7 +303,7 @@ fun SongItem(
                         if (useAnchoredMenu) menuExpanded = true else onOptionsClick?.invoke()
                     },
                     colors = androidx.compose.material3.IconButtonDefaults.iconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        containerColor = cp.player.app.ui.theme.cpNestedSurface(),
                     ),
                     modifier = Modifier.size(40.dp),
                 ) {

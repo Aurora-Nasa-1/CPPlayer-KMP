@@ -48,6 +48,7 @@ import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.CpChatBubblesSkeleton
 import cp.player.app.ui.component.CpSpacing
+import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.component.ScrollColumn
 import cp.player.app.ui.util.formatChatTime
 import cp.player.core.BackendResult
@@ -348,7 +349,7 @@ private fun MessageBubble(message: Message, emptyText: String) {
         RoundedCornerShape(20.dp, 20.dp, 20.dp, 4.dp)
     }
     val bubbleColor = if (isMe) MaterialTheme.colorScheme.primaryContainer
-    else MaterialTheme.colorScheme.surfaceContainerHigh
+    else cpCardSurface()
     val bubbleContent = if (isMe) MaterialTheme.colorScheme.onPrimaryContainer
     else MaterialTheme.colorScheme.onSurface
 

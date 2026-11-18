@@ -1,5 +1,7 @@
 package cp.player.app.ui.wall
 
+import cp.player.app.ui.theme.cpElevatedSurface
+
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -99,7 +101,7 @@ internal val PosterInk: Color
 /** 画布上的浮层面板（搜索框 / 底部选项胶囊 / 展开卡）。 */
 @get:Composable
 internal val PosterPanel: Color
-    get() = MaterialTheme.colorScheme.surfaceContainerHigh
+    get() = cpElevatedSurface()
 
 /** 画布上的次级文字 / 图标。 */
 @get:Composable
