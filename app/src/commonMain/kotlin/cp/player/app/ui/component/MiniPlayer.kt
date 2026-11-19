@@ -75,6 +75,7 @@ import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.anim.coverFlightTarget
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpShapes
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.util.LyricOffsetManager
 import cp.player.app.ui.util.next
 import cp.player.app.ui.util.resized
@@ -352,7 +353,7 @@ fun SharedTransitionScope.MiniPlayer(
                     .padding(horizontal = 12.dp)
                     .padding(bottom = 8.dp),
                 color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                trackColor = cpNestedSurface().copy(alpha = 0.5f),
             )
             val errorText = state.error
             if (!errorText.isNullOrBlank()) {
@@ -652,7 +653,7 @@ private fun MiniBarIconButton(
     val hovered by interaction.collectIsHoveredAsState()
     val container by animateColorAsState(
         targetValue = if (hovered) {
-            MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f)
+            cpNestedSurface().copy(alpha = 0.7f)
         } else {
             Color.Transparent
         },
@@ -779,7 +780,7 @@ internal fun MiniVolumePopupCard(
                 colors = SliderDefaults.colors(
                     thumbColor = MaterialTheme.colorScheme.primary,
                     activeTrackColor = MaterialTheme.colorScheme.primary,
-                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    inactiveTrackColor = cpNestedSurface(),
                 ),
             )
             CpText(

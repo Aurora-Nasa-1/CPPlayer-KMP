@@ -43,6 +43,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import cp.player.app.ui.theme.cpSheetInnerSurface
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -196,7 +197,7 @@ fun PlayerMoreContent(
             ) {
                 Box(
                     Modifier.size(76.dp).aspectRatio(1f).clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                        .background(cpSheetInnerSurface()),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (!track.coverUrl.isNullOrBlank()) {
@@ -232,7 +233,7 @@ fun PlayerMoreContent(
                 }
                 Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.8f),
+                    color = cpSheetInnerSurface(),
                     modifier = Modifier.size(44.dp).clickable {
                         onShare()
                         onDismiss()
@@ -250,7 +251,7 @@ fun PlayerMoreContent(
                 if (onClose != null) {
                     Surface(
                         shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.8f),
+                        color = cpSheetInnerSurface(),
                         modifier = Modifier.size(44.dp).clickable { onClose() },
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -416,7 +417,7 @@ fun PlayerMoreContent(
                             else -> s.player.sleepTimer
                         },
                         icon = Icons.Filled.Timer,
-                        bgColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        bgColor = cpSheetInnerSurface(),
                         textColor = MaterialTheme.colorScheme.onSurface,
                         onClick = {
                             onSleepTimer()
@@ -444,7 +445,7 @@ fun PlayerMoreContent(
                         modifier = Modifier.weight(1f),
                         text = s.player.listenTogether,
                         icon = Icons.Filled.Headphones,
-                        bgColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        bgColor = cpSheetInnerSurface(),
                         textColor = MaterialTheme.colorScheme.onSurface,
                         onClick = {
                             onListenTogether()
@@ -455,7 +456,7 @@ fun PlayerMoreContent(
                         modifier = Modifier.weight(1f),
                         text = s.player.transferDevice,
                         icon = Icons.Filled.Cast,
-                        bgColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        bgColor = cpSheetInnerSurface(),
                         textColor = MaterialTheme.colorScheme.onSurface,
                         onClick = {
                             onHandoff()
@@ -472,7 +473,7 @@ fun PlayerMoreContent(
                         modifier = Modifier.weight(1f),
                         text = if (immersiveLyrics) s.player.immersiveLyricsOn else s.player.immersiveLyricsOff,
                         icon = Icons.Filled.Fullscreen,
-                        bgColor = if (immersiveLyrics) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        bgColor = if (immersiveLyrics) MaterialTheme.colorScheme.primaryContainer else cpSheetInnerSurface(),
                         textColor = if (immersiveLyrics) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                         onClick = onToggleImmersiveLyrics,
                     )
@@ -480,7 +481,7 @@ fun PlayerMoreContent(
                         modifier = Modifier.weight(1f),
                         text = s.player.playerSettings,
                         icon = Icons.Filled.Tune,
-                        bgColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        bgColor = cpSheetInnerSurface(),
                         textColor = MaterialTheme.colorScheme.onSurface,
                         onClick = {
                             onOpenPlayerSettings()
@@ -498,7 +499,7 @@ fun PlayerMoreContent(
 
             // PixelPlayer 风格详情信息分段卡片
             Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.55f),
+                color = cpSheetInnerSurface(),
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.fillMaxWidth().clickable {
                     onShowInfo()
@@ -602,7 +603,7 @@ private fun DetailChip(
 ) {
     Surface(
         shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.65f),
+        color = cpSheetInnerSurface(),
         modifier = modifier,
     ) {
         Row(

@@ -955,7 +955,7 @@ private fun NarrowLayout(
                                     .graphicsLayer { alpha = coverFraction }
                                     .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 12.dp),
                                 shape = RoundedCornerShape(12.dp * coverFraction),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                color = cpNestedSurface(),
                                 shadowElevation = (2 * coverFraction).dp,
                             ) {
                                 val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)
@@ -1204,7 +1204,7 @@ private fun WideLayout(
                             modifier = Modifier.size(coverSize)
                                 .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 28.dp),
                         shape = MaterialTheme.shapes.extraLarge,
-                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        color = cpNestedSurface(),
                         shadowElevation = 8.dp,
                     ) {
                         val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)

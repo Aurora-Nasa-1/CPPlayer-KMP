@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import cp.player.app.ui.theme.cpCardSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -239,7 +240,7 @@ private fun ContactList(
                     containerColor = if (isSelected) {
                         MaterialTheme.colorScheme.primaryContainer
                     } else {
-                        MaterialTheme.colorScheme.surfaceContainerHigh
+                        cpCardSurface()
                     },
                     contentColor = if (isSelected) {
                         MaterialTheme.colorScheme.onPrimaryContainer

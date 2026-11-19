@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
 import cp.player.app.ui.theme.LocalIsDarkTheme
+import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.i18n.AppLanguage
 import cp.player.app.i18n.displayName
 import cp.player.app.i18n.displayNote
@@ -572,7 +573,7 @@ private fun StorageSettingsContent(
     pendingMigratePath?.let { targetPath ->
         AlertDialog(
             onDismissRequest = { pendingMigratePath = null },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = cpSheetSurface(),
             shape = MaterialTheme.shapes.extraLarge,
             title = {
                 CpText(

@@ -34,6 +34,7 @@ import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSearchBar
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.settingsRowContainer
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.component.CpText
 
 /**
@@ -292,7 +293,7 @@ private fun SettingsSubItemRow(
                 color = if (isSelected) {
                     MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f)
                 } else {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    cpNestedSurface()
                 },
                 modifier = Modifier.padding(top = 4.dp),
             ) {

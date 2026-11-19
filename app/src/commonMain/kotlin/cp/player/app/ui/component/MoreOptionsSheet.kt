@@ -486,7 +486,7 @@ private fun SheetHeader(
         Surface(
             modifier = Modifier.size(SheetHeroSize),
             shape = if (circleCover) CircleShape else RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
+            color = cpSheetInnerSurface(),
         ) {
             if (!coverUrl.isNullOrBlank()) {
                 AsyncImage(
@@ -613,7 +613,7 @@ private fun SheetActionRow(action: SheetAction, index: Int, total: Int) {
         enabled = action.enabled,
         modifier = Modifier.fillMaxWidth().heightIn(min = SheetRowMinHeight),
         shape = legacySegmentShape(index, total),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpSheetInnerSurface(),
     ) {
         Row(
             Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp),

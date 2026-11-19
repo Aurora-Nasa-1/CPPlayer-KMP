@@ -867,7 +867,7 @@ private fun MetricCard(
 ) {
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpCardSurface(),
         modifier = modifier,
     ) {
         Column(

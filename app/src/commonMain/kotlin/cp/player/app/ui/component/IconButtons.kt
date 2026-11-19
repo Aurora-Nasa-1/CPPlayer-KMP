@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.cpCardSurface
 
 /**
  * 全应用统一的返回按钮（Filled Tonal 风格）。
@@ -31,7 +32,7 @@ fun CpBackButton(
             onClick = onClick,
             modifier = modifier,
             colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                containerColor = cpCardSurface(),
                 contentColor = MaterialTheme.colorScheme.onSurface,
             ),
         ) {

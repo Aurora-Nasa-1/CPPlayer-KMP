@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpSheetInnerSurface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -65,7 +66,7 @@ fun PlaylistPickerRow(
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = cpSheetInnerSurface(),
         modifier = modifier.fillMaxWidth(),
     ) {
         Row(
@@ -74,7 +75,7 @@ fun PlaylistPickerRow(
         ) {
             Box(
                 Modifier.size(56.dp).clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(cpSheetInnerSurface()),
                 contentAlignment = Alignment.Center,
             ) {
                 if (!playlist.coverUrl.isNullOrBlank()) {

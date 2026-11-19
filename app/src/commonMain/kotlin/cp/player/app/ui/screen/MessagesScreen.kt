@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material3.Badge
 import androidx.compose.material3.MaterialTheme
+import cp.player.app.ui.theme.cpCardSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -233,7 +234,7 @@ internal fun ContactRow(
     contact: Contact,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    containerColor: Color = cpCardSurface(),
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     secondaryContentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     /** 该联系人是否已开启新消息推送 —— 决定行内要不要出小铃铛。 */
@@ -329,7 +330,7 @@ internal fun ContactRowItem(
     onOpen: () -> Unit,
     onSetNotify: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    containerColor: Color = cpCardSurface(),
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     secondaryContentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {

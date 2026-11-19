@@ -82,6 +82,8 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpElevatedSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -712,7 +714,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                                 onClick = { showQueueSheet = true },
                                                 modifier = Modifier.padding(end = 8.dp),
                                                 colors = IconButtonDefaults.filledIconButtonColors(
-                                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (isDark) 0.6f else 0.8f),
+                                                    containerColor = cpElevatedSurface().copy(alpha = if (isDark) 0.6f else 0.8f),
                                                     contentColor = MaterialTheme.colorScheme.onSurface,
                                                 ),
                                             ) {
@@ -728,7 +730,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                             onClick = { showQueueSheet = true },
                                             modifier = Modifier.padding(end = 8.dp),
                                             colors = IconButtonDefaults.filledIconButtonColors(
-                                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (isDark) 0.6f else 0.8f),
+                                                containerColor = cpElevatedSurface().copy(alpha = if (isDark) 0.6f else 0.8f),
                                                 contentColor = MaterialTheme.colorScheme.onSurface,
                                             ),
                                         ) {
@@ -1023,7 +1025,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                         scaleY = coverScale
                     }
                     .clip(RoundedCornerShape(coverCorner)),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                color = cpNestedSurface().copy(alpha = 0.5f),
                 shadowElevation = coverElevation,
             ) {
                 if (!track.coverUrl.isNullOrBlank()) {
@@ -1207,7 +1209,7 @@ private fun MobilePlayerTabSelector(
     Surface(
         modifier = modifier,
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (isDark) 0.30f else 0.40f),
+        color = cpElevatedSurface().copy(alpha = if (isDark) 0.30f else 0.40f),
         border = BorderStroke(
             width = 0.5.dp,
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.15f else 0.25f),

@@ -22,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpCardSurface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -279,7 +280,7 @@ private fun AnalyzingCard(state: ImportPlaylistUiState) {
     val s = cpStrings()
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpCardSurface(),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(

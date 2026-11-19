@@ -38,6 +38,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.LocalIsDarkTheme
+import cp.player.app.ui.theme.cpElevatedSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -249,7 +251,7 @@ private fun FloorSection(comment: Comment, floor: CommentFloorUi?, model: Commen
                     .fillMaxWidth()
                     .padding(top = 8.dp)
                     .clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                    .background(cpNestedSurface())
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -477,8 +479,7 @@ private fun CommentComposer(state: CommentUiState, model: CommentScreenModel) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.extraExtraLarge,
-            color = if (isDark) MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.75f)
-            else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.90f),
+            color = cpElevatedSurface(),
             border = BorderStroke(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.18f else 0.30f),

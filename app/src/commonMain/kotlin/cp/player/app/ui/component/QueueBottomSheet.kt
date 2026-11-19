@@ -372,7 +372,7 @@ fun QueueContent(
                         androidx.compose.material3.Surface(
                             onClick = onOpenSimilar,
                             shape = MaterialTheme.shapes.large,
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
+                            color = cpSheetInnerSurface(),
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                         ) {
                             Row(
@@ -815,7 +815,7 @@ private fun QueueRow(
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                                 .clip(coverShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                                .background(cpSheetInnerSurface()),
                         )
                     } else {
                         CpCoverPlaceholder(

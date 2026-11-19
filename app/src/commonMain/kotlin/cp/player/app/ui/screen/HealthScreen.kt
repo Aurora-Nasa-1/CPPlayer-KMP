@@ -40,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -550,7 +551,7 @@ internal fun ProviderHealthCard(
                 Spacer(Modifier.height(10.dp))
                 Surface(
                     shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    color = cpNestedSurface(),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(Modifier.padding(8.dp)) {
@@ -770,7 +771,7 @@ internal fun CallRecordItem(
                 Spacer(Modifier.height(8.dp))
                 Surface(
                     shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    color = cpNestedSurface(),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -888,7 +889,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent(
                         Spacer(Modifier.height(8.dp))
                         Surface(
                             shape = MaterialTheme.shapes.small,
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            color = cpNestedSurface(),
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {

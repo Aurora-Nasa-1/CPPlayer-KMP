@@ -118,6 +118,8 @@ import cp.player.app.ui.component.LazyScrollRow
 import cp.player.app.ui.component.LocalIsExpanded
 import cp.player.app.ui.component.PlaylistCoverCard
 import cp.player.app.ui.component.PageHeader
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.component.ProvideCpTextFullDisplay
 import cp.player.app.ui.component.desktopScrollbarGutter
 import cp.player.app.ui.component.ProviderFeatureGate
@@ -589,7 +591,7 @@ internal fun DesktopHomeLayout(
                             shape = MaterialTheme.shapes.large,
                             modifier = Modifier.cpPressScale(),
                             colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                containerColor = cpCardSurface(),
                                 contentColor = MaterialTheme.colorScheme.onSurface,
                             ),
                         ) {
@@ -1168,7 +1170,7 @@ internal fun BannerCarousel(
                 onClick = { onClick(banner) },
                 modifier = Modifier.fillMaxSize().cpBounceClickable { onClick(banner) },
                 shape = MaterialTheme.shapes.extraLarge,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = cpCardSurface(),
             ) {
                 Box(Modifier.fillMaxSize()) {
                     // 占位块常驻底层：图没到 / 挂了时横幅仍是一块有内容的色块，
@@ -1632,7 +1634,7 @@ private fun HeroQuickTile(
         onClick = onClick,
         modifier = modifier.cpBounceClickable(onClick = onClick),
         shape = MaterialTheme.shapes.largeIncreased,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpCardSurface(),
     ) {
         Column(
             Modifier.fillMaxWidth().padding(vertical = 14.dp),
@@ -1999,7 +2001,7 @@ private fun CoverTile(
                 Surface(
                     shape = CircleShape,
                     color = if (overImage) Color.Black.copy(alpha = 0.42f)
-                    else MaterialTheme.colorScheme.surfaceContainerHighest,
+                    else cpNestedSurface(),
                     modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(28.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -2049,7 +2051,7 @@ private fun RankingRow(
                         .clip(CircleShape)
                         .background(
                             if (isTop3) MaterialTheme.colorScheme.primaryContainer
-                            else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                            else cpNestedSurface(),
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -2290,7 +2292,7 @@ private fun RecentPlaysRail(
                         onClick = onOpenAlbumWall,
                         modifier = Modifier.size(40.dp).cpPressScale(),
                         colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            containerColor = cpCardSurface(),
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                     ) {
@@ -2704,7 +2706,7 @@ private fun CompactTrackCard(
                     .size(46.dp)
                     .aspectRatio(1f)
                     .clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .background(cpNestedSurface())
                     .coverFlightSource(CoverFlight.trackKey(track.id), 12.dp),
                 contentAlignment = Alignment.Center,
             ) {

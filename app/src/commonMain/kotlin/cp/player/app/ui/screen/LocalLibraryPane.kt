@@ -113,6 +113,8 @@ import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.cpBounceClickable
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.settingsRowContainer
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.model.DownloadsScreenModel
@@ -1185,7 +1187,7 @@ private fun LocalUtilityAction(
         onClick = action.onClick,
         enabled = action.enabled,
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpCardSurface(),
         modifier = modifier.height(44.dp).cpPressScale(),
     ) {
         Row(
@@ -1214,7 +1216,7 @@ private fun LocalCompactUtilityAction(action: LocalLibraryQuickAction) {
         onClick = action.onClick,
         enabled = action.enabled,
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpCardSurface(),
         modifier = Modifier.size(48.dp).cpPressScale(),
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -2066,7 +2068,7 @@ internal fun LocalSectionHeader(
             )
             Surface(
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = cpCardSurface(),
             ) {
                 CpText(
                     count.toString(),
@@ -2811,7 +2813,7 @@ private fun LocalCover(
             )
         } else {
             Box(
-                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                Modifier.fillMaxSize().background(cpNestedSurface()),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(

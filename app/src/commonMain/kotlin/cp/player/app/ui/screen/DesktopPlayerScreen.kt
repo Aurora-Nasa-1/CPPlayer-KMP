@@ -80,6 +80,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -799,7 +800,7 @@ internal fun DesktopPlayerLayout(
                                     qualityLabel?.let {
                                         PlayerMetaChip(
                                             text = it,
-                                            container = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f),
+                                            container = cpNestedSurface().copy(alpha = 0.9f),
                                             content = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
@@ -1525,7 +1526,7 @@ internal fun DesktopVolumeControl(
             colors = SliderDefaults.colors(
                 thumbColor = MaterialTheme.colorScheme.primary,
                 activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                inactiveTrackColor = cpNestedSurface(),
             ),
         )
 

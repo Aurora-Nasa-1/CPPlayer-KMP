@@ -52,6 +52,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -540,7 +541,7 @@ private fun PlayerArtwork(
             scaleY = scale
         },
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        color = cpNestedSurface(),
         shadowElevation = 4.dp,
     ) {
         Box {

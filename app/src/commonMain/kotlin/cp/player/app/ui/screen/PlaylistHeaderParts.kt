@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -84,7 +85,7 @@ internal fun PlaylistHeaderInfo(
         Surface(
             modifier = Modifier.size(108.dp),
             shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surfaceVariant,
+            color = cpNestedSurface(),
             shadowElevation = 4.dp,
         ) {
             if (!summary.coverUrl.isNullOrBlank()) {
@@ -206,7 +207,7 @@ internal fun PlaylistInfoRail(
         Surface(
             modifier = Modifier.size(208.dp),
             shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceVariant,
+            color = cpNestedSurface(),
             shadowElevation = 8.dp,
         ) {
             if (!summary.coverUrl.isNullOrBlank()) {

@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpNestedSurface
+import cp.player.app.ui.theme.cpSheetInnerSurface
+import cp.player.app.ui.theme.cpSheetSurface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -182,7 +185,7 @@ internal fun ShortcutKeyChip(binding: ShortcutBinding?, conflicted: Boolean, str
     // 深色下比行底浅一档，正是「相对行底色反向」的那一档。
     val container = when {
         conflicted -> MaterialTheme.colorScheme.errorContainer
-        binding == null -> MaterialTheme.colorScheme.surfaceContainer
+        binding == null -> cpNestedSurface()
         else -> MaterialTheme.colorScheme.secondaryContainer
     }
     val content = when {
@@ -274,6 +277,7 @@ private fun ShortcutRecorderDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = cpSheetSurface(),
         title = { CpText(s.shortcuts.recorderTitle) },
         text = {
             Column(
@@ -298,7 +302,7 @@ private fun ShortcutRecorderDialog(
                         }
                         .clickable { focusRequester.requestFocus() }
                         .background(
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            color = cpSheetInnerSurface(),
                             shape = MaterialTheme.shapes.medium,
                         ),
                     contentAlignment = Alignment.Center,

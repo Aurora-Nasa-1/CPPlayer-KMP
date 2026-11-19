@@ -389,7 +389,7 @@ private fun LibraryDashboard(
     onAbout: () -> Unit,
 ) {
     val s = cpStrings()
-    val neutral = MaterialTheme.colorScheme.surfaceContainerHigh
+    val neutral = cpCardSurface()
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(BentoGap)) {
         // ── 行 1：问候区 + 聆听统计 ──
         if (expanded) {
@@ -555,7 +555,7 @@ private fun LibraryQuickEntry(
         Surface(
             onClick = onClick,
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = cpCardSurface(),
             modifier = Modifier.size(48.dp),
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -624,7 +624,7 @@ private fun LibrarySegmentedTabs(
     Row(
         Modifier
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f))
+            .background(cpCardSurface())
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1230,7 +1230,7 @@ private fun LocalCategoryTile(
     Surface(
         onClick = onClick,
         shape = shape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpCardSurface(),
         modifier = modifier.height(108.dp).cpPressScale(),
     ) {
         Column(

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpElevatedSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -132,7 +133,7 @@ private class RevealPopupPositionProvider(private val gapPx: Int) : PopupPositio
 private fun RevealCard(text: String, style: TextStyle) {
     Surface(
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpElevatedSurface(),
         tonalElevation = 3.dp,
         shadowElevation = 8.dp,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),

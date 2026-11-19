@@ -28,6 +28,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -666,7 +667,7 @@ private fun VerticalFaderColumn(
     onGainChangeFinished: () -> Unit,
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
-    val trackBgColor = MaterialTheme.colorScheme.surfaceContainerHighest
+    val trackBgColor = cpNestedSurface()
     val activeColor = if (enabled) primaryColor else primaryColor.copy(alpha = 0.4f)
     val isNonZero = abs(band.gainDb) > 0.05f
 
@@ -780,7 +781,7 @@ private fun VerticalFaderColumn(
         Box(
             modifier = Modifier
                 .clip(MaterialTheme.shapes.small)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .background(cpNestedSurface())
                 .padding(horizontal = 6.dp, vertical = 2.dp),
         ) {
             CpText(

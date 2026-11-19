@@ -44,6 +44,7 @@ import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.anim.coverFlightSource
 import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpNestedSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.util.resized
 
 /**
@@ -150,7 +151,7 @@ fun PlaylistItem(
                     }) {
                         Surface(
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            color = cpNestedSurface(),
                             modifier = Modifier.size(36.dp),
                         ) {
                             Box(contentAlignment = Alignment.Center) {

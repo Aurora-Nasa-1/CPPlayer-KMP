@@ -43,6 +43,7 @@ import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.theme.cpElevatedSurface
 import cp.player.app.ui.theme.LocalAppFontFamilies
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.theme.containsHan
@@ -319,7 +320,7 @@ fun LyricContent(
             androidx.compose.material3.Surface(
                 onClick = { showOffsetDialog = true },
                 shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.85f),
+                color = cpElevatedSurface().copy(alpha = 0.85f),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 16.dp, end = 16.dp),

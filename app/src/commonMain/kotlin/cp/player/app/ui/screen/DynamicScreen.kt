@@ -788,8 +788,8 @@ private fun DynamicAvatar(
 
 @Composable
 private fun DynamicSkeletonCard() {
-    val base = MaterialTheme.colorScheme.surfaceContainerHigh
-    val highlight = MaterialTheme.colorScheme.surfaceContainerHighest
+    val base = cpNestedSurface()
+    val highlight = MaterialTheme.colorScheme.surfaceBright
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,

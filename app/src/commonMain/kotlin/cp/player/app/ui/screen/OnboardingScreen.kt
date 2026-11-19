@@ -39,6 +39,8 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -553,7 +555,7 @@ private fun OnboardingStepIndicator(
                 targetValue = if (index <= current) {
                     MaterialTheme.colorScheme.primary
                 } else {
-                    MaterialTheme.colorScheme.surfaceContainerHighest
+                    cpNestedSurface()
                 },
                 animationSpec = CpMotion.effectsFast(),
                 label = "onboardingStepColor",
@@ -755,7 +757,7 @@ private fun ProviderOnboardingPage(
 
             // 1. 云端音源推荐区（主推荐卡片）
             Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                color = cpCardSurface(),
                 shape = MaterialTheme.shapes.large,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -1000,7 +1002,7 @@ private fun ProviderOnboardingPage(
             if (loadedProviders.isNotEmpty()) {
                 Spacer(Modifier.height(20.dp))
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    color = cpCardSurface(),
                     shape = MaterialTheme.shapes.large,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -1027,7 +1029,7 @@ private fun ProviderOnboardingPage(
                                 },
                                 colors = ListItemDefaults.colors(
                                     containerColor = if (row.active) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                                    else MaterialTheme.colorScheme.surface,
+                                    else cpNestedSurface(),
                                 ),
                             )
                         }
@@ -1036,7 +1038,7 @@ private fun ProviderOnboardingPage(
             } else {
                 Spacer(Modifier.height(20.dp))
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    color = cpCardSurface(),
                     shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth(),
                 ) {

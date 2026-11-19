@@ -25,6 +25,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpCardSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -183,7 +184,7 @@ internal fun BackendErrorContent(
             if (providers.isNotEmpty()) {
                 Spacer(Modifier.height(24.dp))
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    color = cpCardSurface(),
                     shape = MaterialTheme.shapes.large,
                     modifier = Modifier.fillMaxWidth(),
                 ) {

@@ -24,6 +24,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpSheetInnerSurface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -339,7 +340,7 @@ private fun DjDeskAiSection(
     val s = cpStrings()
     Surface(
         shape = MaterialTheme.shapes.largeIncreased,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = cpSheetInnerSurface(),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(

@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -160,7 +161,7 @@ private fun ProviderFeatureRow(
     val container = if (supported) {
         MaterialTheme.colorScheme.secondaryContainer
     } else {
-        MaterialTheme.colorScheme.surfaceContainerHighest
+        cpNestedSurface()
     }
     Row(
         modifier = Modifier

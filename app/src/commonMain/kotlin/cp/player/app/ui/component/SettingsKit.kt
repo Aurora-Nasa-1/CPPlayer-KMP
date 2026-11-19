@@ -668,7 +668,7 @@ private fun SegmentedControl(
             // 放在标题下方（单独的 Column 行），行间距由宿主给的 `spacedBy(2.dp)` 负责。
             // 曾经它是标题右侧的行内元素，靠 10dp 顶边距与标题拉开距离 —— 那个布局已废弃。
             .clip(outerShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .background(cp.player.app.ui.theme.cpNestedSurface())
             .padding(trackPadding)
             .selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy(trackPadding),

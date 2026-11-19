@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -372,7 +373,7 @@ private fun CoverFlightRenderer(
                     clip = true
                     shadowElevation = with(density) { 12.dp.toPx() } * (1f - t) * (0.5f + 0.5f * lift)
                 }
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                .background(cpNestedSurface()),
         ) {
             AsyncImage(
                 model = flight.coverUrl.resized(600),

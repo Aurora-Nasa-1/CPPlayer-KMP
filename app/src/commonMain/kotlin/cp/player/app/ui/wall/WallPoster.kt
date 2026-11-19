@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -128,7 +129,7 @@ internal fun WallPosterOverlay(
             .consumeAllPointerInput(),
     ) {
         Box(Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
+            Box(Modifier.fillMaxSize().background(cpNestedSurface()))
             if (!item.coverUrl.isNullOrBlank()) {
                 AsyncImage(
                     // 按卡片**实际像素**取图：固定 900 在大窗口下会被拉到 1300+ 而发糊。

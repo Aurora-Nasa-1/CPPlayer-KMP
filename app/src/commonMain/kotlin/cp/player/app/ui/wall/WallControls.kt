@@ -18,6 +18,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpElevatedSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -125,13 +127,13 @@ internal fun WallZoomLadder(
     val active = WallZoomMath.levelIndex(zoom)
     var trackHeight by remember { mutableFloatStateOf(1f) }
     val zoomCallback by rememberUpdatedState(onZoom)
-    val railColour = MaterialTheme.colorScheme.surfaceContainerHighest
+    val railColour = cpNestedSurface()
     val horizontal = if (compact) 10.dp else 12.dp
 
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surface,
+        color = cpElevatedSurface(),
         tonalElevation = 3.dp,
     ) {
         Column(
@@ -238,7 +240,7 @@ internal fun WallCrown(
                 detectTapGestures(onDoubleTap = { resetCallback() })
             },
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpElevatedSurface(),
         tonalElevation = 4.dp,
     ) {
         Box(contentAlignment = Alignment.Center) {

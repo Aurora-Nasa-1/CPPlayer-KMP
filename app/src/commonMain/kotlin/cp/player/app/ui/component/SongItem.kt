@@ -172,7 +172,7 @@ fun SongItem(
                         }
                         Box(
                             Modifier.size(52.dp).aspectRatio(1f).clip(coverShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .background(cp.player.app.ui.theme.cpNestedSurface())
                                 .coverFlightSource(CoverFlight.trackKey(track.id), coverCorner),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -270,7 +270,7 @@ fun SongItem(
                             color = if (supportingBadgeAlert) {
                                 MaterialTheme.colorScheme.errorContainer
                             } else {
-                                MaterialTheme.colorScheme.surfaceContainerHighest
+                                cp.player.app.ui.theme.cpNestedSurface()
                             },
                         ) {
                             CpText(

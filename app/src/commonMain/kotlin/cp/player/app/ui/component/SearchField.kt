@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.dp
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpShapes
 import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpElevatedSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.theme.cpNestedSurface
 
 /**
@@ -183,7 +185,7 @@ fun CpSearchSuggestionPanel(
     Surface(
         modifier = modifier.wrapContentHeight(align = Alignment.Top, unbounded = true),
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = cpElevatedSurface(),
         tonalElevation = 3.dp,
         shadowElevation = 8.dp,
     ) {
@@ -203,7 +205,7 @@ private fun SuggestionRow(suggestion: String, onPick: (String) -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                if (hovered) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent,
+                if (hovered) cpNestedSurface() else Color.Transparent,
             )
             .hoverable(interaction)
             .pointerInput(suggestion) {

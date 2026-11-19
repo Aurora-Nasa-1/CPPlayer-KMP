@@ -43,6 +43,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -1563,7 +1564,7 @@ private fun SidebarAction(
             modifier = Modifier.size(36.dp),
             shape = MaterialTheme.shapes.small,
             color = if (selected) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceContainerHighest,
+            else cpNestedSurface(),
         ) {
             Box(contentAlignment = androidx.compose.ui.Alignment.Center, modifier = Modifier.fillMaxSize()) {
                 Icon(
@@ -1624,7 +1625,7 @@ private fun SidebarPlaylistRow(
         // 图没到之前这里会是一块空的方角壳。
         Box(
             Modifier.size(38.dp).clip(MaterialTheme.shapes.small)
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                .background(cpNestedSurface()),
             contentAlignment = androidx.compose.ui.Alignment.Center,
         ) {
             CpCoverPlaceholder(

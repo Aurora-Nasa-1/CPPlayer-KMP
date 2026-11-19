@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -450,7 +451,7 @@ private fun TileMeta(item: WallItem, color: Color, titleSize: TextUnit, subSize:
 
 @Composable
 private fun WallCover(url: String?, requestSize: Int, modifier: Modifier) {
-    Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {
+    Box(modifier.background(cpNestedSurface())) {
         if (!url.isNullOrBlank()) {
             AsyncImage(
                 model = url.resized(requestSize),

@@ -172,7 +172,7 @@ fun CpLinearProgress(
     progress: Float,
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.primary,
-    trackColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    trackColor: Color = cpNestedSurface(),
     animated: Boolean = true,
 ) {
     val safe = progress.coerceIn(0f, 1f)
@@ -227,7 +227,7 @@ fun CpWavyProgress(
     progress: Float,
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.primary,
-    trackColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    trackColor: Color = cpNestedSurface(),
     animated: Boolean = true,
     waveFlowing: Boolean = false,
 ) {
@@ -269,7 +269,7 @@ private val CpWaveFlowSpeed = WavyProgressIndicatorDefaults.LinearDeterminateWav
 fun CpWavyProgressIndeterminate(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.primary,
-    trackColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    trackColor: Color = cpNestedSurface(),
 ) {
     LinearWavyProgressIndicator(
         modifier = modifier.height(16.dp),
@@ -321,7 +321,7 @@ fun CpCircularWavyProgress(
     progress: Float,
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.primary,
-    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant,
+    trackColor: Color = cpNestedSurface(),
 ) {
     CircularWavyProgressIndicator(
         progress = { progress.coerceIn(0f, 1f) },
@@ -340,7 +340,7 @@ fun CpCircularWavyProgress(
 fun CpCircularWavyProgressIndeterminate(
     modifier: Modifier = Modifier,
     color: Color = MaterialTheme.colorScheme.primary,
-    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant,
+    trackColor: Color = cpNestedSurface(),
 ) {
     CircularWavyProgressIndicator(
         modifier = modifier,
@@ -379,7 +379,7 @@ fun CpSeekBar(
     enabled: Boolean = true,
     waveFlowing: Boolean = true,
     color: Color = MaterialTheme.colorScheme.primary,
-    trackColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    trackColor: Color = cpNestedSurface(),
     thumbColor: Color = MaterialTheme.colorScheme.primary,
     /**
      * 曲目标识。变化时清掉「松手保持」的目标 —— 换歌后位置跳回 0，不清的话滑条会

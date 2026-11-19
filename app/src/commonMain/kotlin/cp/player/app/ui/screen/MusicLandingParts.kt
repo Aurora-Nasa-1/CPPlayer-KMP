@@ -35,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpCardSurface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -238,7 +239,7 @@ internal fun LandingRadioActions(actions: HomeActions, compact: Boolean = false,
                     color = when (index) {
                         0 -> MaterialTheme.colorScheme.secondaryContainer
                         1 -> MaterialTheme.colorScheme.tertiaryContainer
-                        else -> MaterialTheme.colorScheme.surfaceContainerHigh
+                        else -> cpCardSurface()
                     },
                 ) {
                     Column(

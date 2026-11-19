@@ -24,6 +24,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpSheetInnerSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,7 +70,7 @@ fun QualityMenuChip(
     val hovered by interaction.collectIsHoveredAsState()
     val container by animateColorAsState(
         targetValue = if (hovered || expanded) {
-            MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f)
+            cpSheetInnerSurface()
         } else {
             Color.Transparent
         },
@@ -145,7 +146,7 @@ fun QualitySectionCard(
     val options = remember(gen) { AppModel.currentQualityOptions() }
 
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.55f),
+        color = cpSheetInnerSurface(),
         shape = RoundedCornerShape(20.dp),
         modifier = modifier.fillMaxWidth(),
     ) {

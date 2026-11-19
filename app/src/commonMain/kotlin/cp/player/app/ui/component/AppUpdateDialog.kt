@@ -351,7 +351,7 @@ fun AppUpdateDialog(
                             parsedChangelog.compareUrl?.let { url ->
                                 Surface(
                                     shape = MaterialTheme.shapes.small,
-                                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f),
+                                    color = changelogContainerColor,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(MaterialTheme.shapes.small)
@@ -497,7 +497,7 @@ private fun ExpressiveCategoryCard(
                 // 该分类条目数量指示
                 Surface(
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    color = cpSheetInnerSurface(),
                 ) {
                     CpText(
                         text = "${section.items.size}",
@@ -556,7 +556,7 @@ private fun ExpressiveMetaChip(
     icon: ImageVector,
     text: String,
     tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+    containerColor: Color = cpSheetInnerSurface(),
 ) {
     Surface(
         shape = MaterialTheme.shapes.small,
@@ -692,7 +692,7 @@ enum class ChangelogCategory(val defaultTitle: String) {
         OTHER -> CategoryMeta(
             icon = Icons.Default.Build,
             accentColor = { MaterialTheme.colorScheme.onSurfaceVariant },
-            containerColor = { MaterialTheme.colorScheme.surfaceVariant },
+            containerColor = { cpSheetInnerSurface() },
         )
         GENERAL -> CategoryMeta(
             icon = Icons.Default.Info,
