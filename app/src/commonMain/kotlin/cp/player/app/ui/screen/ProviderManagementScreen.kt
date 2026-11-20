@@ -75,6 +75,7 @@ import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsLazyPage
 import cp.player.app.ui.component.SettingsNote
+import cp.player.app.ui.component.SettingsNoteGroup
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.settingsContentWidth
@@ -366,8 +367,12 @@ class ProviderManagementScreen(
                                     index = 0, total = 1, icon = Icons.Filled.Extension,
                                 )
                             }
-                            item { SettingsNote(t.note) }
-                            item { SettingsNote(t.orderNote) }
+                            item {
+                                SettingsNoteGroup(
+                                    notes = listOf(t.note, t.orderNote),
+                                    collapsible = false,
+                                )
+                            }
 
                             if (lyricsSources.isEmpty()) {
                                 item { SettingsNote(t.emptyMessage) }

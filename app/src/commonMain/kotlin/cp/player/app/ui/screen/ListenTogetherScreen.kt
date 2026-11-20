@@ -33,6 +33,7 @@ import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.SettingsButtonItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsNoteEmphasis
+import cp.player.app.ui.component.SettingsNoteGroup
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSwitchItem
@@ -255,18 +256,17 @@ private fun ColumnScope.roomContent(
     val room = state.room
     val link = state.shareUrl()
 
-    SettingsNote(text = together.roomId(room?.roomId.orEmpty()))
-    SettingsNote(
-        text = buildString {
-            append(together.memberCount(room?.members?.size ?: 0))
-            append(if (state.isOwner()) together.ownerTag else "")
-            append(ltTtl(room?.createdAtMs, room?.effectiveDurationMs).roomText(strings))
-        },
-    )
-    // ⚠️ 实测 connectionStatus 恒为 NOT_CONNECTED（IM 长连接态），HTTP 客户端永远满足不了。
-    // 它不是错误，所以不渲染成警告色，只说清「延迟从哪来」，免得用户以为出了问题。
-    SettingsNote(
-        text = together.pollNote(ListenTogetherEngine.POLL_INTERVAL_MS / 1000),
+    SettingsNoteGroup(
+        title = together.roomId(room?.roomId.orEmpty()),
+        notes = listOf(
+            buildString {
+                append(together.memberCount(room?.members?.size ?: 0))
+                append(if (state.isOwner()) together.ownerTag else "")
+                append(ltTtl(room?.createdAtMs, room?.effectiveDurationMs).roomText(strings))
+            },
+            together.pollNote(ListenTogetherEngine.POLL_INTERVAL_MS / 1000),
+        ),
+        collapsible = false,
     )
 
     SettingsSection(together.sectionRoom) {

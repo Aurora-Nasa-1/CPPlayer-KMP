@@ -17,6 +17,8 @@ import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
+import cp.player.app.ui.component.SettingsNoteEmphasis
+import cp.player.app.ui.component.SettingsNoteGroup
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.rememberConfirmState
@@ -196,12 +198,15 @@ fun FontPacksSection(
             )
         }
     }
-    SettingsNote(packs.intro)
-    if (!supported) {
-        SettingsNote(packs.unsupported, color = MaterialTheme.colorScheme.error)
+    val notes = buildList {
+        add(packs.intro)
+        if (android && supported) {
+            add(packs.sourceNote)
+        }
     }
-    if (android && supported) {
-        SettingsNote(packs.sourceNote)
+    SettingsNoteGroup(notes = notes, collapsible = false)
+    if (!supported) {
+        SettingsNote(packs.unsupported, emphasis = SettingsNoteEmphasis.ERROR)
     }
     // 确认框宿主放在本段末尾：与页面其余弹层同级（见 AGENTS 里「一页多入口接同一个 state」）。
     CpConfirmHost(confirm)

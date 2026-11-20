@@ -792,18 +792,52 @@ class MainScreen : Screen {
                 }
             }
 
-            // 全局 Snackbar（操作反馈）
+            // 全局反馈浮岛（M3 Expressive Floating Capsule）
             androidx.compose.material3.SnackbarHost(
                 hostState = snackbarHostState,
-                modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter)
-                    .padding(bottom = 96.dp),
+                modifier = Modifier
+                    .align(androidx.compose.ui.Alignment.BottomCenter)
+                    .padding(bottom = 96.dp, start = 20.dp, end = 20.dp),
             ) { data ->
-                androidx.compose.material3.Snackbar(
-                    snackbarData = data,
-                    shape = MaterialTheme.shapes.large,
-                    containerColor = MaterialTheme.colorScheme.inverseSurface,
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.inverseSurface,
                     contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-                )
+                    tonalElevation = 6.dp,
+                    shadowElevation = 8.dp,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.inversePrimary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        CpText(
+                            text = data.visuals.message,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.inverseOnSurface,
+                        )
+                        val actionLabel = data.visuals.actionLabel
+                        if (actionLabel != null) {
+                            androidx.compose.material3.TextButton(
+                                onClick = { data.performAction() },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            ) {
+                                CpText(
+                                    text = actionLabel,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.inversePrimary,
+                                )
+                            }
+                        }
+                    }
+                }
             }
         } // End of CompositionLocalProvider
         } // End of BoxWithConstraints

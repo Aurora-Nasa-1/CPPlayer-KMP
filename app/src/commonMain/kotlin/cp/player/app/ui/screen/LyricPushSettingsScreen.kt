@@ -28,6 +28,7 @@ import cp.player.app.platform.shizukuState
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
+import cp.player.app.ui.component.SettingsNoteGroup
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
@@ -75,8 +76,13 @@ class LyricPushSettingsScreen : Screen {
             onBack = { navigator.pop() },
         ) { pageModifier ->
             SettingsPage(pageModifier) {
-                SettingsNote(s.lyricPush.note)
-                SettingsNote(s.lyricPush.androidOnlyNote)
+                SettingsNoteGroup(
+                    notes = listOf(
+                        s.lyricPush.note,
+                        s.lyricPush.androidOnlyNote,
+                    ),
+                    collapsible = false,
+                )
 
                 channelsSection(s, config)
                 colorOsSection(s, config)

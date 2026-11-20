@@ -355,7 +355,10 @@ private fun statusSummary(s: CpStrings, config: LocalServerConfig, status: Local
             text = s.externalAccess.statusStartFailed(error),
             emphasis = SettingsNoteEmphasis.ERROR,
         )
-        status.running -> SettingsNote(s.externalAccess.statusRunning(status.streamUrl))
+        status.running -> SettingsNote(
+            text = s.externalAccess.statusRunning(status.streamUrl),
+            emphasis = SettingsNoteEmphasis.SUCCESS,
+        )
         else -> SettingsNote(s.externalAccess.statusStarting)
     }
 }

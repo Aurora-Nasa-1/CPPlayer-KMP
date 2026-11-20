@@ -263,7 +263,7 @@ internal fun AudioEngineSettingsContent(
                     }
                 }
                 if (state.isWindowsDesktop) {
-                    SettingsNote(engine.exclusiveWarning, emphasis = SettingsNoteEmphasis.INFO)
+                    SettingsNote(engine.exclusiveWarning, emphasis = SettingsNoteEmphasis.WARNING)
                 }
             }
 

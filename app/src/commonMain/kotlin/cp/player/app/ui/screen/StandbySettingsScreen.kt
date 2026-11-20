@@ -26,6 +26,7 @@ import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsFieldGroup
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsNoteEmphasis
+import cp.player.app.ui.component.SettingsNoteGroup
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSwitchItem
@@ -279,8 +280,6 @@ class StandbySettingsScreen : Screen {
                     }
                 }
 
-                SettingsNote(s.standby.troubleshooting)
-
                 // ⚠️ 先落局部 val：`handoffState` 是委托属性，不能 smart cast。
                 val handoff = handoffState
                 if (handoff != null) {
@@ -296,10 +295,18 @@ class StandbySettingsScreen : Screen {
                     )
                 }
 
-                SettingsNote(s.standby.handoffPrereq)
-                SettingsNote(s.standby.handoffSecurityNote)
-                SettingsNote(s.standby.keepAliveReality)
-                SettingsNote(s.standby.keepAliveRecommend)
+                SettingsNoteGroup(
+                    title = s.standby.troubleshooting,
+                    notes = listOf(
+                        s.standby.troubleshooting,
+                        s.standby.handoffPrereq,
+                        s.standby.handoffSecurityNote,
+                        s.standby.keepAliveReality,
+                        s.standby.keepAliveRecommend,
+                    ),
+                    collapsible = true,
+                    initiallyExpanded = false,
+                )
             }
         }
     }

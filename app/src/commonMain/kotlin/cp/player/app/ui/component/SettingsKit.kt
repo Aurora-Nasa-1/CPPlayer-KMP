@@ -30,6 +30,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -170,10 +178,23 @@ fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) 
  * 一模一样，对比度还都贴着下限。[WARNING] / [ERROR] 因此改成带容器的强调条，
  * 并挂上 `liveRegion` 让状态变化能被播报。
  */
-enum class SettingsNoteEmphasis { INFO, WARNING, ERROR }
+enum class SettingsNoteEmphasis { INFO, WARNING, ERROR, SUCCESS, TIP }
+
+private data class NoteStyle(
+    val container: Color,
+    val content: Color,
+    val icon: ImageVector,
+    val iconTint: Color,
+)
 
 /**
  * 组外的说明 / 状态文字。
+ *
+ * 采用 Material 3 Expressive 容器化 Callout 设计：
+ * - [INFO]：低饱和度柔和容器色（`surfaceContainerLow`），搭配大圆角与内边距，提供轻盈通透的呼吸感；
+ * - [WARNING] / [ERROR]：高能见度的强调容器与语义图标，并接入 `liveRegion` 无障碍播报；
+ * - [SUCCESS] / [TIP]：分别使用主色与次色容器，传达操作确认感与指引；
+ * - [flat]：若特定极端紧凑场景需要纯文字无底色，可显式指定 `flat = true`。
  *
  * 必须放在 [SettingsSection] **之外**、页面列的直接子项上 —— 组内是分段卡片，
  * 中间插一行非分段文本会把圆角拼接打断。
@@ -184,8 +205,10 @@ fun SettingsNote(
     modifier: Modifier = Modifier,
     emphasis: SettingsNoteEmphasis = SettingsNoteEmphasis.INFO,
     color: Color = Color.Unspecified,
+    title: String? = null,
+    flat: Boolean = false,
 ) {
-    if (emphasis == SettingsNoteEmphasis.INFO) {
+    if (flat) {
         CpText(
             text = text,
             style = MaterialTheme.typography.bodySmall,
@@ -198,43 +221,299 @@ fun SettingsNote(
         return
     }
 
-    val container = if (emphasis == SettingsNoteEmphasis.ERROR) {
-        MaterialTheme.colorScheme.errorContainer
-    } else {
-        MaterialTheme.colorScheme.tertiaryContainer
+    val style = when (emphasis) {
+        SettingsNoteEmphasis.ERROR -> NoteStyle(
+            container = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.85f),
+            content = MaterialTheme.colorScheme.onErrorContainer,
+            icon = Icons.Filled.Warning,
+            iconTint = MaterialTheme.colorScheme.onErrorContainer,
+        )
+        SettingsNoteEmphasis.WARNING -> NoteStyle(
+            container = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.85f),
+            content = MaterialTheme.colorScheme.onTertiaryContainer,
+            icon = Icons.Filled.Warning,
+            iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+        SettingsNoteEmphasis.SUCCESS -> NoteStyle(
+            container = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
+            content = MaterialTheme.colorScheme.onPrimaryContainer,
+            icon = Icons.Filled.Check,
+            iconTint = MaterialTheme.colorScheme.primary,
+        )
+        SettingsNoteEmphasis.TIP -> NoteStyle(
+            container = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
+            content = MaterialTheme.colorScheme.onSecondaryContainer,
+            icon = Icons.Default.Info,
+            iconTint = MaterialTheme.colorScheme.secondary,
+        )
+        SettingsNoteEmphasis.INFO -> NoteStyle(
+            container = MaterialTheme.colorScheme.surfaceContainerLow,
+            content = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
+            icon = Icons.Default.Info,
+            iconTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+        )
     }
-    val onContainer = if (emphasis == SettingsNoteEmphasis.ERROR) {
-        MaterialTheme.colorScheme.onErrorContainer
-    } else {
-        MaterialTheme.colorScheme.onTertiaryContainer
-    }
+
+    val contentColor = if (color == Color.Unspecified) style.content else color
+    val iconTint = if (color == Color.Unspecified) style.iconTint else color
+
     Surface(
-        // 14dp 是历史遗留的非标度值；收到 `shapes.medium`(12dp)。
-        // 提示条是行内元素，比所在分段卡片（外 20dp）轻一档才对。
         shape = MaterialTheme.shapes.medium,
-        color = container,
+        color = style.container,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = CpSpacing.formHorizontal, vertical = 4.dp)
-            .semantics { liveRegion = LiveRegionMode.Polite },
+            .semantics {
+                if (emphasis == SettingsNoteEmphasis.WARNING || emphasis == SettingsNoteEmphasis.ERROR) {
+                    liveRegion = LiveRegionMode.Polite
+                }
+            },
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Top,
         ) {
             Icon(
-                imageVector = Icons.Filled.Warning,
+                imageVector = style.icon,
                 contentDescription = null,
-                tint = onContainer,
-                modifier = Modifier.size(CpIconSize.inline),
+                tint = iconTint,
+                modifier = Modifier
+                    .size(CpIconSize.inline)
+                    .padding(top = 2.dp),
             )
-            CpText(
-                text = text,
-                style = MaterialTheme.typography.bodySmall,
-                color = onContainer,
-                maxLines = Int.MAX_VALUE,
-            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                if (title != null) {
+                    CpText(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = contentColor,
+                        maxLines = Int.MAX_VALUE,
+                    )
+                }
+                CpText(
+                    text = text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentColor,
+                    maxLines = Int.MAX_VALUE,
+                    lineHeight = 18.sp,
+                )
+            }
         }
+    }
+}
+
+/**
+ * 将多条说明 / 排障指引聚合在一起呈现的 M3E 呼吸感折叠容器。
+ *
+ * 解决多条 [SettingsNote] 连续平铺导致屏幕底部被大量灰色卡片或纯文本占满、
+ * 严重破坏页面呼吸感的问题。默认仅展示首条概要或指定标题，点击后以 M3E 弹性动效
+ * 平滑展开全部说明，兼顾信息完整度与视觉通透。
+ *
+ * @param notes 说明条目列表
+ * @param title 可选分组标题；未指定时默认使用首条文本作为标题
+ * @param emphasis 强调级别，默认 [SettingsNoteEmphasis.INFO]
+ * @param collapsible 是否支持点击展开/折叠，默认 true
+ * @param initiallyExpanded 初始是否展开，默认 false
+ */
+@Composable
+fun SettingsNoteGroup(
+    notes: List<String>,
+    modifier: Modifier = Modifier,
+    title: String? = null,
+    emphasis: SettingsNoteEmphasis = SettingsNoteEmphasis.INFO,
+    collapsible: Boolean = true,
+    initiallyExpanded: Boolean = false,
+) {
+    val validNotes = notes.filter { it.isNotBlank() }
+    if (validNotes.isEmpty()) return
+
+    if (validNotes.size == 1 && title == null) {
+        SettingsNote(text = validNotes.first(), modifier = modifier, emphasis = emphasis)
+        return
+    }
+
+    var expanded by remember { mutableStateOf(initiallyExpanded || !collapsible) }
+    val rotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = CpMotion.spatialFast(),
+        label = "noteGroupRotate",
+    )
+
+    val style = when (emphasis) {
+        SettingsNoteEmphasis.ERROR -> NoteStyle(
+            container = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.85f),
+            content = MaterialTheme.colorScheme.onErrorContainer,
+            icon = Icons.Filled.Warning,
+            iconTint = MaterialTheme.colorScheme.onErrorContainer,
+        )
+        SettingsNoteEmphasis.WARNING -> NoteStyle(
+            container = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.85f),
+            content = MaterialTheme.colorScheme.onTertiaryContainer,
+            icon = Icons.Filled.Warning,
+            iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+        SettingsNoteEmphasis.SUCCESS -> NoteStyle(
+            container = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
+            content = MaterialTheme.colorScheme.onPrimaryContainer,
+            icon = Icons.Filled.Check,
+            iconTint = MaterialTheme.colorScheme.primary,
+        )
+        SettingsNoteEmphasis.TIP -> NoteStyle(
+            container = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
+            content = MaterialTheme.colorScheme.onSecondaryContainer,
+            icon = Icons.Default.Info,
+            iconTint = MaterialTheme.colorScheme.secondary,
+        )
+        SettingsNoteEmphasis.INFO -> NoteStyle(
+            container = MaterialTheme.colorScheme.surfaceContainerLow,
+            content = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
+            icon = Icons.Default.Info,
+            iconTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
+        )
+    }
+
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = style.container,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = CpSpacing.formHorizontal, vertical = 4.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .then(if (collapsible) Modifier.clickable { expanded = !expanded } else Modifier),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(
+                    imageVector = style.icon,
+                    contentDescription = null,
+                    tint = style.iconTint,
+                    modifier = Modifier.size(CpIconSize.inline),
+                )
+                val displayTitle = title ?: validNotes.firstOrNull().orEmpty()
+                CpText(
+                    text = displayTitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = style.content,
+                    modifier = Modifier.weight(1f),
+                    maxLines = if (expanded) Int.MAX_VALUE else 2,
+                )
+                if (collapsible) {
+                    Icon(
+                        imageVector = Icons.Filled.ArrowDropDown,
+                        contentDescription = null,
+                        tint = style.iconTint,
+                        modifier = Modifier
+                            .size(CpIconSize.inline)
+                            .graphicsLayer { rotationZ = rotation },
+                    )
+                }
+            }
+
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(CpMotion.spatial()) + fadeIn(),
+                exit = shrinkVertically(CpMotion.spatialFast()) + fadeOut(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(top = 4.dp, start = 26.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    val itemsToRender = if (title != null) validNotes else validNotes.drop(1)
+                    itemsToRender.forEach { itemText ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            CpText(
+                                text = "•",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = style.iconTint,
+                                modifier = Modifier.padding(top = 1.dp),
+                            )
+                            CpText(
+                                text = itemText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = style.content,
+                                lineHeight = 18.sp,
+                                maxLines = Int.MAX_VALUE,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * M3E 呼吸感行内辅助提示按钮。
+ *
+ * 避免在设置行或表单项副标题中塞入大段晦涩的技术说明，
+ * 点击后弹出 M3E 样式的说明对话框，平时仅保留极弱化的帮助图标。
+ */
+@Composable
+fun CpInlineHelp(
+    title: String,
+    description: String,
+    modifier: Modifier = Modifier,
+) {
+    var showDialog by remember { mutableStateOf(false) }
+
+    IconButton(
+        onClick = { showDialog = true },
+        modifier = modifier.size(32.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Default.Info,
+            contentDescription = title,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            modifier = Modifier.size(CpIconSize.inline),
+        )
+    }
+
+    if (showDialog) {
+        CpAlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    CpText(title, style = MaterialTheme.typography.titleMedium)
+                }
+            },
+            text = {
+                CpText(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 22.sp,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showDialog = false }) {
+                    CpText(cpStrings().common.ok)
+                }
+            },
+        )
     }
 }
 
