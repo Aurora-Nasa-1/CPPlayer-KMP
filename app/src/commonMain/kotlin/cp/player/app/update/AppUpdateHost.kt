@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
+import cp.player.app.ui.theme.cpSheetSurface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
@@ -123,6 +125,8 @@ fun AppUpdateHost() {
     announcement?.takeIf { showAnnouncement }?.let { notice ->
         AlertDialog(
             onDismissRequest = ::markAnnouncementSeen,
+            containerColor = cpSheetSurface(),
+            shape = MaterialTheme.shapes.extraLarge,
             title = { CpText(notice.title) },
             text = {
                 Column {
@@ -144,6 +148,8 @@ fun AppUpdateHost() {
         val policy = result.destructivePolicy
         AlertDialog(
             onDismissRequest = { if (!downloading) showDestructiveConfirm = false },
+            containerColor = cpSheetSurface(),
+            shape = MaterialTheme.shapes.extraLarge,
             title = { CpText(policy.title) },
             text = {
                 Column {
@@ -200,6 +206,8 @@ fun AppUpdateHost() {
     operationError?.let { error ->
         AlertDialog(
             onDismissRequest = { operationError = null },
+            containerColor = cpSheetSurface(),
+            shape = MaterialTheme.shapes.extraLarge,
             title = { CpText("更新未能启动") },
             // 失败原因是排查唯一线索（可能带命令行输出），不能截断。
             text = { CpText(error, maxLines = Int.MAX_VALUE) },

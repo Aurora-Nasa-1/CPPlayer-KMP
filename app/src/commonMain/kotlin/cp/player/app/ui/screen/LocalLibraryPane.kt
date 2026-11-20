@@ -115,6 +115,7 @@ import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.settingsRowContainer
 import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpNestedSurface
+import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.model.DownloadsScreenModel
@@ -1344,6 +1345,8 @@ private fun ScanSettingsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = cpSheetSurface(),
+        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(strings.downloads.scanSettings) },
         text = {
             // 规则一多（时长 + 预设 + 三个开关 + 排除目录）在窄屏上会顶出对话框，
@@ -1974,6 +1977,8 @@ private fun CreateLocalPlaylistDialog(
     var name by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = cpSheetSurface(),
+        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(strings.downloads.newLocalPlaylist) },
         text = {
             OutlinedTextField(
@@ -2009,6 +2014,8 @@ private fun RenameLocalPlaylistDialog(
     var name by remember { mutableStateOf(currentName) }
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = cpSheetSurface(),
+        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(strings.library.renamePlaylist) },
         text = {
             OutlinedTextField(

@@ -44,6 +44,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import cp.player.app.ui.theme.cpSheetInnerSurface
+import cp.player.app.ui.theme.cpSheetSurface
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -839,6 +840,8 @@ fun SongInfoDialog(
     val s = cpStrings()
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = cpSheetSurface(),
+        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(s.player.songInfo, maxLines = 1) },
         text = {
             val info = formatInfo

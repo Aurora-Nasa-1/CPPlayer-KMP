@@ -62,6 +62,7 @@ import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpText
+import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.CpViewSwitcher
 import cp.player.app.ui.component.CpViewSwitcherItem
@@ -1172,6 +1173,8 @@ private fun PluginDetailsDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = cpSheetSurface(),
+        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(entry.plugin.name, maxLines = Int.MAX_VALUE) },
         text = {
             SelectionContainer {
@@ -1231,6 +1234,8 @@ private fun AddRepositoryDialog(
     val valid = runCatching { requireRepositoryHttpsUrl(url.trim()) }.isSuccess
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = cpSheetSurface(),
+        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(t.addSource) },
         text = {
             Column {

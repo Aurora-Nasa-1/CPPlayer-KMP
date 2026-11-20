@@ -48,6 +48,7 @@ import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.repository.PluginRepository
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.SettingsButtonItem
@@ -369,6 +370,8 @@ internal fun PluginRepositoryContent(
     details?.let { entry ->
         AlertDialog(
             onDismissRequest = { details = null },
+            containerColor = cpSheetSurface(),
+            shape = MaterialTheme.shapes.extraLarge,
             title = { CpText(entry.plugin.name, maxLines = Int.MAX_VALUE) },
             text = {
                 SelectionContainer {
@@ -404,6 +407,8 @@ internal fun PluginRepositoryContent(
         val valid = runCatching { requireRepositoryHttpsUrl(url.trim()) }.isSuccess
         AlertDialog(
             onDismissRequest = { addingSource = false },
+            containerColor = cpSheetSurface(),
+            shape = MaterialTheme.shapes.extraLarge,
             title = { CpText(t.addSource) },
             text = {
                 Column {

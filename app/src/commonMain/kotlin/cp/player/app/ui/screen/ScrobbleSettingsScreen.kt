@@ -43,6 +43,7 @@ import cp.player.app.platform.openUrl
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpText
+import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
@@ -354,6 +355,8 @@ class ScrobbleSettingsScreen : Screen {
         authPendingToken?.let { token ->
             AlertDialog(
                 onDismissRequest = { authPendingToken = null },
+                containerColor = cpSheetSurface(),
+                shape = MaterialTheme.shapes.extraLarge,
                 title = { CpText(strings.lastFmAuthDialogTitle) },
                 // 授权步骤是三句话的操作指引，默认单行只会留下第一句。
                 text = { CpText(strings.lastFmAuthDialogMessage, maxLines = Int.MAX_VALUE) },

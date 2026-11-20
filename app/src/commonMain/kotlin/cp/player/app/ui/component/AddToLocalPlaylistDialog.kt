@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.theme.cpSheetInnerSurface
 
@@ -57,6 +58,8 @@ fun AddToLocalPlaylistDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = cpSheetSurface(),
+        shape = MaterialTheme.shapes.extraLarge,
         title = {
             CpText(
                 s.playlistSheet.addToLocalPlaylistTitle,

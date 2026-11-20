@@ -35,6 +35,7 @@ import cp.player.core.provider.ProviderSettingItemSchema
 import cp.player.core.util.defaultSettingsStorage
 import cp.player.app.ui.component.CpText
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.cpSheetSurface
 
 /**
  * 声明式音源自定义设置页面。
@@ -156,6 +157,8 @@ class ProviderCustomSettingsScreen(
             val isPassword = item.type.equals("password", ignoreCase = true)
             AlertDialog(
                 onDismissRequest = { editingItem = null },
+                containerColor = cpSheetSurface(),
+                shape = MaterialTheme.shapes.extraLarge,
                 title = { CpText(text = s.editSetting(item.label)) },
                 text = {
                     Column {

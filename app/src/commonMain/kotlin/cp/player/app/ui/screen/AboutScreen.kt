@@ -43,6 +43,7 @@ import cp.player.app.ui.component.CpText
 import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.AppUpdateDialog
 import cp.player.app.ui.component.SettingsClickItem
+import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
@@ -224,6 +225,8 @@ class AboutScreen : Screen {
             val policy = result.destructivePolicy!!
             AlertDialog(
                 onDismissRequest = { showDestructiveConfirm = false },
+                containerColor = cpSheetSurface(),
+                shape = MaterialTheme.shapes.extraLarge,
                 title = { CpText(policy.title) },
                 text = {
                     Column {
