@@ -2,12 +2,31 @@ package cp.player.app.ui.component
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import java.lang.foreign.Arena
 import java.lang.foreign.FunctionDescriptor
 import java.lang.foreign.Linker
 import java.lang.foreign.MemorySegment
 import java.lang.foreign.SymbolLookup
 import java.lang.foreign.ValueLayout
+
+actual fun resolveFluidRenderTier(): FluidRenderTier = FluidRenderTier.MESH_GRADIENT
+
+@Composable
+internal actual fun Modifier.renderPlatformFluid(
+    tier: FluidRenderTier,
+    sceneModel: FluidSceneModel,
+    scale: Float,
+    fallback: Brush,
+): Modifier {
+    // 桌面端（Skiko）完整支持 MeshGradientPainter
+    return this.cpMeshGradientBackground(
+        sceneModel = sceneModel,
+        scale = scale,
+        fallback = fallback,
+    )
+}
 
 /**
  * 用 Win32 `EnumDisplaySettingsW` 读主显示器刷新率，不碰 AWT `GraphicsEnvironment`。
