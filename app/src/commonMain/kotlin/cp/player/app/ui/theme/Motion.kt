@@ -5,7 +5,9 @@ import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
@@ -99,6 +101,27 @@ object CpMotion {
         } else {
             (slideInHorizontally(spatialSpec) { (it * 0.25f).roundToInt() } + fadeIn(enterEffectsSpec)) togetherWith
                 (slideOutHorizontally(spatialSpec) { -(it * 0.25f).roundToInt() } + fadeOut(exitEffectsSpec))
+        }
+    }
+
+    /**
+     * M3 Expressive Shared Axis (Y 轴纵向位移) 页面切换转场动效。
+     *
+     * 适用于自底向上弹出的全屏页面或垂直层级递进转场。
+     *
+     * @param isPop 是否为出栈 (Pop) 返回操作；false 为进栈 (Push) 前进操作
+     */
+    @Composable
+    fun sharedAxisY(isPop: Boolean): ContentTransform {
+        val spatialSpec: FiniteAnimationSpec<IntOffset> = spatial()
+        val enterEffectsSpec: FiniteAnimationSpec<Float> = effects()
+        val exitEffectsSpec: FiniteAnimationSpec<Float> = effectsFast()
+        return if (isPop) {
+            (slideInVertically(spatialSpec) { -(it * 0.25f).roundToInt() } + fadeIn(enterEffectsSpec)) togetherWith
+                (slideOutVertically(spatialSpec) { (it * 0.25f).roundToInt() } + fadeOut(exitEffectsSpec))
+        } else {
+            (slideInVertically(spatialSpec) { (it * 0.25f).roundToInt() } + fadeIn(enterEffectsSpec)) togetherWith
+                (slideOutVertically(spatialSpec) { -(it * 0.25f).roundToInt() } + fadeOut(exitEffectsSpec))
         }
     }
 }

@@ -50,7 +50,6 @@ import cp.player.app.ui.theme.CpShapes
 import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpElevatedSurface
 import cp.player.app.ui.theme.cpNestedSurface
-import cp.player.app.ui.theme.cpNestedSurface
 
 /**
  * 全应用统一的搜索输入框胶囊组件。

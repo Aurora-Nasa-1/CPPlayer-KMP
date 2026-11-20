@@ -122,10 +122,8 @@ fun CpConfirmDialog(
     destructive: Boolean = true,
 ) {
     val strings = cpStrings()
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = cpSheetSurface(),
-        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(title) },
         text = { CpText(message, maxLines = Int.MAX_VALUE) },
         confirmButton = {
