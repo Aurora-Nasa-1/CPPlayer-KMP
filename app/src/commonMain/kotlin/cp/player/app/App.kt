@@ -453,27 +453,19 @@ fun App(
                                                             // 避免整个页面横向硬滑导致封面与主页脱节。
                                                             fadeIn(tween(300)) togetherWith fadeOut(tween(220))
                                                         } else {
-                                                            // 复刻 Voyager SlideTransition 默认值：spring + Push/Pop 方向。
-                                                            val spec = spring<IntOffset>(
-                                                                stiffness = 400f,
-                                                                visibilityThreshold = IntOffset.VisibilityThreshold,
-                                                            )
+                                                            // 统一遵循 M3 Expressive Shared Axis (X 轴) 动效体系规范
                                                             if (!isDesktop && initialState is MainScreen && targetState !is MainScreen) {
-                                                                // 手机端从主页进入无底栏子页面：子页面从右侧滑入，主页原地淡出并让底栏下沉
-                                                                (slideInHorizontally(spec) { it } togetherWith fadeOut(tween(220))).apply {
+                                                                // 手机端从主页进入无底栏子页面：Shared Axis X 推进并维持层级
+                                                                cp.player.app.ui.theme.CpMotion.sharedAxisX(isPop = false).apply {
                                                                     targetContentZIndex = 1f
                                                                 }
                                                             } else if (!isDesktop && targetState is MainScreen && initialState !is MainScreen) {
-                                                                // 手机端从无底栏子页面返回主页：子页面向右滑出，主页淡入并让底栏浮起
-                                                                (fadeIn(tween(220)) togetherWith slideOutHorizontally(spec) { it }).apply {
+                                                                // 手机端从无底栏子页面返回主页：Shared Axis X 回退并维持层级
+                                                                cp.player.app.ui.theme.CpMotion.sharedAxisX(isPop = true).apply {
                                                                     targetContentZIndex = -1f
                                                                 }
-                                                            } else if (navigator.lastEvent == StackEvent.Pop) {
-                                                                slideInHorizontally(spec) { -it } togetherWith
-                                                                    slideOutHorizontally(spec) { it }
                                                             } else {
-                                                                slideInHorizontally(spec) { it } togetherWith
-                                                                    slideOutHorizontally(spec) { -it }
+                                                                cp.player.app.ui.theme.CpMotion.sharedAxisX(isPop = navigator.lastEvent == StackEvent.Pop)
                                                             }
                                                         }
                                                     },

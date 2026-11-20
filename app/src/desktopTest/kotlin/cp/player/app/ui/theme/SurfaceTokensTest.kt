@@ -88,4 +88,53 @@ class SurfaceTokensTest {
             "浅色下卡片比页面只亮 $delta/255 —— 低于肉眼可辨的层级差，卡片会糊在页面上",
         )
     }
+
+    @Test
+    fun `深色模式下浮层比卡片更亮且内嵌块保持内凹`() = runComposeUiTest {
+        var card: Color? = null
+        var overlay: Color? = null
+        var overlayInner: Color? = null
+        setContent {
+            CpTheme(themeMode = ThemeMode.DARK, colorSource = ColorSource.FIXED) {
+                card = cpCardSurface()
+                overlay = cpSheetSurface()
+                overlayInner = cpSheetInnerSurface()
+            }
+        }
+        waitForIdle()
+
+        val cardColor = requireNotNull(card)
+        val overlayColor = requireNotNull(overlay)
+        val innerColor = requireNotNull(overlayInner)
+
+        assertTrue(
+            overlayColor.luminance() > cardColor.luminance(),
+            "深色下浮层必须比卡片更亮（消除倒挂），当前 overlay=${overlayColor.luminance()} card=${cardColor.luminance()}",
+        )
+        assertTrue(
+            overlayColor.luminance() > innerColor.luminance(),
+            "深色下浮层内嵌次级块应比浮层更暗（维持 Inset 内凹槽隐喻）",
+        )
+    }
+
+    @Test
+    fun `浅色模式下浮层内嵌块保持内凹`() = runComposeUiTest {
+        var overlay: Color? = null
+        var overlayInner: Color? = null
+        setContent {
+            CpTheme(themeMode = ThemeMode.LIGHT, colorSource = ColorSource.FIXED) {
+                overlay = cpSheetSurface()
+                overlayInner = cpSheetInnerSurface()
+            }
+        }
+        waitForIdle()
+
+        val overlayColor = requireNotNull(overlay)
+        val innerColor = requireNotNull(overlayInner)
+
+        assertTrue(
+            overlayColor.luminance() > innerColor.luminance(),
+            "浅色下浮层内嵌次级块应比浮层底色更暗（维持 Inset 内凹槽隐喻）",
+        )
+    }
 }

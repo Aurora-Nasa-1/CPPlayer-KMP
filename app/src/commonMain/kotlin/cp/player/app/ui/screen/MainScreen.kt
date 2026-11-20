@@ -657,17 +657,7 @@ class MainScreen : Screen {
                                                 ) {
                                                     fadeIn(tween(300)) togetherWith fadeOut(tween(220))
                                                 } else {
-                                                    val spec = spring<IntOffset>(
-                                                        stiffness = 400f,
-                                                        visibilityThreshold = IntOffset.VisibilityThreshold,
-                                                    )
-                                                    if (nav.lastEvent == StackEvent.Pop) {
-                                                        slideInHorizontally(spec) { -it } togetherWith
-                                                            slideOutHorizontally(spec) { it }
-                                                    } else {
-                                                        slideInHorizontally(spec) { it } togetherWith
-                                                            slideOutHorizontally(spec) { -it }
-                                                    }
+                                                    cp.player.app.ui.theme.CpMotion.sharedAxisX(isPop = nav.lastEvent == StackEvent.Pop)
                                                 }
                                             },
                                         )

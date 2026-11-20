@@ -1,11 +1,19 @@
 package cp.player.app.ui.theme
 
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MotionScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 
 /**
  * M3 Expressive 动效令牌。
@@ -70,4 +78,27 @@ object CpMotion {
     @Composable
     @ReadOnlyComposable
     fun <T> effectsSlow(): FiniteAnimationSpec<T> = MaterialTheme.motionScheme.slowEffectsSpec()
+
+    /**
+     * M3 Expressive Shared Axis (X 轴横向位移) 页面切换转场动效。
+     *
+     * 遵循 Material Design 3 / M3 Expressive 标准规范：
+     * - 空间轴 (Spatial): 页面滑动约 25% 距离，采用带弹性且阻尼自然的 Expressive spring (defaultSpatialSpec)
+     * - 效果轴 (Effects): 同步配合透明度进出淡化，采用严禁回弹的 effectsSpec (defaultEffectsSpec / fastEffectsSpec)
+     *
+     * @param isPop 是否为出栈 (Pop) 返回操作；false 为进栈 (Push) 前进操作
+     */
+    @Composable
+    fun sharedAxisX(isPop: Boolean): ContentTransform {
+        val spatialSpec: FiniteAnimationSpec<IntOffset> = spatial()
+        val enterEffectsSpec: FiniteAnimationSpec<Float> = effects()
+        val exitEffectsSpec: FiniteAnimationSpec<Float> = effectsFast()
+        return if (isPop) {
+            (slideInHorizontally(spatialSpec) { -(it * 0.25f).roundToInt() } + fadeIn(enterEffectsSpec)) togetherWith
+                (slideOutHorizontally(spatialSpec) { (it * 0.25f).roundToInt() } + fadeOut(exitEffectsSpec))
+        } else {
+            (slideInHorizontally(spatialSpec) { (it * 0.25f).roundToInt() } + fadeIn(enterEffectsSpec)) togetherWith
+                (slideOutHorizontally(spatialSpec) { -(it * 0.25f).roundToInt() } + fadeOut(exitEffectsSpec))
+        }
+    }
 }

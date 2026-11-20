@@ -5,78 +5,109 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 /**
- * 页面 / 卡片的**语义层级令牌**。
+ * Material 3 Expressive (M3E) 统一语义表面层级令牌。
  *
- * M3 的 surface 色阶是**一组有序的容器色**，不是「背景色 + 卡片色」两个名字。
- * 真正决定观感的是**相邻两级之间的明度差**：差 1 级（如 `surface` 98 与
- * `surfaceContainerLow` 96）在浅色下几乎同色，卡片会「糊在页面上」——
- * 只能靠阴影或描边补层级，这正是本仓库历史上「阴影用得多」「纯黑模式必须描边」
- * 这类补丁的根因。
+ * M3 的 surface 色阶是一组**有序的容器角色**，而非简单的「背景 + 卡片」。
+ * 真正决定空间层次感的是**垂直进深与相邻层级之间的明度阶梯 (Tonal Stepping)**：
  *
- * 因此这里固定一套 3 层语义，页面与卡片**至少差 3 级**：
+ * ### 双模式层级架构 (Dual Surface Paradigm)：
+ * 1. **模式 A：标准内容流模式 (Standard Canvas)**
+ *    - 页面底色：[CpSurfaceTokens.canvas] (`surface`，浅色 Tone 98 / 深色 Tone 6 / OLED 纯黑 #000000)
+ *    - 卡片层级：[CpSurfaceTokens.standardCard] (`surfaceContainerLow` 浅 / `surfaceContainer` 深)
+ *    - 适用：播放大页、歌词全屏、媒体扁平列表。
  *
- * | 层 | 浅色 | 深色 | 用途 |
- * |---|---|---|---|
- * | [cpPageSurface] | `surfaceContainer`（Tone 94） | `surfaceContainer`（Tone 12） | 页面 / 脚手架底色 |
- * | [cpCardSurface] | `surfaceContainerLowest`（Tone 100） | `surfaceContainerHighest`（Tone 22） | 卡片、列表行、分组块 |
- * | [cpNestedSurface] | `surfaceContainerLow`（Tone 96） | `surfaceContainerHigh`（Tone 17） | 卡片**内部**的次级容器（嵌套卡、输入框底、chip） |
+ * 2. **模式 B：卡片分组模式 (Grouped / Bento Canvas)**
+ *    - 页面底色：[CpSurfaceTokens.grouped] (`surfaceContainer`，浅色 Tone 94 / 深色 Tone 12)
+ *    - 卡片层级：[CpSurfaceTokens.groupedCard] (`surfaceContainerLowest` 浅 Tone 100 / `surfaceContainerHigh` 深 Tone 17)
+ *    - 卡片内嵌：[CpSurfaceTokens.nested] (`surfaceContainerLow` 浅 Tone 96 / `surfaceContainer` 深 Tone 12)
+ *    - 适用：设置页、表单页、仪表盘、Bento 结构化卡片流。
  *
- * ⚠️ **深色不是浅色的镜像**：tone 越低越暗，所以「页面暗、卡片亮」在深色下要翻过来取。
- * 直接写 `surfaceContainerLowest` 当卡片色，深色下会得到一块比页面更黑的卡片。
+ * ### 顶层浮层与遮罩 (Overlays & Sheets)：
+ * - 浮层底色：[CpSurfaceTokens.overlay]
+ *   - 浅色：`surfaceContainerLowest` (Tone 100 纯白) 配合 Scrim 遮罩
+ *   - 深色：**`surfaceContainerHighest` (Tone 22)**，严格保证明度高于所有普通卡片 (Tone 17) 与页面 (Tone 12)，消除倒挂。
+ * - 浮层内嵌次级块：[CpSurfaceTokens.overlayInner]
+ *   - 浅色：`surfaceContainerLow` (Tone 96，比浮层 100 暗 4 阶，内凹感 Inset)
+ *   - 深色：`surfaceContainerHigh` (Tone 17，比浮层 22 暗 5 阶，内凹感 Inset)
  *
- * ⚠️ **页面层不要用 `surfaceContainerLowest`**：深色下它是 Tone 4（`#0E0E13`），
- * 纯黑模式里更是被压成 `#000` —— 整窗会看起来「背景是纯黑的」。页面要的是一块
- * 有色调的底，`surfaceContainer`（深色 Tone 12）才是对的那一档。
- *
- * ⚠️ **必须读 [LocalIsDarkTheme]，不要读 `isSystemInDarkTheme()`**：本应用允许
- * 用户显式指定深浅色，两者在「用户选深色但系统是浅色」时不一致，读错会取到反色板。
- *
- * ⚠️ 纯黑模式（`Theme.withPureBlackSurfaces`）只把 `surface` 与
- * `surfaceContainerLowest` 压成纯黑，`surfaceContainerHighest` 保留极暗灰 ——
- * 因此 [cpCardSurface] 在深色下仍然可见，层级不会塌掉。
+ * ⚠️ **深色模式下更高层级对应更亮色阶**：
+ * `overlay` (22) > `groupedCard` (17) > `grouped` (12) > `canvas` (6)。
+ * 任何悬浮对话框、抽屉、菜单在深色下均具有最强的前置浮起感。
  */
-@Composable
-fun cpPageSurface(): Color = MaterialTheme.colorScheme.surfaceContainer
+object CpSurfaceTokens {
 
-/** 卡片 / 列表行 / 分组块的底色。见 [cpPageSurface] 的层级表。 */
-@Composable
-fun cpCardSurface(): Color =
-    if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHighest
-    else MaterialTheme.colorScheme.surfaceContainerLowest
+    /** 模式 A (标准内容流)：以纯净 surface 为底，支持 OLED 绝对纯黑 */
+    @Composable
+    fun canvas(): Color = MaterialTheme.colorScheme.surface
 
-/** 卡片**内部**的次级容器（嵌套卡、输入框底、chip）。见 [cpPageSurface] 的层级表。 */
-@Composable
-fun cpNestedSurface(): Color =
-    if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHigh
-    else MaterialTheme.colorScheme.surfaceContainerLow
+    /** 模式 B (卡片分组/设置/仪表盘)：以有调性的 surfaceContainer 为底，纯黑模式下为纯黑 surface */
+    @Composable
+    fun grouped(): Color =
+        if (LocalPureBlack.current) MaterialTheme.colorScheme.surface
+        else MaterialTheme.colorScheme.surfaceContainer
 
-/**
- * 底部弹层 / 对话框的底色。
- *
- * 浮层比卡片**再高一层**：它盖在页面上、与内容区完全不同层，浅色取纯白
- * （`surfaceContainerLowest`），深色取 `surfaceContainerHigh`（比卡片略暗、
- * 比页面亮），保证「浮起感」不是靠阴影撑出来的。
- */
-@Composable
-fun cpSheetSurface(): Color =
-    if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHigh
-    else MaterialTheme.colorScheme.surfaceContainerLowest
+    /** 模式 A 内容流卡片：浮于 canvas 之上 */
+    @Composable
+    fun standardCard(): Color =
+        if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainer
+        else MaterialTheme.colorScheme.surfaceContainerLow
 
-/** 浮动工具条 / 悬浮控制胶囊 / 悬浮播放条的底色。与 [cpSheetSurface] 同层。 */
-@Composable
-fun cpElevatedSurface(): Color = cpSheetSurface()
+    /** 模式 B 分组卡片 (BentoCard)：浮于 grouped 之上 */
+    @Composable
+    fun groupedCard(): Color =
+        if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHigh
+        else MaterialTheme.colorScheme.surfaceContainerLowest
 
-/**
- * **浮层内部**的次级块（对话框里的说明块、可选行，底部弹层里的行）。
- *
- * 不能复用 [cpCardSurface]：浮层本身已经占了一档，浮层里的块若再用卡片档，
- * 浅色下两者都是纯白（`Lowest`），整块糊在一起；深色下则都是 `Highest`。
- * 这里刻意比浮层底再退一档：
- *
- * - 浅色：浮层 `Lowest`（100）→ 块 `Low`（96）
- * - 深色：浮层 `High`（17）→ 块 `Highest`（22）
- */
+    /** 卡片内部内陷槽 (搜索框底色、Chip、嵌套小块) */
+    @Composable
+    fun nested(): Color =
+        if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainer
+        else MaterialTheme.colorScheme.surfaceContainerLow
+
+    /**
+     * 对话框、底部抽屉、悬浮条、右键菜单底色。
+     * 深色下强制取 Highest (Tone 22)，绝对高于任何普通卡片！
+     */
+    @Composable
+    fun overlay(): Color =
+        if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHighest
+        else MaterialTheme.colorScheme.surfaceContainerLowest
+
+    /** 悬浮层内部的次级块 (日志容器、选项行) */
+    @Composable
+    fun overlayInner(): Color =
+        if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHigh
+        else MaterialTheme.colorScheme.surfaceContainerLow
+}
+
+/** 页面底色别名：默认映射到模式 B 分组底色，保持平滑兼容 */
 @Composable
-fun cpSheetInnerSurface(): Color =
-    if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHighest
-    else MaterialTheme.colorScheme.surfaceContainerLow
+fun cpPageSurface(): Color = CpSurfaceTokens.grouped()
+
+/** 画布底色别名：模式 A 纯净底色 */
+@Composable
+fun cpCanvasSurface(): Color = CpSurfaceTokens.canvas()
+
+/** 分组底色别名：模式 B 结构底色 */
+@Composable
+fun cpGroupedSurface(): Color = CpSurfaceTokens.grouped()
+
+/** 卡片 / 列表行 / 分组块的底色 */
+@Composable
+fun cpCardSurface(): Color = CpSurfaceTokens.groupedCard()
+
+/** 卡片内部的次级容器 (嵌套卡、输入框底、chip) */
+@Composable
+fun cpNestedSurface(): Color = CpSurfaceTokens.nested()
+
+/** 底部弹层 / 对话框的底色 */
+@Composable
+fun cpSheetSurface(): Color = CpSurfaceTokens.overlay()
+
+/** 浮动工具条 / 悬浮控制胶囊 / 悬浮播放条的底色。与 [cpSheetSurface] 同层 */
+@Composable
+fun cpElevatedSurface(): Color = CpSurfaceTokens.overlay()
+
+/** 浮层内部的次级块 (对话框里的说明块、可选行，底部弹层里的行) */
+@Composable
+fun cpSheetInnerSurface(): Color = CpSurfaceTokens.overlayInner()

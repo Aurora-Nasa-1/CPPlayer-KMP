@@ -195,6 +195,7 @@ fun CpTheme(
     CompositionLocalProvider(
         LocalThemeMode provides themeMode,
         LocalIsDarkTheme provides dark,
+        LocalPureBlack provides (dark && pureBlack),
         LocalAppFontFamilies provides appFontFamilies,
     ) {
         // Expressive 主题：相对普通 `MaterialTheme` 的差别就是注入 `MotionScheme`，
@@ -231,11 +232,11 @@ private fun ColorScheme.withPureBlackSurfaces(): ColorScheme = copy(
     background = Color.Black,
     surfaceContainerLowest = Color.Black,
     // ↓ 下面这几档刻意**不压黑**：它们承担卡片与浮层的层级表达。
-    surfaceVariant = Color(0xFF16161A),
-    surfaceContainerLow = Color(0xFF0A0A0C),
-    surfaceContainer = Color(0xFF0E0E11),
-    surfaceContainerHigh = Color(0xFF131316),
-    surfaceContainerHighest = Color(0xFF19191D),
+    surfaceVariant = Color(0xFF16161C),
+    surfaceContainerLow = Color(0xFF0A0A0D),
+    surfaceContainer = Color(0xFF0E0E12),
+    surfaceContainerHigh = Color(0xFF16161C),
+    surfaceContainerHighest = Color(0xFF22222A),
 )
 
 val LocalThemeMode = staticCompositionLocalOf { ThemeMode.SYSTEM }
@@ -255,3 +256,8 @@ val LocalThemeMode = staticCompositionLocalOf { ThemeMode.SYSTEM }
  * 都曾用 `isSystemInDarkTheme()` 当代理，导致「设置页的分组卡片在浅色下不可见」。
  */
 val LocalIsDarkTheme = staticCompositionLocalOf { false }
+
+/**
+ * 是否启用了纯黑 (OLED Pure Black) 模式。
+ */
+val LocalPureBlack = staticCompositionLocalOf { false }
