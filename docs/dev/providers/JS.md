@@ -1,7 +1,7 @@
 # JavaScript / TypeScript Provider
 
 > 与 Kotlin 的差异：入口全局、受控 `context`、单脚本打包。适用读者：JS / TS 作者。
-> 契约版本 `kmp-sdk-v1` · 更新 2026-11-14 · 事实源 `provider-sdk-kmp/js/`
+> 契约版本 `kmp-sdk-v1` · 更新 2026-11-21 · 事实源 `provider-sdk-kmp/js/`
 
 当前入口是 `globalThis.provider`，不是旧 `CPPlayer` 全局、默认导出探测或 Standard JS v1。
 
@@ -60,9 +60,32 @@ const catalog = JSON.parse(context.text(response.body));
 | 成员 | 语义 |
 |---|---|
 | `http(req)` | 返回 `{status, headers, body}`；`body` 是字节数组，不是浏览器 Response |
-| `sha256(bytes)` | 返回字节数组；不是旧 `crypto` 全套加解密 |
 | `utf8(text)` / `text(bytes)` | UTF-8 转换，解码严格校验 |
 | `read(key)` / `write(key, bytesOrNull)` | 当前会话临时存储，隔离且有界 |
+
+### 密码学与 Base64URL {#crypto}
+
+| 成员 | 语义 |
+|---|---|
+| `sha256(bytes)` | 返回 32 字节的 SHA-256 摘要，输入最多 4 MiB |
+| `crypto.randomBytes(length)` | 使用宿主的安全随机源，长度为 0 至 65,536 的整数 |
+| `crypto.hmacSha256(key, message)` | 返回 32 字节的消息认证码，密钥 1 至 4,096 字节，消息最多 4 MiB |
+| `crypto.md5(bytes)` | 返回 16 字节的 MD5 摘要，输入最多 4 MiB。仅用于兼容上游旧协议 |
+
+密码学方法返回 Promise。二进制参数与结果均使用 `Int8Array` 或 `Uint8Array`。签名的字符串编码按上游协议选择。下面以无填充 Base64URL 为例：
+
+```javascript
+import { encodeBase64Url } from "@cpplayer/provider-kmp-sdk";
+
+// 在 Provider 方法中使用 context，signingKeyBytes 为上游协议定义的密钥字节。
+const nonce = encodeBase64Url(await context.crypto.randomBytes(32));
+const tag = await context.crypto.hmacSha256(signingKeyBytes, context.utf8(nonce));
+const signature = encodeBase64Url(tag);
+```
+
+`encodeBase64Url` 和 `decodeBase64Url` 随 SDK 打包进音源脚本。解码返回 `Uint8Array`，遇到填充或非规范编码会抛出 `TypeError`。需要兼容旧宿主的脚本可先检查 `context.crypto` 是否可用。
+
+### 登录与凭证
 
 | 登录相关 | 说明 |
 |---|---|

@@ -1,7 +1,7 @@
 # 快速上手
 
 > 从零跑通一个可搜索、可播放的 Provider。不需要外部音乐平台或账号。
-> 契约版本 `kmp-sdk-v1` · 更新 2026-11-15
+> 契约版本 `kmp-sdk-v1` · 更新 2026-11-21
 
 ## 1. 跑通仓库示例
 
@@ -44,6 +44,8 @@ globalThis.provider = {
 - 不作为 Provider 契约返回上游原始响应体。
 
 Kotlin 实现同一组方法，见 [GUIDE 第 3 节](GUIDE.md#3-kotlin)。
+
+如果上游要求请求签名，JS 音源可以从 `context.crypto` 获取安全随机字节并计算 HMAC-SHA256。MD5 用于兼容旧协议。接口限制和签名示例见 [密码学与 Base64URL](JS.md#crypto)。
 
 ## 2.1 从模板生成
 

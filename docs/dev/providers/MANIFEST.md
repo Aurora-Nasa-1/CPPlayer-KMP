@@ -44,6 +44,7 @@ ZIP 根目录必须包含 UTF-8 的 `manifest.json`。
 | `qualityOptions` | 业务音质 key 与应用档位的映射 |
 | `updateUrl` | 可选更新描述地址 |
 | `apiVersion` / `minHostApiVersion` | 既有仓库元数据，缺省 1；正整数；`minHostApiVersion` 不能高于当前宿主值 3 |
+| `minAppVersion` | 音源可选最低 CPPlayer 版本，严格 SemVer；与宿主 API 版本独立 |
 
 `apiVersion` 数字不决定协议。写成 1 或 3 都不能开启旧加载路径；`contract` 才是版本闸门。
 
@@ -95,7 +96,7 @@ manifest 标签以 `ProviderCapability.sdkLabels` 为准。
 | 事务 | 手动导入、显式更新、仓库安装共用；结构验证通过后才备份 / 替换旧目录 |
 | 身份 | 按精确 ID 更新；目标 ID 不同或已装同名不同 ID 时拒绝，不自动删除或迁移 |
 | 中断恢复 | 启动时恢复中断安装的备份；失败包不破坏旧安装 |
-| 仓库下载 | 解压前校验外部 SHA-256、字节数、ID / 版本 / runtime / API 与安全归档路径 |
+| 仓库下载 | 解压前校验可选外部 SHA-256、ID / 版本 / runtime / API / 最低 App 版本与安全归档路径；下载体积和 ZIP 展开体积始终受宿主硬上限约束 |
 | 清单自校验 | 不做「清单内自身 ZIP sha256」校验，它不可能自洽 |
 | 活跃音源更新 | 可暂存至重启，避免在途调用持有旧描述符；不为 DLL 锁实现换 ID 删除链 |
 | 路径接口 | `getModuleDir`、删除、导出也验证 ID，禁止路径穿越 |
@@ -136,6 +137,34 @@ manifest 标签以 `ProviderCapability.sdkLabels` 为准。
 | 检查结果汇总 | 计入可更新数量 |
 
 强提醒不会自动删除模块、登录态或本地配置，也不会在未确认时下载安装包。声明停用线时，下载目标版本需不低于该版本。
+
+### 4.2 最低 CPPlayer 版本
+
+音源可在 `manifest.json` 与仓库 `index.json` 对应插件条目中声明 `minAppVersion`。
+它表示**安装或运行该音源所需的最低 CPPlayer 版本**，不是 SDK 大版本，也不是插件
+最低可用版本。仅当音源确实依赖某个 App 版本新增的宿主功能、运行时修复或平台行为时设置。
+
+```json
+{
+  "id": "my-provider",
+  "version": "1.3.0",
+  "minAppVersion": "1.10.0"
+}
+```
+
+| 规则 | 内容 |
+|---|---|
+| 格式与比较 | 严格 SemVer，按 CPPlayer `versionName` 比较；预发布版本按 SemVer 优先级处理 |
+| 缺省 | 旧插件和未声明的音源不增加 App 版本门槛 |
+| 范围 | 仅 provider 音源支持；歌词插件不得声明此字段 |
+| 与 API 字段关系 | `minHostApiVersion` 表达稳定宿主 API 契约；`minAppVersion` 表达无法由 API 版本覆盖的 App 级依赖。二者不可互相替代 |
+| 重复声明 | 包内 `manifest.json` 与仓库条目必须完全一致；不一致的包拒绝安装 |
+| 当前 App 较旧 | 插件中心显示所需版本与当前版本并禁用安装/更新；保留已安装文件，不静默卸载。用户需自行更新 App |
+| 手动导入 / 启动加载 | 版本门槛同样校验；不满足时拒绝加载并说明最低版本 |
+| 旧客户端 | 旧客户端可能忽略未知字段。发布者仍须遵守旧客户端的 API/协议门槛，不能假设此字段会让旧客户端拦截 |
+
+只有确实需要新 App 行为的音源版本才提高 `minAppVersion`。如果新能力是可选的，应做能力检测
+或保留旧宿主降级路径，不要仅因使用了较新的 SDK 工具链就提高此门槛。
 
 ## 5. 原生 SDK 包
 
@@ -209,7 +238,7 @@ JNI 只在 JVM 可用。GraalVM Native Image 构建（Windows 安装包）要求
 | 用户自建第三方源 | 不受影响 |
 | 新安装用户 | 直接用新仓库默认源 |
 
-仓库组织：`CPPlayer-Plugins-KMP` 只托管 `kmp-sdk-v1` 插件。目录中的 `version`、`apiVersion`、`minHostApiVersion`、`runtime` 必须与包内 `manifest.json` 逐项一致；缺省按 1 处理。旧仓库 `CPPlayer-Plugins` 保持网易云 1.1.1，不随新版本升级。
+仓库组织：`CPPlayer-Plugins-KMP` 只托管 `kmp-sdk-v1` 插件。目录中的 `version`、`apiVersion`、`minHostApiVersion`、`minAppVersion`、`runtime` 必须与包内 `manifest.json` 逐项一致；其中 API 版本缺省按 1 处理，`minAppVersion` 缺省表示无 App 版本门槛。旧仓库 `CPPlayer-Plugins` 保持网易云 1.1.1，不随新版本升级。
 
 ```text
 CPPlayer-Plugins-KMP/
@@ -236,6 +265,7 @@ CPPlayer-Plugins-KMP/
       "author": "Aurora-Nasa-1",
       "homepage": "https://github.com/Aurora-Nasa-1/3rd-CPPlayer-netcloudMusic-Muti",
       "changelog": "v1.2.2: 修复 SDK v1 下每日推荐、私人 FM 与心动模式不可用的问题，补全推荐能力声明并严格限制返回数量。",
+      "minAppVersion": "1.9.0",
       "apiVersion": 1,
       "minHostApiVersion": 1,
       "artifacts": [
@@ -289,7 +319,10 @@ CPPlayer-Plugins-KMP/
 |---|---|
 | `runtime` | JS 用 `js` / `script`；原生用 `native`（历史包兼容 `jni`），且与 manifest 的 `type` 一致 |
 | `platform` / `arch` | JS 可写 `any`；原生必须写确切平台与架构 |
-| `sha256` / `bytes` | 对应 ZIP 的实际外部校验值 |
+| `sha256` | 可选 ZIP 摘要；提供时必须为 64 位小写十六进制并与下载包匹配。省略时不做摘要比对 |
+| `bytes` | 可选 ZIP 实际字节数，仅作预计大小 / 进度信息；不作为精确下载长度校验或下载上限 |
+| `changelog` | 新发布版本必须填写简明用户侧更新说明；旧目录缺省按空说明兼容 |
+| `minAppVersion` | provider 可选最低 CPPlayer SemVer；与 ZIP 根 `manifest.json` 一致，缺省不设 App 门槛 |
 | `minHostApiVersion` | 与包内 manifest 一致；未声明时填 1，不按宿主上限补成 3 |
 
 插件 ZIP 结构：
@@ -313,9 +346,13 @@ import archiver from 'archiver';
 
 // 1. 读取 manifest.json，校验 contract === 'kmp-sdk-v1'
 // 2. 打包生成 dist/<id>-<version>.zip
-// 3. 计算 sha256 与 bytes
-// 4. 更新或输出 index.json 条目
+// 3. 可选：计算 sha256 与 bytes 并输出到 index.json
+// 4. 更新或输出 index.json 条目（每次发布填写 changelog；核对 minAppVersion）
 ```
+
+仓库校验应验证 `minAppVersion` 格式及其与包内 manifest 的一致性。旧条目允许缺少
+`sha256`、`bytes`、`changelog` 和 `minAppVersion`。客户端无论这些元数据是否提供，均会限制
+下载最大体积、校验 ZIP 路径/展开大小，并核对插件身份、版本、runtime 与 API；这些检查不是可选项。
 
 ## 7. 不再生效的旧字段与类型
 

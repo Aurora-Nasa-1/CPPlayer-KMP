@@ -2389,8 +2389,17 @@ export interface Context {
   readonly credential: string | null;
   /** Allowed-origin HTTP, no automatic redirects/credentials, at most 4 MiB per body. */
   http(request: HttpRequest): Promise<HttpResponse>;
-  /** SHA-256 bytes only; not the retired host crypto API. */
+  /** SHA-256 digest as raw bytes. */
   sha256(bytes: Binary): Promise<Binary>;
+  /** Host cryptographic primitives for signing and upstream protocol compatibility. */
+  readonly crypto: {
+    /** Generate 0 to 65,536 bytes using the host's secure random source. */
+    randomBytes(length: number): Promise<Binary>;
+    /** Raw HMAC-SHA256 tag. Key: 1 to 4,096 bytes. Message: at most 4 MiB. */
+    hmacSha256(key: Binary, message: Binary): Promise<Binary>;
+    /** Raw MD5 digest for legacy protocol compatibility. Input: at most 4 MiB. */
+    md5(bytes: Binary): Promise<Binary>;
+  };
   /** Copy of session-local stored bytes, or null. Total storage is bounded to 1 MiB. */
   read(key: string): Promise<Binary | null>;
   /** Write session-local bytes; null deletes the key. Storage is not persistent. */

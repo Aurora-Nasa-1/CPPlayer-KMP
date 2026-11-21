@@ -72,11 +72,12 @@ globalThis.provider = {
 | 项 | 说明 |
 |---|---|
 | 可运行示例 | [`examples/js/index.js`](examples/js/index.js) 含真实 HTTP 调用 |
-| Context 能力 | HTTP、SHA-256、UTF-8 转换、会话存储；不暴露宿主文件系统或数据库 |
+| Context 能力 | HTTP、SHA-256、UTF-8 转换、会话存储。通过 `context.crypto` 获取安全随机字节、计算 HMAC-SHA256 和兼容旧协议所需的 MD5。见 [密码学与 Base64URL](../docs/dev/providers/JS.md#crypto) |
 | 字节 | 以 typed array 跨 QuickJS（Kotlin `ByteArray` 表现为 `Int8Array`） |
 | 结果传递 | 业务结果为对象 / 数组，不 stringify / parse；解析自家上游 JSON 属正常代码 |
 | 类型声明 | `js/index.d.mts` 与 `js/types.generated.ts` |
 | 作者侧检查 | `js/index.mjs` 导出 `defineProvider`，校验能力与方法的对应关系 |
+| 编解码 | `js/index.mjs` 导出 `encodeBase64Url` 和 `decodeBase64Url`，支持无填充的 Base64URL |
 | 打包 | 安装前 bundle 作者侧 import；安装包不带平台 DLL，也不需要 Node |
 
 ```powershell

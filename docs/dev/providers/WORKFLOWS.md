@@ -353,7 +353,7 @@ MV 与视频使用独立 ID 类型与能力；相同字符串不说明是同一�
 | Provider 调用 | 默认 15 秒截止，最多 4 并发 |
 | QuickJS | 单会话线程；32 MiB 内存、512 KiB 栈、250 ms 执行预算 |
 
-上游可用 JSON、表单或其他编码，通过 runtime HTTP 正常解析；业务边界仍交付 DTO。`context.sha256` 不是通用密码学工具箱：需要 MD5 或其他上游加密时在 Provider 内实现或打包可用实现，不能依赖旧宿主 crypto 全局。
+上游可用 JSON、表单或其他编码，通过 runtime HTTP 正常解析，业务边界仍交付 DTO。JS 音源可通过 `context.crypto` 获取安全随机字节、计算 HMAC-SHA256 或为旧协议计算 MD5。接口与编解码示例见 [密码学与 Base64URL](JS.md#crypto)。
 
 错误类别：Unsupported / NotFound / Authentication / Network / RateLimit / Timeout / InvalidResponse / Runtime。Kotlin 取消原样抛出；宿主不接受旧会话结果；JS 的 `category` 对应这些字符串；未知业务失败不要用空列表掩盖。默认截止与 HTTP 截止分别存在，不能承诺长时间后台任务一直运行。
 

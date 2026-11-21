@@ -1,10 +1,20 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { defineProvider } from "./index.mjs";
+import { decodeBase64Url, defineProvider, encodeBase64Url } from "./index.mjs";
 import schema from "../../provider-contract/schema.mjs";
 import { providerMethods } from "./methods.generated.mjs";
 
 describe("KMP SDK author helper", () => {
+test("Base64URL helpers preserve signed binary bytes without padding", () => {
+    for (const bytes of [[], [-1], [-5, -1], [-5, -1, -17], [-5, -1, -17, 0]]) {
+        const reference = Buffer.from(bytes);
+        const text = reference.toString("base64url");
+        assert.equal(encodeBase64Url(Int8Array.from(bytes)), text);
+        assert.deepEqual(decodeBase64Url(text), Uint8Array.from(reference));
+    }
+    for (const text of ["Y", "YR", "_x", "YQ==", "YWJj\n", "+/8"])
+        assert.throws(() => decodeBase64Url(text), TypeError);
+});
 test("business provider remains the supplied object", () => {
     const provider = { capabilities: ["tracks.get"], async get(request) { return { id: request.id }; } };
     assert.equal(defineProvider(provider), provider);
@@ -50,15 +60,15 @@ test("unknown capabilities are forward compatible", () => {
 });
 test("every generated capability requires exactly its declared typed method", () => {
     const operations = Object.entries(schema.operations).filter(([, op]) => op.capability);
-    assert.equal(operations.length, 161);
-    assert.equal(operations.filter(([, op]) => op.extended).length, 106);
+    assert.equal(Object.keys(providerMethods).length, operations.length);
     for (const [name, operation] of operations) {
         assert.equal(providerMethods[operation.capability], name);
         assert.throws(() => defineProvider({ capabilities: [operation.capability] }), TypeError, name);
         const provider = { capabilities: [operation.capability], [name]: async () => ({}) };
         assert.equal(defineProvider(provider), provider, name);
     }
-    assert.equal(new Set(Object.values(schema.operations).map(op => op.tag)).size, 166);
+    const tags = Object.values(schema.operations).map(op => op.tag);
+    assert.equal(new Set(tags).size, tags.length);
 });
 test("undefined capabilities do not silently enable everything", () => {
     assert.throws(() => defineProvider({}), TypeError);
