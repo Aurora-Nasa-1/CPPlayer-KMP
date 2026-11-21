@@ -255,6 +255,7 @@ jobs:
           printf '%s  %s\n' "$FLICK_SHA256" "$dll" | sha256sum -c
           grep -aFq -- 'Java_cp_player_core_playback_DesktopHiResEngine_nativeSetVipLicenseV2' "$dll"
           grep -aFq -- "$FLICK_VIP_PUBLIC_KEY" "$dll"
+          mkdir -p app/native
           cp "$dll" app/native/rust_lib_flick_player.dll
 
       - name: Build desktop package
