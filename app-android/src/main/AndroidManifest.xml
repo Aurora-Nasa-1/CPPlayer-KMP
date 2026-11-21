@@ -27,11 +27,12 @@
          —— 没有一处是 26/27+ 才有的 API。它声明 27 是因为自己面向 HyperOS，
          而 HyperOS 本身 ≥ 29，与本库能否在 24/25 上加载无关。
 
-      3. `com.hchen.superlyricapi`（SuperLyric 发布者契约，AAR 声明 minSdk 26）
-         —— 已核对：`android.*` 引用为 Bundle / Parcel / Parcelable / IBinder / Binder /
-         IInterface / RemoteException / ServiceManager / Log / MediaMetadata / PlaybackState
-         —— 全部 API ≤ 24 就存在（`ServiceManager` 是隐藏类，但自 API 1 就存在，只是不在公开
-         SDK 里）。声明 26 同样是作者随手写的。
+      3. `com.hchen.superlyricapi`（SuperLyricApi 4.0 发布者契约，AAR 声明 minSdk 26）
+         —— 已对解析出的 4.0 AAR `classes.jar` 做常量池扫描，并核对 4.0 源码：平台引用为
+         Bundle / Parcel / Parcelable / IBinder / Binder / IInterface / RemoteException /
+         ServiceManager / Log / MediaMetadata / PlaybackState；公开类型及其调用均不晚于 API 24。
+         `ServiceManager` 是自 API 1 存在的隐藏类，API 28+ 受非 SDK 接口限制；应用启动时已有
+         `HiddenApiExemptions.install()` 豁免逻辑。AAR 的 minSdk 26 声明因此可在 API 24 覆盖。
 
       ⚠️ 换这三个库的版本时**必须重新核对**：拿新 AAR 的 classes.jar 跑一遍
       `javap` / 常量池扫描，确认没有新增 API > 24 的平台引用，否则这些覆盖会变成运行时崩溃。

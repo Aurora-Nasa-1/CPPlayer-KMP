@@ -1,179 +1,183 @@
 /*
  * Ported from Halcyon — Apache-2.0.
  * Upstream reference: app/src/main/java/com/ella/music/player/SuperLyricBridge.kt
- * Changes: 模型换成 LyricPushTrack / SyncedLyricLine；退避曲线提到 commonMain
- *          （SuperLyricRetryPolicy.kt）以便单测；`backgroundText` 双轨合并到单轨模型；
- *          对外只暴露 onFrame 需要的三个动作（song / line / stop）。
+ * Adapted for SuperLyricApi 4.0: publish one complete Lyric document per track/lyrics change;
+ * the service computes the current row from its timeline. API-model-independent mapping lives in
+ * commonMain (SuperLyricPayload.kt) so the contract can be unit tested on desktop.
  * See THIRD_PARTY_LICENSES.md.
  */
 package cp.player.core.lyricpush
 
-import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
-import com.hchen.superlyricapi.SuperLyricData
-import com.hchen.superlyricapi.SuperLyricHelper
-import com.hchen.superlyricapi.SuperLyricLine
-import com.hchen.superlyricapi.SuperLyricWord
+import com.hchen.superlyricapi.Publisher
+import com.hchen.superlyricapi.SuperLyric
+import com.hchen.superlyricapi.model.Line as ApiLine
+import com.hchen.superlyricapi.model.Lyric as ApiLyric
+import com.hchen.superlyricapi.model.Word as ApiWord
 import cp.player.core.playback.SyncedLyricLine
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
- * SuperLyric 投放。
+ * SuperLyricApi 4.0 publisher bridge.
  *
- * 协议：HChenX 的 SuperLyric 通过 `SuperLyricHelper` 提供**注册发布者 + 发当前句**的
- * 静态入口（底层是系统级广播），接收方是状态栏 / 灵动通知歌词模块。
- *
- * ### 与词幕的关键差别
- * 词幕是「一次性给整首 + 让我推进度」，SuperLyric 是「**只推当前句**」——
- * 所以这里必须有句子级去重（同一句不重复发），而不是内容签名。
- *
- * ### 为什么要有退避
- * 没有安装 / 没激活 SuperLyric 时，`isAvailable()` 返回 false，而注册调用本身
- * 是一次跨进程广播。每帧重试 = 持续广播风暴。见 [superLyricRetryDelayMs]。
+ * The 4.0 contract accepts a whole-song document once; it no longer exposes the 3.x
+ * registerPublisher/sendLyric/sendStop broadcast API. The receiving service derives the active
+ * row from the document timeline, so playback frames do not trigger per-line IPC.
  */
-internal class SuperLyricBridge {
+internal class SuperLyricBridge(
+    private val scope: CoroutineScope,
+) {
 
     private var enabled = false
-    private var registered = false
     private var secondary = LyricSecondaryMode.TRANSLATION
 
-    private var lastLineKey: String? = null
     private var lastTrack: LyricPushTrack? = null
+    private var lastLines: List<SyncedLyricLine> = emptyList()
+    private var targetPayload: SuperLyricPayload? = null
+    private var lastPublishedPayload: SuperLyricPayload? = null
+    private var hasPublished = false
 
+    private var retryJob: Job? = null
     private var consecutiveFailures = 0
     private var retryAfterElapsedMs = 0L
 
     fun setEnabled(enabled: Boolean) {
         if (this.enabled == enabled) return
         this.enabled = enabled
-        lastLineKey = null
+        cancelRetry()
         resetRetryState()
-        if (enabled) register() else { sendStop(); unregister() }
+        if (enabled) {
+            publishCurrent(force = true)
+        } else {
+            sendStop()
+        }
     }
 
     fun setSecondary(mode: LyricSecondaryMode) {
         if (secondary == mode) return
         secondary = mode
-        lastLineKey = null
+        refreshTarget(force = true)
     }
 
-    fun sendSong(track: LyricPushTrack) {
-        if (!enabled) return
-        if (track.trackKey() == lastTrack?.trackKey()) return
+    /** Cache and publish the complete song when its metadata or lyrics change. */
+    fun sendSong(
+        track: LyricPushTrack,
+        lines: List<SyncedLyricLine>,
+        force: Boolean = false,
+    ) {
+        val previousTrackKey = lastTrack?.trackKey()
+        val trackChanged = track.trackKey() != previousTrackKey
         lastTrack = track
-        lastLineKey = null
-        register()
-    }
+        lastLines = lines.toList()
+        val next = buildSuperLyricPayload(track, lastLines, secondary)
+        val contentChanged = next != targetPayload
 
-    /**
-     * 推当前句。
-     *
-     * @param force 用户在设置页手动切换后强制重发（例如刚打开开关，而当前句没变）。
-     */
-    fun sendLine(line: SyncedLyricLine?, lines: List<SyncedLyricLine>, index: Int, force: Boolean = false) {
-        if (!enabled || line == null || index < 0) return
-        val track = lastTrack
-        val mainText = line.lineTextOrNull() ?: return
-        val translation = line.secondaryText(secondary)
-        val key = listOf(
-            track?.trackKey().orEmpty(),
-            line.time,
-            index,
-            secondary.name,
-            translation.orEmpty(),
-        ).joinToString(":")
-
-        // 刚注册成功（或用户强制）时清掉去重键，否则「第一句永远是上一首的最后一句」。
-        if (force && !registered) lastLineKey = null
-        if (key == lastLineKey) return
-        if (!register()) return
-
-        runCatching {
-            val end = line.lineEndMs(lines, index)
-            SuperLyricHelper.sendLyric(
-                SuperLyricData()
-                    .setTitle(track?.title)
-                    .setArtist(track?.artist)
-                    .setAlbum(track?.album)
-                    .setLyric(
-                        SuperLyricLine(
-                            mainText,
-                            line.words.withLineSpacing(line.text).toSuperWords(),
-                            line.time.coerceAtLeast(0L),
-                            end,
-                        ),
-                    )
-                    .setTranslation(
-                        translation?.takeIf { it.isNotBlank() }?.let {
-                            SuperLyricLine(it, line.time.coerceAtLeast(0L), end)
-                        },
-                    ),
-            )
-            lastLineKey = key
-            resetRetryState()
-        }.onFailure { recordFailure("send", it) }
-    }
-
-    fun sendStop() {
-        if (!registered) return
-        runCatching {
-            val track = lastTrack
-            SuperLyricHelper.sendStop(
-                SuperLyricData()
-                    .setTitle(track?.title)
-                    .setArtist(track?.artist)
-                    .setAlbum(track?.album),
-            )
+        if (!trackChanged && !contentChanged && !force && next == lastPublishedPayload) return
+        targetPayload = next
+        if (next == null) {
+            sendStop()
+            return
         }
-        lastLineKey = null
+        if (trackChanged || contentChanged) lastPublishedPayload = null
+        cancelRetry()
+        resetRetryState()
+        publishCurrent(force = true)
+    }
+
+    /** Clear on explicit stop/disable/teardown, or when the new track has no valid lyric document. */
+    fun sendStop() {
+        cancelRetry()
+        if (hasPublished) {
+            runCatching { SuperLyric.publisher().clear() }
+                .onFailure { Log.w(TAG, "SuperLyric clear failed", it) }
+        }
+        hasPublished = false
+        lastPublishedPayload = null
+        resetRetryState()
     }
 
     fun destroy() {
         enabled = false
         sendStop()
-        unregister()
         lastTrack = null
-        lastLineKey = null
+        lastLines = emptyList()
+        targetPayload = null
+    }
+
+    private fun refreshTarget(force: Boolean) {
+        val track = lastTrack ?: return
+        val next = buildSuperLyricPayload(track, lastLines, secondary)
+        if (next == targetPayload && (!force || next == lastPublishedPayload)) return
+        targetPayload = next
+        if (next == null) {
+            sendStop()
+            return
+        }
+        if (next != lastPublishedPayload) lastPublishedPayload = null
+        cancelRetry()
         resetRetryState()
+        publishCurrent(force = force)
     }
 
-    private fun List<SyncedLyricLine.SyncedWord>.toSuperWords(): Array<SuperLyricWord>? {
-        if (isEmpty()) return null
-        return map { SuperLyricWord(it.text, it.beginTime, it.endTime) }.toTypedArray()
+    private fun publishCurrent(force: Boolean) {
+        if (!enabled) return
+        val payload = targetPayload ?: run {
+            val track = lastTrack ?: return
+            buildSuperLyricPayload(track, lastLines, secondary)?.also { targetPayload = it } ?: return
+        }
+        if (!force && payload == lastPublishedPayload) return
+
+        val now = SystemClock.elapsedRealtime()
+        if (now < retryAfterElapsedMs) {
+            scheduleRetry()
+            return
+        }
+
+        val result = runCatching { SuperLyric.publisher().publish(payload.toApiLyric()) }
+            .getOrElse { cause ->
+                recordFailure("publish", cause)
+                scheduleRetry()
+                return
+            }
+
+        when (result) {
+            Publisher.PublishResult.OK -> {
+                hasPublished = true
+                lastPublishedPayload = payload
+                cancelRetry()
+                resetRetryState()
+            }
+            Publisher.PublishResult.SERVICE_UNAVAILABLE,
+            Publisher.PublishResult.REJECTED_TRACK_MISMATCH -> {
+                recordFailure("publish ($result)")
+                scheduleRetry()
+            }
+            else -> {
+                // These results are deterministic for the current document (e.g. size, malformed
+                // payload, or quota). Retry on a later track/lyrics change rather than resending
+                // the same rejected document in the background.
+                cancelRetry()
+                Log.w(TAG, "SuperLyric rejected document: $result")
+            }
+        }
     }
 
-    private fun register(): Boolean {
-        if (!enabled) return false
-        if (registered) return true
-        if (SystemClock.elapsedRealtime() < retryAfterElapsedMs) return false
-
-        val available = runCatching { SuperLyricHelper.isAvailable() }.getOrElse {
-            recordFailure("availability check", it)
-            return false
+    private fun scheduleRetry() {
+        if (!enabled || targetPayload == null) return
+        cancelRetry()
+        val waitMs = (retryAfterElapsedMs - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+        retryJob = scope.launch {
+            delay(waitMs)
+            retryJob = null
+            publishCurrent(force = true)
         }
-        if (!available) {
-            recordFailure("attach")
-            return false
-        }
-        return runCatching {
-            SuperLyricHelper.registerPublisher()
-            SuperLyricHelper.setSystemPlayStateListenerEnabled(true)
-            registered = true
-            true
-        }.getOrElse {
-            recordFailure("register", it)
-            false
-        }
-    }
-
-    private fun unregister() {
-        if (!registered) return
-        runCatching { SuperLyricHelper.unregisterPublisher() }
-        registered = false
     }
 
     private fun recordFailure(operation: String, cause: Throwable? = null) {
-        registered = false
         consecutiveFailures++
         val delayMs = superLyricRetryDelayMs(consecutiveFailures)
         retryAfterElapsedMs = SystemClock.elapsedRealtime() + delayMs
@@ -184,10 +188,35 @@ internal class SuperLyricBridge {
         )
     }
 
+    private fun cancelRetry() {
+        retryJob?.cancel()
+        retryJob = null
+    }
+
     private fun resetRetryState() {
         consecutiveFailures = 0
         retryAfterElapsedMs = 0L
     }
+
+    private fun SuperLyricPayload.toApiLyric(): ApiLyric = ApiLyric(
+        id = id,
+        title = title,
+        artist = artist,
+        album = album,
+        duration = durationMs,
+        lines = lines.map { line ->
+            ApiLine(
+                text = line.text,
+                start = line.startMs,
+                end = line.endMs,
+                words = line.words.takeIf { it.isNotEmpty() }?.map { word ->
+                    ApiWord(word.text, word.startMs, word.endMs)
+                },
+                translation = line.translation,
+                phonetic = line.phonetic,
+            )
+        },
+    )
 
     private companion object {
         const val TAG = "SuperLyricBridge"
