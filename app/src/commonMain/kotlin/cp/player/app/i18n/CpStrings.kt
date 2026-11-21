@@ -1841,9 +1841,88 @@ interface HealthStrings {
     val clearConfirm: String
 
     val tabOverview: String
+    val tabProbe: String
     val tabMethods: String
     val tabLogs: String
     val tabStatus: String
+
+    val diagnosticTitle: String
+    val diagnosticSubtitle: String
+    val runDiagnostics: String
+    val reRunDiagnostics: String
+    val runningDiagnostics: String
+    val diagnosticHealthy: String
+    val diagnosticWarning: String
+    val diagnosticError: String
+    val diagnosticScoreSummary: String
+    val diagnosticItemPassed: String
+    val diagnosticItemWarning: String
+    val diagnosticItemError: String
+    val diagnosticItemSkipped: String
+    val diagnosticNotRun: String
+    val diagnosticNotRunHint: String
+    val diagnosticDetailsLabel: String
+    val diagnosticSuggestionLabel: String
+
+    val checkNetwork: String
+    val checkProvider: String
+    val checkSearch: String
+    val checkStreamUrl: String
+    val checkLyric: String
+    val checkDiscovery: String
+    val checkAudioEngine: String
+    val checkStorageCache: String
+    val checkSystemMemory: String
+
+    val toolkitTitle: String
+    val copyReport: String
+    val copyReportDone: String
+    val reloadActiveProvider: String
+    val reloadProviderDone: String
+    val clearStreamCacheAction: String
+    val clearStreamCacheTitle: String
+    val clearStreamCacheMessage: String
+    val clearStreamCacheDone: String
+    val clearImageCacheAction: String
+    val clearImageCacheTitle: String
+    val clearImageCacheMessage: String
+    val clearImageCacheDone: String
+    val resetAudioEngineAction: String
+    val resetAudioEngineDone: String
+
+    val probeTitle: String
+    val probeSubtitle: String
+    val probeTargetProvider: String
+    val probeSwitchProvider: String
+    val probeSwitchDone: String
+    val probeOperation: String
+    val probeOpSearch: String
+    val probeOpDetail: String
+    val probeOpStream: String
+    val probeOpLyric: String
+    val probeOpRankings: String
+    val probeOpPlaylists: String
+    val probeInputKeywordLabel: String
+    val probeInputMediaIdLabel: String
+    val probeQualityLabel: String
+    val probeExecute: String
+    val probeExecuting: String
+    val probeResultLabel: String
+    val probeDurationLabel: String
+    val probeSuccess: String
+    val probeUnsupported: String
+    val probeFailed: String
+    val probeEmptyPrompt: String
+    val probeSearchQuickStream: String
+    val probeSearchQuickLyric: String
+    val probeCopyResult: String
+    val probeResultCopied: String
+
+    val filterAll: String
+    val filterErrors: String
+    val filterWarnings: String
+    val filterSuccess: String
+
 
     val providerHealthSection: String
     val noLoadedProviders: String

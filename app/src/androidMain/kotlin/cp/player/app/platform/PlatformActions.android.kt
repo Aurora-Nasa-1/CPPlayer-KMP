@@ -691,3 +691,17 @@ actual fun requestShizukuPermission(onResult: (ShizukuState) -> Unit) {
         onResult(shizukuState())
     }
 }
+
+actual fun platformMemoryInfo(): PlatformMemoryInfo {
+    val rt = Runtime.getRuntime()
+    val total = rt.totalMemory()
+    val free = rt.freeMemory()
+    val max = rt.maxMemory()
+    return PlatformMemoryInfo(
+        usedBytes = total - free,
+        maxBytes = max,
+        totalBytes = total,
+        freeBytes = free,
+    )
+}
+

@@ -2,6 +2,7 @@ package cp.player.app.ui.screen
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,10 +18,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Error
@@ -28,8 +32,14 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -39,20 +49,23 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -62,6 +75,13 @@ import cafe.adriel.voyager.core.screen.Screen
 import cp.player.app.ApiCallRecord
 import cp.player.app.AppModel
 import cp.player.app.HealthLevel
+import cp.player.app.diagnostics.AppDiagnostics
+import cp.player.app.diagnostics.DiagnosticCategory
+import cp.player.app.diagnostics.DiagnosticItem
+import cp.player.app.diagnostics.DiagnosticReport
+import cp.player.app.diagnostics.DiagnosticStatus
+import cp.player.app.diagnostics.ProbeOperation
+import cp.player.app.diagnostics.ProbeResult
 import cp.player.app.i18n.HealthStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpConfirmHost
@@ -71,10 +91,12 @@ import cp.player.app.ui.component.TopBarAction
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.settingsRowContainer
 import cp.player.app.ui.navigation.LocalAppNavigator
+import cp.player.app.ui.theme.cpNestedSurface
+import cp.player.app.ui.util.UiEvents
 import cp.player.core.monitor.HealthMonitor
 import cp.player.core.provider.BackendProvider
 import cp.player.core.util.localDateTimeOf
-import kotlinx.serialization.json.Json
+import kotlinx.coroutines.launch
 
 // ⚠️ 本页一律用 material3 的 `Text`，**不要**换成 `CpText`。
 //
@@ -83,14 +105,11 @@ import kotlinx.serialization.json.Json
 // 底层诊断键值都会超过一行。用 `CpText` 的话，用户看到的是一串省略号，
 // 只有把鼠标悬上去（触屏根本没有 hover）才读得到 —— 等于把要排查的信息藏起来。
 // 所以这一页的每个 `Text` 都**不传** `maxLines` / `overflow`（= 不截断，自然换行），
-// 该独占一行的（错误串、原始 JSON）另加 `Modifier.fillMaxWidth()`。
-//
-// 代价是字体路由：裸 `Text` 拿不到 `CpText` 那层「拉丁 → Google Sans Flex、
-// 汉字 → MiSans」的逐 run 切换，中日文落回平台回退字体。这是本页刻意的取舍
-// —— 诊断页的首要目标是**读得到**，不是观感统一。
+// 该独占一行的（错误串、原始 JSON、诊断详情）另加 `Modifier.fillMaxWidth()`。
 
 private enum class HealthTab(val icon: ImageVector) {
     OVERVIEW(Icons.Default.Dashboard),
+    PROBE(Icons.Default.BugReport),
     METHODS(Icons.Default.Analytics),
     LOGS(Icons.AutoMirrored.Filled.List),
     STATUS(Icons.Default.Info),
@@ -98,22 +117,15 @@ private enum class HealthTab(val icon: ImageVector) {
 
     fun label(s: HealthStrings): String = when (this) {
         OVERVIEW -> s.tabOverview
+        PROBE -> s.tabProbe
         METHODS -> s.tabMethods
         LOGS -> s.tabLogs
         STATUS -> s.tabStatus
     }
 }
 
-private val prettyJson = Json {
-    prettyPrint = true
-    ignoreUnknownKeys = true
-    isLenient = true
-}
-
 /**
- * 诊断与健康监控页面：概览、方法统计、调用日志、Provider 状态。
- *
- * 「API 测试」「apiMap」两页签已随 JSON 兼容层一起删除：新的取数链路没有可自由分发的原始端点。
+ * 诊断与健康监控页面：系统体检、主动接口测试、排障工具箱、概览指标、方法统计、调用日志、Provider 状态。
  */
 class HealthScreen : Screen {
 
@@ -186,7 +198,10 @@ class HealthScreen : Screen {
             ) {
                 when (currentTab) {
                     HealthTab.OVERVIEW -> {
-                        overviewTabContent(records, overall, s)
+                        overviewTabContent(records, overall, s, confirm)
+                    }
+                    HealthTab.PROBE -> {
+                        probeTabContent(s)
                     }
                     HealthTab.METHODS -> {
                         methodsTabContent(records, s)
@@ -205,19 +220,34 @@ class HealthScreen : Screen {
     }
 }
 
-// ======================== Tab 1: 概览 (Overview) ========================
+// ======================== Tab 1: 概览与自检 (Overview & Diagnostics) ========================
 
 private fun androidx.compose.foundation.lazy.LazyListScope.overviewTabContent(
     records: List<ApiCallRecord>,
     overall: HealthLevel,
     s: HealthStrings,
+    confirm: cp.player.app.ui.component.ConfirmHostState,
 ) {
+    // 1. 系统主动诊断与全面体检卡片
+    item(key = "overview_diagnostics") {
+        SystemDiagnosticSection(s)
+    }
+
+    // 2. 排障工具箱
+    item(key = "overview_toolkit") {
+        Spacer(Modifier.height(8.dp))
+        TroubleshootingToolkitCard(s, confirm)
+    }
+
+    // 3. 全局调用历史统计指标
     item(key = "overview_global") {
+        Spacer(Modifier.height(8.dp))
         GlobalHealthCard(records, overall, s)
     }
 
+    // 4. 音源健康评分列表标题
     item(key = "overview_provider_title") {
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(6.dp))
         Text(
             s.providerHealthSection,
             style = MaterialTheme.typography.titleMedium,
@@ -250,6 +280,447 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTabContent(
                 stats = stats,
                 s = s,
             )
+        }
+    }
+}
+
+@Composable
+private fun SystemDiagnosticSection(s: HealthStrings) {
+    val report by AppDiagnostics.report.collectAsState()
+    val isRunning by AppDiagnostics.isRunning.collectAsState()
+    val progressMessage by AppDiagnostics.progressMessage.collectAsState()
+    val scope = rememberCoroutineScope()
+
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.elevatedCardColors(containerColor = settingsRowContainer()),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        s.diagnosticTitle,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        s.diagnosticSubtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                Spacer(Modifier.width(12.dp))
+
+                Button(
+                    onClick = {
+                        scope.launch {
+                            AppDiagnostics.runFullDiagnostics()
+                        }
+                    },
+                    enabled = !isRunning,
+                ) {
+                    if (isRunning) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(s.runningDiagnostics)
+                    } else {
+                        Icon(Icons.Filled.Speed, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (report != null) s.reRunDiagnostics else s.runDiagnostics)
+                    }
+                }
+            }
+
+            if (isRunning) {
+                Spacer(Modifier.height(14.dp))
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(MaterialTheme.shapes.extraSmall),
+                )
+                progressMessage?.let { msg ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        msg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+            Spacer(Modifier.height(14.dp))
+
+            val currentReport = report
+            if (currentReport == null && !isRunning) {
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = cpNestedSurface(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.Info,
+                            null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                s.diagnosticNotRun,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                s.diagnosticNotRunHint,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            } else if (currentReport != null) {
+                // 评分与状态指示
+                val scoreColor = when (currentReport.overallStatus) {
+                    DiagnosticStatus.OK -> Color(0xFF4CAF50)
+                    DiagnosticStatus.WARNING -> Color(0xFFFF9800)
+                    DiagnosticStatus.ERROR -> MaterialTheme.colorScheme.error
+                    DiagnosticStatus.SKIPPED -> MaterialTheme.colorScheme.outline
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(scoreColor.copy(alpha = 0.14f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "${currentReport.score}",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = scoreColor,
+                        )
+                    }
+
+                    Spacer(Modifier.width(14.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            when (currentReport.overallStatus) {
+                                DiagnosticStatus.OK -> s.diagnosticHealthy
+                                DiagnosticStatus.WARNING -> s.diagnosticWarning
+                                DiagnosticStatus.ERROR -> s.diagnosticError
+                                DiagnosticStatus.SKIPPED -> s.diagnosticNotRun
+                            },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = scoreColor,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            currentReport.systemSummary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+
+                // 明细项列表
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    currentReport.items.forEach { item ->
+                        DiagnosticItemCard(item, s)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticItemCard(item: DiagnosticItem, s: HealthStrings) {
+    var expanded by remember { mutableStateOf(false) }
+
+    val statusColor = when (item.status) {
+        DiagnosticStatus.OK -> Color(0xFF4CAF50)
+        DiagnosticStatus.WARNING -> Color(0xFFFF9800)
+        DiagnosticStatus.ERROR -> MaterialTheme.colorScheme.error
+        DiagnosticStatus.SKIPPED -> MaterialTheme.colorScheme.outline
+    }
+
+    val statusIcon = when (item.status) {
+        DiagnosticStatus.OK -> Icons.Filled.CheckCircle
+        DiagnosticStatus.WARNING -> Icons.Filled.Warning
+        DiagnosticStatus.ERROR -> Icons.Filled.Error
+        DiagnosticStatus.SKIPPED -> Icons.Filled.Info
+    }
+
+    OutlinedCard(
+        onClick = {
+            if (item.details != null || item.suggestion != null) {
+                expanded = !expanded
+            }
+        },
+        shape = MaterialTheme.shapes.small,
+        colors = CardDefaults.outlinedCardColors(containerColor = cpNestedSurface()),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Icon(
+                    statusIcon,
+                    contentDescription = null,
+                    tint = statusColor,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            item.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        item.latencyMs?.let { latency ->
+                            Surface(
+                                shape = MaterialTheme.shapes.extraSmall,
+                                color = statusColor.copy(alpha = 0.12f),
+                            ) {
+                                Text(
+                                    "${latency}ms",
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = statusColor,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        item.summary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+
+                if (item.details != null || item.suggestion != null) {
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    item.details?.let { detail ->
+                        Surface(
+                            shape = MaterialTheme.shapes.extraSmall,
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.padding(8.dp)) {
+                                Text(
+                                    s.diagnosticDetailsLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                SelectionContainer {
+                                    Text(
+                                        detail,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    item.suggestion?.let { sugg ->
+                        Surface(
+                            shape = MaterialTheme.shapes.extraSmall,
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.padding(8.dp)) {
+                                Text(
+                                    s.diagnosticSuggestionLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    sugg,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TroubleshootingToolkitCard(
+    s: HealthStrings,
+    confirm: cp.player.app.ui.component.ConfirmHostState,
+) {
+    val clipboardManager = LocalClipboardManager.current
+    val report by AppDiagnostics.report.collectAsState()
+
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.elevatedCardColors(containerColor = settingsRowContainer()),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text(
+                s.toolkitTitle,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                // 1. 复制完整诊断报告
+                OutlinedButton(
+                    onClick = {
+                        val currentReport = report
+                        if (currentReport != null) {
+                            val md = AppDiagnostics.formatDiagnosticReportMarkdown(currentReport)
+                            clipboardManager.setText(AnnotatedString(md))
+                            UiEvents.notify(s.copyReportDone)
+                        } else {
+                            UiEvents.notify(s.diagnosticNotRunHint)
+                        }
+                    },
+                ) {
+                    Icon(Icons.Filled.ContentCopy, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(s.copyReport, style = MaterialTheme.typography.labelSmall)
+                }
+
+                // 2. 重新初始化生效音源
+                OutlinedButton(
+                    onClick = {
+                        val ok = AppDiagnostics.reloadActiveProvider()
+                        if (ok) {
+                            UiEvents.notify(s.reloadProviderDone)
+                        } else {
+                            UiEvents.notify(s.noLoadedProviders)
+                        }
+                    },
+                ) {
+                    Icon(Icons.Filled.Refresh, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(s.reloadActiveProvider, style = MaterialTheme.typography.labelSmall)
+                }
+
+                // 3. 清理流缓存
+                OutlinedButton(
+                    onClick = {
+                        confirm.request(
+                            title = s.clearStreamCacheTitle,
+                            message = s.clearStreamCacheMessage,
+                            confirmLabel = s.clearStreamCacheAction,
+                            onConfirm = {
+                                val count = AppDiagnostics.clearStreamCache()
+                                UiEvents.notify("${s.clearStreamCacheDone} ($count)")
+                            },
+                        )
+                    },
+                ) {
+                    Icon(Icons.Filled.DeleteSweep, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(s.clearStreamCacheAction, style = MaterialTheme.typography.labelSmall)
+                }
+
+                // 4. 清理图片封面缓存
+                OutlinedButton(
+                    onClick = {
+                        confirm.request(
+                            title = s.clearImageCacheTitle,
+                            message = s.clearImageCacheMessage,
+                            confirmLabel = s.clearImageCacheAction,
+                            onConfirm = {
+                                val ok = AppDiagnostics.clearCoverImageCache()
+                                if (ok) {
+                                    UiEvents.notify(s.clearImageCacheDone)
+                                }
+                            },
+                        )
+                    },
+                ) {
+                    Icon(Icons.Filled.DeleteSweep, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(s.clearImageCacheAction, style = MaterialTheme.typography.labelSmall)
+                }
+
+                // 5. 重置播放引擎
+                OutlinedButton(
+                    onClick = {
+                        AppDiagnostics.resetAudioPlaybackGate()
+                        UiEvents.notify(s.resetAudioEngineDone)
+                    },
+                ) {
+                    Icon(Icons.Filled.PlayArrow, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(s.resetAudioEngineAction, style = MaterialTheme.typography.labelSmall)
+                }
+            }
         }
     }
 }
@@ -380,7 +851,6 @@ internal fun ProviderHealthCard(
     s: HealthStrings,
 ) {
     val active = AppModel.activeProvider()?.id == providerId
-    val hasData = stats != null && stats.totalCalls > 0
     val score = stats?.healthScore ?: (if (provider?.loadError == null) 1f else 0f)
 
     val scoreColor = when {
@@ -435,7 +905,6 @@ internal fun ProviderHealthCard(
                                 }
                             }
                         }
-                        // ID / 类型 / 版本整行显示，长了就换行 —— 不再靠省略号。
                         Text(
                             s.providerMeta(
                                 id = providerId,
@@ -497,7 +966,6 @@ internal fun ProviderHealthCard(
             } else {
                 val stat = stats
                 Spacer(Modifier.height(12.dp))
-
                 val successRate = stat.successCount.toFloat() / stat.totalCalls
                 Column {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -533,7 +1001,6 @@ internal fun ProviderHealthCard(
                         Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.ErrorOutline, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
                             Spacer(Modifier.width(6.dp))
-                            // 最近错误整串显示：截到 120 字只会在最关键的尾部（堆栈 / 原因）断掉。
                             Text(
                                 s.recentError(lastErr),
                                 modifier = Modifier.weight(1f),
@@ -558,8 +1025,6 @@ internal fun ProviderHealthCard(
                         Text(s.diagnostics, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.height(4.dp))
                         diag.forEach { (k, v) ->
-                            // 左右各占一半：诊断值（PID / 端口 / 路径）长短不定，靠
-                            // SpaceBetween 会被长 key 挤到只剩一个字宽 —— 均分后两列都能换行显示全。
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
                                     k,
@@ -596,7 +1061,418 @@ private fun MiniMetric(label: String, value: String, valueColor: Color = Color.U
     }
 }
 
-// ======================== Tab 2: 方法统计 (Methods) ========================
+// ======================== Tab 2: 接口测试 (API Probe Workbench) ========================
+
+private fun androidx.compose.foundation.lazy.LazyListScope.probeTabContent(
+    s: HealthStrings,
+) {
+    item(key = "probe_workbench") {
+        ProbeWorkbenchCard(s)
+    }
+}
+
+@Composable
+private fun ProbeWorkbenchCard(s: HealthStrings) {
+    val providers = AppModel.availableProviders()
+    val activeProvider = AppModel.activeProvider()
+    var selectedOp by remember { mutableStateOf(ProbeOperation.SEARCH) }
+    var paramText by remember { mutableStateOf("") }
+    var quality by remember { mutableStateOf("standard") }
+
+    var isRunning by remember { mutableStateOf(false) }
+    var probeResult by remember { mutableStateOf<ProbeResult?>(null) }
+    val scope = rememberCoroutineScope()
+    val clipboardManager = LocalClipboardManager.current
+
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.elevatedCardColors(containerColor = settingsRowContainer()),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                s.probeTitle,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                s.probeSubtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Spacer(Modifier.height(14.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+            Spacer(Modifier.height(14.dp))
+
+            // 1. 目标音源与即时切换
+            if (providers.isNotEmpty()) {
+                Text(
+                    s.probeTargetProvider,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    providers.forEach { prov ->
+                        val isCurrent = prov.id == activeProvider?.id
+                        FilterChip(
+                            selected = isCurrent,
+                            onClick = {
+                                if (!isCurrent) {
+                                    val ok = AppModel.switchOrReport(prov)
+                                    if (ok) {
+                                        UiEvents.notify("${s.probeSwitchDone}: ${prov.name}")
+                                    }
+                                }
+                            },
+                            label = { Text(prov.name) },
+                            leadingIcon = if (isCurrent) {
+                                { Icon(Icons.Filled.CheckCircle, null, Modifier.size(16.dp)) }
+                            } else null,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+
+            // 2. 测试接口选择
+            Text(
+                s.probeOperation,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ProbeOperation.entries.forEach { op ->
+                    val label = when (op) {
+                        ProbeOperation.SEARCH -> s.probeOpSearch
+                        ProbeOperation.TRACK_DETAIL -> s.probeOpDetail
+                        ProbeOperation.STREAM_URL -> s.probeOpStream
+                        ProbeOperation.LYRIC -> s.probeOpLyric
+                        ProbeOperation.RANKINGS -> s.probeOpRankings
+                        ProbeOperation.PLAYLISTS -> s.probeOpPlaylists
+                    }
+                    val selected = selectedOp == op
+                    FilterChip(
+                        selected = selected,
+                        onClick = {
+                            selectedOp = op
+                            if (op == ProbeOperation.SEARCH && paramText.isEmpty()) {
+                                paramText = "周杰伦"
+                            }
+                        },
+                        label = { Text(label) },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // 3. 参数输入
+            when (selectedOp) {
+                ProbeOperation.SEARCH -> {
+                    OutlinedTextField(
+                        value = paramText,
+                        onValueChange = { paramText = it },
+                        label = { Text(s.probeInputKeywordLabel) },
+                        placeholder = { Text("周杰伦") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                }
+                ProbeOperation.TRACK_DETAIL, ProbeOperation.STREAM_URL, ProbeOperation.LYRIC -> {
+                    OutlinedTextField(
+                        value = paramText,
+                        onValueChange = { paramText = it },
+                        label = { Text(s.probeInputMediaIdLabel) },
+                        placeholder = { Text("186016 或 netease://song/186016") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                }
+                ProbeOperation.RANKINGS, ProbeOperation.PLAYLISTS -> {
+                    // 无需必填参数
+                }
+            }
+
+            // 音质档位选择 (仅流直链测试有效)
+            if (selectedOp == ProbeOperation.STREAM_URL) {
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(s.probeQualityLabel, style = MaterialTheme.typography.labelSmall)
+                    listOf("standard", "exhigh", "lossless").forEach { q ->
+                        FilterChip(
+                            selected = quality == q,
+                            onClick = { quality = q },
+                            label = { Text(q) },
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // 4. 执行按钮
+            Button(
+                onClick = {
+                    isRunning = true
+                    probeResult = null
+                    scope.launch {
+                        val res = AppDiagnostics.probeOperation(selectedOp, paramText, quality)
+                        probeResult = res
+                        isRunning = false
+                    }
+                },
+                enabled = !isRunning,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (isRunning) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(s.probeExecuting)
+                } else {
+                    Icon(Icons.Filled.PlayArrow, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(s.probeExecute)
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // 5. 响应结果展示
+            val res = probeResult
+            if (res != null) {
+                val resStatusColor = when (res) {
+                    is ProbeResult.Success -> Color(0xFF4CAF50)
+                    is ProbeResult.Unsupported -> Color(0xFFFF9800)
+                    is ProbeResult.Error -> MaterialTheme.colorScheme.error
+                }
+
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = cpNestedSurface(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(resStatusColor),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    when (res) {
+                                        is ProbeResult.Success -> s.probeSuccess
+                                        is ProbeResult.Unsupported -> s.probeUnsupported
+                                        is ProbeResult.Error -> s.probeFailed
+                                    },
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = resStatusColor,
+                                )
+                            }
+
+                            val duration = when (res) {
+                                is ProbeResult.Success -> res.durationMs
+                                is ProbeResult.Unsupported -> res.durationMs
+                                is ProbeResult.Error -> res.durationMs
+                            }
+                            Surface(
+                                shape = MaterialTheme.shapes.extraSmall,
+                                color = resStatusColor.copy(alpha = 0.12f),
+                            ) {
+                                Text(
+                                    "${duration}ms",
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = resStatusColor,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+
+                        val summary = when (res) {
+                            is ProbeResult.Success -> res.summary
+                            is ProbeResult.Unsupported -> res.message
+                            is ProbeResult.Error -> res.error
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            summary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+
+                        // 搜索结果快捷联动测试
+                        if (res is ProbeResult.Success && res.songs.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                "采样歌曲快捷接口探测联动:",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                res.songs.take(4).forEach { song ->
+                                    Surface(
+                                        shape = MaterialTheme.shapes.extraSmall,
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    song.name,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                )
+                                                Text(
+                                                    "${song.artist} [${song.id}]",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                            Spacer(Modifier.width(8.dp))
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        selectedOp = ProbeOperation.STREAM_URL
+                                                        paramText = song.id
+                                                        isRunning = true
+                                                        scope.launch {
+                                                            probeResult = AppDiagnostics.probeOperation(
+                                                                ProbeOperation.STREAM_URL,
+                                                                song.id,
+                                                                quality,
+                                                            )
+                                                            isRunning = false
+                                                        }
+                                                    },
+                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                ) {
+                                                    Text(s.probeSearchQuickStream, style = MaterialTheme.typography.labelSmall)
+                                                }
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        selectedOp = ProbeOperation.LYRIC
+                                                        paramText = song.id
+                                                        isRunning = true
+                                                        scope.launch {
+                                                            probeResult = AppDiagnostics.probeOperation(
+                                                                ProbeOperation.LYRIC,
+                                                                song.id,
+                                                            )
+                                                            isRunning = false
+                                                        }
+                                                    },
+                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                ) {
+                                                    Text(s.probeSearchQuickLyric, style = MaterialTheme.typography.labelSmall)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        val details = when (res) {
+                            is ProbeResult.Success -> res.details
+                            is ProbeResult.Unsupported -> null
+                            is ProbeResult.Error -> null
+                        }
+
+                        if (!details.isNullOrBlank()) {
+                            Spacer(Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    s.diagnosticDetailsLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                OutlinedButton(
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(details))
+                                        UiEvents.notify(s.probeResultCopied)
+                                    },
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                ) {
+                                    Icon(Icons.Filled.ContentCopy, null, Modifier.size(14.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(s.probeCopyResult, style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            SelectionContainer {
+                                Text(
+                                    details,
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                }
+            } else if (!isRunning) {
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = cpNestedSurface(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            s.probeEmptyPrompt,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ======================== Tab 3: 方法统计 (Methods) ========================
 
 private fun androidx.compose.foundation.lazy.LazyListScope.methodsTabContent(
     records: List<ApiCallRecord>,
@@ -637,13 +1513,6 @@ internal fun MethodStatCard(
     var expanded by remember { mutableStateOf(initialExpanded) }
     val successRate = if (stat.totalCalls > 0) stat.successCount * 100f / stat.totalCalls else 0f
 
-    val accentColor = when {
-        stat.warningCount > 0 -> Color(0xFFFF9800)
-        successRate >= 90f -> Color(0xFF4CAF50)
-        successRate >= 50f -> Color(0xFFFFC107)
-        else -> MaterialTheme.colorScheme.error
-    }
-
     OutlinedCard(
         onClick = { expanded = !expanded },
         shape = MaterialTheme.shapes.small,
@@ -679,7 +1548,6 @@ internal fun MethodStatCard(
 
             AnimatedVisibility(visible = expanded) {
                 Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-
                     val recentCalls = remember(allRecords, stat.operation) {
                         allRecords.filter { it.operation == stat.operation }.takeLast(5).reversed()
                     }
@@ -695,32 +1563,79 @@ internal fun MethodStatCard(
     }
 }
 
-// ======================== Tab 3: 调用日志 (Logs) ========================
+// ======================== Tab 4: 调用日志 (Logs) ========================
 
 private fun androidx.compose.foundation.lazy.LazyListScope.logsTabContent(
     records: List<ApiCallRecord>,
     s: HealthStrings,
 ) {
-    item(key = "logs_summary") {
+    item(key = "logs_filter_chips") {
+        LogsFilterHeader(records, s)
+    }
+}
+
+private enum class LogFilter { ALL, ERRORS, WARNINGS, SUCCESS }
+
+@Composable
+private fun LogsFilterHeader(records: List<ApiCallRecord>, s: HealthStrings) {
+    var activeFilter by remember { mutableStateOf(LogFilter.ALL) }
+
+    val filteredRecords = remember(records, activeFilter) {
+        val base = records.reversed()
+        when (activeFilter) {
+            LogFilter.ALL -> base
+            LogFilter.ERRORS -> base.filter { it.level == HealthLevel.ERROR }
+            LogFilter.WARNINGS -> base.filter { it.level == HealthLevel.WARNING }
+            LogFilter.SUCCESS -> base.filter { it.level == HealthLevel.OK }
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(s.history(records.size), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(s.history(filteredRecords.size), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }
-    }
 
-    if (records.isEmpty()) {
-        item(key = "logs_empty") {
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterChip(
+                selected = activeFilter == LogFilter.ALL,
+                onClick = { activeFilter = LogFilter.ALL },
+                label = { Text("${s.filterAll} (${records.size})") },
+            )
+            val errCount = records.count { it.level == HealthLevel.ERROR }
+            FilterChip(
+                selected = activeFilter == LogFilter.ERRORS,
+                onClick = { activeFilter = LogFilter.ERRORS },
+                label = { Text("${s.filterErrors} ($errCount)") },
+            )
+            val warnCount = records.count { it.level == HealthLevel.WARNING }
+            FilterChip(
+                selected = activeFilter == LogFilter.WARNINGS,
+                onClick = { activeFilter = LogFilter.WARNINGS },
+                label = { Text("${s.filterWarnings} ($warnCount)") },
+            )
+            val okCount = records.count { it.level == HealthLevel.OK }
+            FilterChip(
+                selected = activeFilter == LogFilter.SUCCESS,
+                onClick = { activeFilter = LogFilter.SUCCESS },
+                label = { Text("${s.filterSuccess} ($okCount)") },
+            )
+        }
+
+        if (filteredRecords.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
                 Text(s.noCalls, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-        }
-    } else {
-        val reversed = records.reversed()
-        itemsIndexed(reversed, key = { index, r -> "log_${r.timestamp}_$index" }) { index, record ->
-            CallRecordItem(record, compact = false, s = s)
+        } else {
+            filteredRecords.forEachIndexed { index, record ->
+                CallRecordItem(record, compact = false, s = s)
+            }
         }
     }
 }
@@ -752,9 +1667,6 @@ internal fun CallRecordItem(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-            // 概要行：状态图标 / 时间 / 音源 / 操作名 / 耗时。
-            // 操作名用 weight(1f) 吃剩余宽度 —— 它**没有** maxLines，放不下就折行，
-            // 所以长操作名也是整串可见（这是本页「一律不截断」的落点之一）。
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                 Text(statusIcon, fontSize = 13.sp)
                 Spacer(Modifier.width(6.dp))
@@ -786,11 +1698,14 @@ internal fun CallRecordItem(
                                 MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
                         )
                         record.errorMessage?.let { msg ->
-                            Text(
-                                s.errorMessage(msg),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
+                            SelectionContainer {
+                                Text(
+                                    s.errorMessage(msg),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
                         }
                     }
                 }
@@ -799,7 +1714,7 @@ internal fun CallRecordItem(
     }
 }
 
-// ======================== Tab 4: API 测试 (Api Test) ========================
+// ======================== Tab 5: Provider 状态 (Provider Status) ========================
 
 private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent(
     s: HealthStrings,
@@ -831,7 +1746,6 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // 名称 + 徽章吃掉剩余宽度：名字再长也只换行，不会把右侧按钮挤没。
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                             Text(
                                 provider.name,
@@ -863,8 +1777,6 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    // 接口代际标签（manifest 的 `apiVersionTag`）：没声明就不占一行，
-                    // 老包与以后的内置源诊断页保持原样。
                     provider.apiVersionTag?.let { tag ->
                         Text(s.apiGeneration(tag), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -919,6 +1831,3 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent(
         }
     }
 }
-
-// ======================== 辅助函数 ========================
-

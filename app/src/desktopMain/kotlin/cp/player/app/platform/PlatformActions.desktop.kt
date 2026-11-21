@@ -333,3 +333,17 @@ actual fun PlatformCloseBehaviorSetting(index: Int, total: Int) {
         )
     }
 }
+
+actual fun platformMemoryInfo(): PlatformMemoryInfo {
+    val rt = Runtime.getRuntime()
+    val total = rt.totalMemory()
+    val free = rt.freeMemory()
+    val max = rt.maxMemory()
+    return PlatformMemoryInfo(
+        usedBytes = total - free,
+        maxBytes = max,
+        totalBytes = total,
+        freeBytes = free,
+    )
+}
+

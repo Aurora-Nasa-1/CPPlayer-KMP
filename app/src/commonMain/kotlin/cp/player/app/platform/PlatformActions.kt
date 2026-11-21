@@ -283,3 +283,15 @@ expect fun shizukuState(): ShizukuState
  * @param onResult 结果回调，参数是**请求后**重新读到的状态。
  */
 expect fun requestShizukuPermission(onResult: (ShizukuState) -> Unit)
+
+/** 平台内存监控信息。 */
+data class PlatformMemoryInfo(
+    val usedBytes: Long,
+    val maxBytes: Long,
+    val totalBytes: Long,
+    val freeBytes: Long,
+)
+
+/** 获取当前平台堆内存占用统计。 */
+expect fun platformMemoryInfo(): PlatformMemoryInfo
+

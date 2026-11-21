@@ -1007,7 +1007,7 @@ private fun otherEntries(): List<SettingsEntry> = listOf(
         subtitleOf = { it.settings.itemDiagnostics.subtitle },
         icon = Icons.Filled.BugReport,
         accent = SettingsAccent.TERTIARY,
-        keywords = listOf("调试", "健康", "日志", "接口", "错误", "health", "debug", "log"),
+        keywords = listOf("调试", "健康", "体检", "自检", "接口测试", "日志", "接口", "错误", "health", "debug", "log", "probe"),
         subItems = listOf(
             SettingsSubItem(
                 id = "diagnostics_system_info",
