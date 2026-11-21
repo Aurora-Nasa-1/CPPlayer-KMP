@@ -175,14 +175,11 @@ internal object TtmlCompat {
     private fun normalizeLine(line: RawLine, clock: Clock) {
         val node = line.node
         val spans = node.childNodes().filter { it.localName() == "span" }
-        val hasRoleSpan = spans.any { roleOf(it) != null }
-        val hasTimedSpan = spans.any { it.hasTimingAttribute() }
-
         // 没有任何结构（或只有不带时间的 span）：整行作为**一行**输出。
         // 包成单个覆盖全行的 span，库才会走 syllable 分支，从而不把空白压掉；
         // 单个 syllable 覆盖整行时，转换层会把它还原成行级歌词（不误开逐字样式）。
-        if (spans.isEmpty() || (!hasTimedSpan && !hasRoleSpan)) {
-            val text = node.allText().trim()
+        if (spans.none { !isAnnotation(it) && (it.hasTimingAttribute() || roleOf(it) != null) }) {
+            val text = node.allText(exclude = ::isAnnotation).trim()
             // 整行包一个 span 会丢掉行内标点间的空格（`hello, world` → `hello,world`）；
             // 把空白折成单空格即可保留可读性，且不影响行级语义。
             val visible = text.replace(WHITESPACE, " ")
@@ -193,6 +190,7 @@ internal object TtmlCompat {
             }
             line.node.children.clear()
             line.node.children += span
+            line.node.children.addAll(spans.filter(::isAnnotation))
             line.spanTimings[span] = longArrayOf(line.begin, line.end)
             return
         }
@@ -295,7 +293,7 @@ internal object TtmlCompat {
 
     private fun lastChildEnd(node: Node, parentBegin: Long, clock: Clock): Long? {
         var max = Long.MIN_VALUE
-        for (span in node.childNodes().filter { it.localName() == "span" }) {
+        for (span in node.childNodes().filter { it.localName() == "span" && !isAnnotation(it) }) {
             val begin = timeAttr(span, "begin", parentBegin, clock)
             val end = timeAttr(span, "end", parentBegin, clock)
                 ?: durationAttr(span, "dur", clock.frameRate)?.let { (begin ?: parentBegin) + it }
@@ -314,7 +312,7 @@ internal object TtmlCompat {
 
     private fun nestedLastEnd(node: Node, parentBegin: Long, clock: Clock): Long? {
         var max = Long.MIN_VALUE
-        for (span in node.childNodes().filter { it.localName() == "span" }) {
+        for (span in node.childNodes().filter { it.localName() == "span" && !isAnnotation(it) }) {
             val begin = timeAttr(span, "begin", parentBegin, clock) ?: parentBegin
             val end = timeAttr(span, "end", parentBegin, clock)
                 ?: durationAttr(span, "dur", clock.frameRate)?.let { begin + it }
@@ -504,9 +502,10 @@ internal object TtmlCompat {
         fun hasTimingAttribute(): Boolean =
             attrs.any { it.first.substringAfterLast(':') in setOf("begin", "end", "dur") }
 
-        fun allText(): String = buildString {
+        fun allText(exclude: (Node) -> Boolean): String = buildString {
             for (child in children) {
-                if (child is String) append(child) else append((child as Node).allText())
+                if (child is String) append(child)
+                else if (child is Node && !exclude(child)) append(child.allText(exclude))
             }
         }
     }
@@ -699,6 +698,12 @@ internal object TtmlCompat {
 
     private fun roleOf(node: Node): String? =
         node.attrs.firstOrNull { it.first == "ttm:role" || it.first == "role" || it.first.endsWith(":role") }?.second
+
+    private fun isAnnotation(node: Node): Boolean =
+        when (roleOf(node)) {
+            "x-translation", "x-roman" -> true
+            else -> false
+        }
 
     private const val DEFAULT_LINE_MS = 4_000L
 }

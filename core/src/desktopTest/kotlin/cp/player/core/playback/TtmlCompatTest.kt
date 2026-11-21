@@ -112,6 +112,47 @@ class TtmlCompatTest {
     }
 
     @Test
+    fun `行内罗马音保留原词空格且不参与结束时间推断`() {
+        val ttml = """
+            <tt xmlns:ttm="http://www.w3.org/ns/ttml#metadata"><body><div>
+              <p begin="1.0"><span>hello</span> <span>world</span><span ttm:role="x-roman"><span begin="1.0" end="5.0">he lo</span> <span>wurld</span></span><span ttm:role="x-translation">你好</span></p>
+              <p begin="3.0" end="5.0">Next line</p>
+            </div></body></tt>
+        """.trimIndent()
+
+        val lines = LyricsParser.parseTtml(ttml)
+        assertEquals(2, lines.size)
+        val first = lines.first()
+        assertEquals("hello world", first.text)
+        assertEquals("he lo wurld", first.romanization)
+        assertEquals("你好", first.translation)
+        assertEquals(3_000L, first.endTime)
+        assertTrue(first.words.isEmpty())
+    }
+
+    @Test
+    fun `Apple Music 逐字罗马音保留原有分隔和正文时间`() {
+        val ttml = """
+            <tt xmlns="http://www.w3.org/ns/ttml" xmlns:itunes="http://music.apple.com/lyric-ttml-internal">
+              <head><metadata><iTunesMetadata><transliterations>
+                <transliteration xml:lang="ja-Latn">
+                  <text for="L1"><span begin="1.0" end="1.5">ki</span><span begin="1.5" end="2.0">mi</span> <span begin="2.0" end="2.5">e</span></text>
+                </transliteration>
+              </transliterations></iTunesMetadata></metadata></head>
+              <body><div>
+                <p begin="1.0" end="2.5" itunes:key="L1"><span begin="1.0" end="1.5">き</span><span begin="1.5" end="2.0">み</span><span begin="2.0" end="2.5">へ</span></p>
+              </div></body>
+            </tt>
+        """.trimIndent()
+
+        val line = LyricsParser.parseTtml(ttml).single()
+        assertEquals("きみへ", line.text)
+        assertEquals("kimi e", line.romanization)
+        assertEquals(listOf(1_000L, 1_500L, 2_000L), line.words.map { it.beginTime })
+        assertEquals(2_500L, line.endTime)
+    }
+
+    @Test
     fun `tt 前缀根节点也能识别`() {
         val ttml = """
             <tt:tt xmlns:tt="http://www.w3.org/ns/ttml"><tt:body><tt:div>
