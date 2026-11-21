@@ -89,9 +89,9 @@ class JvmPluginRepositoryIO(private val root: File) : PluginRepositoryIO {
         try {
             var lastProgress = 0L
             file.outputStream().buffered().use { output ->
-                readResponse(artifact.url, artifact.bytes, output) { bytes ->
+                readResponse(artifact.url, PluginRepositoryService.MAX_PACKAGE_BYTES, output) { bytes ->
                     val now = System.nanoTime()
-                    if (now - lastProgress >= 100_000_000 || bytes == artifact.bytes) {
+                    if (now - lastProgress >= 100_000_000 || artifact.bytes == bytes) {
                         lastProgress = now
                         onProgress(PluginInstallPhase.DOWNLOADING, bytes)
                     }
@@ -169,18 +169,20 @@ internal fun verifyRepositoryPackage(
     artifact: PluginArtifact,
     checkCancellation: () -> Unit = {},
 ) {
-    require(file.length() == artifact.bytes) { "Package length does not match the catalog" }
-    val digest = MessageDigest.getInstance("SHA-256")
-    file.inputStream().buffered().use { input ->
-        val buffer = ByteArray(64 * 1024)
-        while (true) {
-            checkCancellation()
-            val count = input.read(buffer)
-            if (count < 0) break
-            digest.update(buffer, 0, count)
+    require(file.length() in 1..PluginRepositoryService.MAX_PACKAGE_BYTES) { "Package exceeds the allowed size" }
+    artifact.sha256?.let { expected ->
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                checkCancellation()
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
         }
+        require(digest.digest().toHex() == expected) { "Package SHA-256 does not match the catalog" }
     }
-    require(digest.digest().toHex() == artifact.sha256) { "Package SHA-256 does not match the catalog" }
     val lyrics = plugin.kind == RepositoryPluginKind.LYRICS
     val maxEntries = if (lyrics) 512 else 4096
     val maxEntryBytes = if (lyrics) 16L * 1024 * 1024 else PluginRepositoryService.MAX_PACKAGE_BYTES
@@ -240,6 +242,12 @@ internal fun verifyRepositoryPackage(
             require(manifest.resolvedApiVersion == plugin.apiVersion &&
                 manifest.resolvedMinHostApiVersion == plugin.minHostApiVersion
             ) { "Provider package API does not match the catalog" }
+            require(manifest.minAppVersion == plugin.minAppVersion) {
+                "Provider package minimum CPPlayer version does not match the catalog"
+            }
+            manifest.minAppVersion?.let {
+                require(PluginVersion.isValid(it)) { "Invalid minimum CPPlayer version: $it" }
+            }
             require(manifest.isLoadable) { manifest.loadabilityError.orEmpty() }
             requireSafePluginPath(manifest.entryPoint)
             val entry = zip.getEntry(manifest.entryPoint)

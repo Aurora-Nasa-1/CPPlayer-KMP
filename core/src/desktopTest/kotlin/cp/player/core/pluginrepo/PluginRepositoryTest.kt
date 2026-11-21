@@ -47,7 +47,7 @@ class PluginRepositoryTest {
             downloads++
             downloadStarted.complete(Unit)
             downloadGate?.await()
-            onProgress(PluginInstallPhase.VERIFYING, artifact.bytes)
+            onProgress(PluginInstallPhase.VERIFYING, artifact.bytes ?: 0)
             return "verified-package.zip"
         }
         override suspend fun discardPackage(path: String) { discarded++ }
@@ -83,6 +83,14 @@ class PluginRepositoryTest {
             PluginRepositoryService.parseCatalog(catalog(plugin.copy(artifacts = listOf(artifact.copy(sha256 = "bad")))))
         }
         assertFailsWith<IllegalArgumentException> {
+            PluginRepositoryService.parseCatalog(catalog(plugin.copy(minAppVersion = "1.9")))
+        }
+        assertNotNull(
+            PluginRepositoryService.parseCatalog(
+                catalog(plugin.copy(artifacts = listOf(artifact.copy(sha256 = null, bytes = null)))),
+            ),
+        )
+        assertFailsWith<IllegalArgumentException> {
             PluginRepositoryService.parseCatalog(Json.encodeToString(PluginCatalog(name = "Example", plugins = listOf(plugin, plugin))))
         }
     }
@@ -90,6 +98,10 @@ class PluginRepositoryTest {
     @Test
     fun `compatibility keeps provider and lyrics API rules independent`() {
         val desktop = PluginTarget("windows", "x64")
+        val appBound = plugin.copy(minAppVersion = "1.10.0")
+        assertNotNull(appBound.compatibility(desktop, "1.9.9").second)
+        assertEquals(null, appBound.compatibility(desktop, "1.10.0").second)
+        assertEquals(null, appBound.compatibility(desktop, "1.11.0").second)
         assertEquals(null, plugin.copy(apiVersion = 99, minHostApiVersion = 1).compatibility(desktop).second)
         assertNotNull(plugin.copy(minHostApiVersion = 99).compatibility(desktop).second)
         val lyrics = plugin.copy(kind = RepositoryPluginKind.LYRICS, apiVersion = 99, versionCode = 1,
@@ -141,6 +153,29 @@ class PluginRepositoryTest {
             service.refresh()
             assertEquals(1, service.state.value.entries.size)
             assertEquals("Offline", service.state.value.sourceErrors[source])
+        }
+    }
+
+    @Test
+    fun `minimum app version blocks repository install before downloading`() {
+        runBlocking {
+            val io = MemoryIO().apply {
+                responses[source] = catalog(plugin.copy(minAppVersion = "1.10.0"))
+            }
+            val service = PluginRepositoryService(
+                settings = MemorySettings(),
+                io = io,
+                target = PluginTarget("windows", "x64"),
+                installedPlugins = { emptyList() },
+                currentAppVersion = "1.9.9",
+            ) { _, _ -> error("An incompatible plugin must not install") }
+            service.addSource(source)
+            service.setNetworkEnabled(true)
+            service.refresh()
+            val entry = service.state.value.entries.single()
+            assertTrue(entry.incompatibility.orEmpty().contains("1.10.0"))
+            assertFailsWith<IllegalArgumentException> { service.install(entry) }
+            assertEquals(0, io.downloads)
         }
     }
 

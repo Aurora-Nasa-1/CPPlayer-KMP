@@ -178,6 +178,7 @@ internal fun PluginRepositoryContent(
             title = t.installTitle(entry.plugin.name),
             message = listOf(
                 t.identity(entry.plugin.id, entry.plugin.version, entry.source.url),
+                entry.plugin.changelog.takeIf { it.isNotBlank() }?.let { "${t.changelog}\n$it" }.orEmpty(),
                 if (local) t.replaceLocal else "",
                 if (entry.plugin.kind == RepositoryPluginKind.PROVIDER) t.providerActivationNote else t.lyricsActivationNote,
                 t.trustNote,
@@ -383,7 +384,12 @@ internal fun PluginRepositoryContent(
                         CpText(entry.plugin.description, maxLines = Int.MAX_VALUE)
                         entry.artifact?.let {
                             CpText(t.packageInfo(it.platform, it.arch, it.runtime, it.bytes), maxLines = Int.MAX_VALUE)
-                            CpText("SHA-256: ${it.sha256}", style = MaterialTheme.typography.bodySmall, maxLines = Int.MAX_VALUE)
+                            it.sha256?.let { digest ->
+                                CpText("SHA-256: $digest", style = MaterialTheme.typography.bodySmall, maxLines = Int.MAX_VALUE)
+                            }
+                        }
+                        entry.plugin.minAppVersion?.let {
+                            CpText(t.minimumAppVersion(it), maxLines = Int.MAX_VALUE)
                         }
                         if (entry.plugin.changelog.isNotBlank()) {
                             CpText("${t.changelog}\n${entry.plugin.changelog}", maxLines = Int.MAX_VALUE)

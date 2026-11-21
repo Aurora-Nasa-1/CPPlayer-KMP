@@ -24,8 +24,14 @@ import kotlin.test.assertTrue
 class PluginRepositoryArchiveTest {
     private val plugin = RepositoryPlugin("test-provider", RepositoryPluginKind.PROVIDER, "Test", "1.0.0",
         artifacts = emptyList())
-    private fun manifest(version: String = "1.0.0", type: String = "js", id: String = "test-provider") =
-        """{"id":"$id","name":"Test","version":"$version","type":"$type","entryPoint":"index.js","contract":"kmp-sdk-v1"}"""
+    private fun manifest(
+        version: String = "1.0.0",
+        type: String = "js",
+        id: String = "test-provider",
+        minAppVersion: String? = null,
+    ) = """{"id":"$id","name":"Test","version":"$version","type":"$type","entryPoint":"index.js","contract":"kmp-sdk-v1"${
+        minAppVersion?.let { ",\"minAppVersion\":\"$it\"" }.orEmpty()
+    }}"""
 
     private fun zip(root: File, name: String, entries: Map<String, String>): File =
         File(root, name).also { file ->
@@ -51,15 +57,26 @@ class PluginRepositoryArchiveTest {
     }
 
     @Test
-    fun `real archive verifies digest size identity and unsafe paths before extraction`() {
+    fun `real archive verifies optional digest identity and unsafe paths before extraction`() {
         inTemporaryDirectory { root ->
             val valid = zip(root, "valid.zip", mapOf("manifest.json" to manifest()))
             verifyRepositoryPackage(valid, plugin, artifact(valid))
             val legacy = zip(root, "legacy.zip", mapOf("manifest.json" to manifest().replace("kmp-sdk-v1", "standard")))
             assertFailsWith<IllegalArgumentException> { verifyRepositoryPackage(legacy, plugin, artifact(legacy)) }
-            assertFailsWith<IllegalArgumentException> { verifyRepositoryPackage(valid, plugin, artifact(valid).copy(bytes = 1)) }
+            verifyRepositoryPackage(valid, plugin, artifact(valid).copy(bytes = 1))
             assertFailsWith<IllegalArgumentException> { verifyRepositoryPackage(valid, plugin, artifact(valid).copy(sha256 = "0".repeat(64))) }
+            verifyRepositoryPackage(valid, plugin, artifact(valid).copy(sha256 = null, bytes = null))
             assertFailsWith<IllegalArgumentException> { verifyRepositoryPackage(valid, plugin.copy(version = "2.0.0"), artifact(valid)) }
+            val appBound = plugin.copy(minAppVersion = "1.10.0")
+            val appBoundPackage = zip(root, "app-bound.zip", mapOf("manifest.json" to manifest(minAppVersion = "1.10.0")))
+            verifyRepositoryPackage(appBoundPackage, appBound, artifact(appBoundPackage))
+            assertFailsWith<IllegalArgumentException> {
+                verifyRepositoryPackage(appBoundPackage, appBound.copy(minAppVersion = "1.9.0"), artifact(appBoundPackage))
+            }
+            val invalidAppBound = zip(root, "invalid-app-bound.zip", mapOf("manifest.json" to manifest(minAppVersion = "1.9")))
+            assertFailsWith<IllegalArgumentException> {
+                verifyRepositoryPackage(invalidAppBound, plugin.copy(minAppVersion = "1.9"), artifact(invalidAppBound))
+            }
             listOf("../escape", "C:/escape", "a\\evil", "CON.txt", "file:stream", "nested/manifest.json").forEachIndexed { index, path ->
                 val bad = zip(root, "bad-$index.zip", mapOf("manifest.json" to manifest(), path to "x"))
                 assertFailsWith<IllegalArgumentException>(path) { verifyRepositoryPackage(bad, plugin, artifact(bad)) }
@@ -97,6 +114,25 @@ class PluginRepositoryArchiveTest {
             val conflict = zip(root, "conflict.zip", mapOf("manifest.json" to manifest(id = "different-id")))
             assertNull(manager.installRepositoryModule(conflict.absolutePath, "different-id"))
             assertTrue(File(modules, "${plugin.id}/manifest.json").isFile)
+            manager.getAvailableProviders().forEach { it.close() }
+        }
+    }
+
+    @Test
+    fun `provider requiring newer app version is rejected by module manager`() {
+        inTemporaryDirectory { root ->
+            val modules = File(root, "modules")
+            val manager = ModuleManager(modules.absolutePath, PlatformContext())
+            val settings = MemorySettings()
+            manager.init(ProviderManager(settings, ProviderCookieStorage(settings)), currentVersionName = "1.9.9")
+            val appBound = plugin.copy(minAppVersion = "1.10.0")
+            val packageFile = zip(
+                root,
+                "app-bound.zip",
+                mapOf("manifest.json" to manifest(minAppVersion = "1.10.0")),
+            )
+            assertNull(manager.installRepositoryModule(packageFile.absolutePath, appBound.id))
+            assertFalse(File(modules, appBound.id).exists())
             manager.getAvailableProviders().forEach { it.close() }
         }
     }

@@ -42,6 +42,7 @@ class PluginRepositoryService(
     private val installedPlugins: suspend () -> List<InstalledRepositoryPlugin>,
     private val pendingUpdateExists: (String) -> Boolean = { true },
     private val defaultSources: List<PluginRepositorySource> = emptyList(),
+    private val currentAppVersion: String? = null,
     private val installPackage: suspend (RepositoryPlugin, String) -> PluginInstallOutcome,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -163,7 +164,7 @@ class PluginRepositoryService(
     private fun rebuildEntries() {
         val entries = _state.value.sources.filter { it.enabled }.flatMap { source ->
             catalogs[source.url]?.plugins.orEmpty().map { plugin ->
-                val (artifact, error) = plugin.compatibility(target)
+                val (artifact, error) = plugin.compatibility(target, currentAppVersion)
                 PluginCatalogEntry(
                     source, plugin, artifact, error,
                     installed.find { it.key == plugin.key },
@@ -231,6 +232,9 @@ class PluginRepositoryService(
             require(_state.value.entries.any {
                 it.source.url == entry.source.url && it.plugin == entry.plugin
             }) { "Catalog changed; refresh and try again" }
+            require(entry.plugin.compatibility(target, currentAppVersion).second == null) {
+                entry.plugin.compatibility(target, currentAppVersion).second ?: "Plugin is not compatible"
+            }
             syncInstalled()
             val actual = installed.find { it.key == entry.plugin.key }
             val origin = managed.find { it.key == entry.plugin.key }
@@ -253,7 +257,7 @@ class PluginRepositoryService(
             }
             val artifact = entry.artifact
             _state.update {
-                it.copy(task = PluginInstallTask(entry.plugin.key, entry.source.url, PluginInstallPhase.DOWNLOADING, totalBytes = artifact.bytes))
+                it.copy(task = PluginInstallTask(entry.plugin.key, entry.source.url, PluginInstallPhase.DOWNLOADING, totalBytes = artifact.bytes ?: 0))
             }
             val preparedPath = io.preparePackage(entry.plugin, artifact) { phase, downloaded ->
                 _state.update { it.copy(task = it.task?.copy(phase = phase, downloadedBytes = downloaded)) }
@@ -346,12 +350,18 @@ class PluginRepositoryService(
                     require((plugin.versionCode ?: 0) > 0) { "Lyrics plugins require a positive versionCode" }
                 }
                 require(plugin.artifacts.isNotEmpty() && plugin.artifacts.size <= 32) { "Invalid package list" }
+                require(plugin.kind == RepositoryPluginKind.PROVIDER || plugin.minAppVersion == null) {
+                    "minAppVersion is only supported by provider plugins"
+                }
                 for (artifact in plugin.artifacts) {
                     require(artifact.platform in setOf("any", "windows", "linux", "macos", "android")) { "Unknown platform" }
                     require(artifact.arch in setOf("any", "x64", "arm64", "armv7")) { "Unknown architecture" }
                     requireRepositoryHttpsUrl(artifact.url)
-                    require(Regex("^[0-9a-f]{64}$").matches(artifact.sha256)) { "Invalid package SHA-256" }
-                    require(artifact.bytes in 1..MAX_PACKAGE_BYTES) { "Invalid package size" }
+                    artifact.sha256?.let { require(Regex("^[0-9a-f]{64}$").matches(it)) { "Invalid package SHA-256" } }
+                    artifact.bytes?.let { require(it in 1..MAX_PACKAGE_BYTES) { "Invalid package size" } }
+                }
+                plugin.minAppVersion?.let {
+                    require(PluginVersion.isValid(it)) { "Invalid minimum CPPlayer version: $it" }
                 }
             }
             return catalog

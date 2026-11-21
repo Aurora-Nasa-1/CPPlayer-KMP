@@ -28,6 +28,7 @@ data class RepositoryPlugin(
     val author: String = "",
     val homepage: String? = null,
     val changelog: String = "",
+    val minAppVersion: String? = null,
     val versionCode: Int? = null,
     val apiVersion: Int = 1,
     val minHostApiVersion: Int = 1,
@@ -42,8 +43,8 @@ data class PluginArtifact(
     val arch: String = "any",
     val runtime: String,
     val url: String,
-    val sha256: String,
-    val bytes: Long,
+    val sha256: String? = null,
+    val bytes: Long? = null,
 )
 
 @Serializable
@@ -59,7 +60,7 @@ data class ManagedPluginInstall(
     val sourceUrl: String,
     val version: String,
     val versionCode: Int? = null,
-    val sha256: String,
+    val sha256: String? = null,
     val pendingRestart: Boolean = false,
 )
 
@@ -171,7 +172,16 @@ object PluginVersion {
         a.length.compareTo(b.length).takeIf { it != 0 } ?: a.compareTo(b)
 }
 
-fun RepositoryPlugin.compatibility(target: PluginTarget): Pair<PluginArtifact?, String?> {
+fun RepositoryPlugin.compatibility(
+    target: PluginTarget,
+    currentAppVersion: String? = null,
+): Pair<PluginArtifact?, String?> {
+    if (minAppVersion != null) {
+        if (currentAppVersion == null) return null to "Requires CPPlayer $minAppVersion or newer"
+        val order = PluginVersion.compare(currentAppVersion, minAppVersion)
+            ?: return null to "Cannot compare CPPlayer version $currentAppVersion with $minAppVersion"
+        if (order < 0) return null to "Requires CPPlayer $minAppVersion or newer (current $currentAppVersion)"
+    }
     if (minHostApiVersion < 1 || apiVersion < 1) return null to "Invalid API version"
     when (kind) {
         RepositoryPluginKind.PROVIDER ->
