@@ -11,7 +11,17 @@ import coil3.memory.MemoryCache
  * CoverThumbnail 用 [cp.player.app.ui.theme.loadCoverBitmap] 请求时已按目标像素
  * 降采样，常驻屏幕上的封面（列表 48~64px 缩略图 + 播放页大图）远用不完 64MB。
  */
-private const val DesktopImageMemoryCacheBytes = 64L * 1024 * 1024
+private const val DefaultDesktopImageMemoryCacheMb = 64L
+private const val MinDesktopImageMemoryCacheMb = 16L
+private const val MaxDesktopImageMemoryCacheMb = 128L
+
+private fun desktopImageMemoryCacheBytes(): Long {
+    val requestedMb = System.getProperty("cp.coil.cacheMb")
+        ?.toLongOrNull()
+        ?.coerceIn(MinDesktopImageMemoryCacheMb, MaxDesktopImageMemoryCacheMb)
+        ?: DefaultDesktopImageMemoryCacheMb
+    return requestedMb * 1024L * 1024L
+}
 
 /**
  * 给 Coil 单例装上**固定上限**的内存缓存。
@@ -34,13 +44,18 @@ private const val DesktopImageMemoryCacheBytes = 64L * 1024 * 1024
  * 驱逐），现有默认行为已足够，刻意不与桌面共一套数值。
  */
 fun installDesktopImageCacheLimit() {
+    val cacheBytes = desktopImageMemoryCacheBytes()
+    println(
+        "[CPPlayer] Coil desktop memory cache = ${cacheBytes / (1024L * 1024L)}MB " +
+            "(override with -Dcp.coil.cacheMb=16..128)",
+    )
     SingletonImageLoader.setSafe { ctx: PlatformContext ->
         ImageLoader.Builder(ctx)
             .memoryCache(
                 // coil 3.x 的 MemoryCache.Builder 是无参构造，maxSizeBytes 走链式方法
                 //（javap 核对过 coil-core-jvm 的 Builder 签名），不需要传 context。
                 MemoryCache.Builder()
-                    .maxSizeBytes(DesktopImageMemoryCacheBytes)
+                    .maxSizeBytes(cacheBytes)
                     .build(),
             )
             .build()
