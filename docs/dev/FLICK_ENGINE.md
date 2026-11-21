@@ -255,7 +255,7 @@ Rust 侧 `HttpMediaSource` 实现 Symphonia 的 `MediaSource`（`Read + Seek + S
 
 ### 7.1 源码不在 git 里
 
-`native/flick-player-engine/` 由闭源引擎仓库维护。主仓库追踪 Kotlin 集成代码。Windows 发布任务从私有 Release 下载指定版本的 DLL，校验后放进 `app/native/`。本地开发也可以把匹配版本的 DLL 放在该目录，Git 会忽略它。
+`native/flick-player-engine/` 由闭源引擎仓库维护。主仓库保留 Kotlin 集成代码与 `app/native/` 下用于本地开发的正式版 DLL。Windows 发布任务从私有 Release 下载指定版本的 DLL，校验后用于打包。测试构建的 DLL 请留在本地，提交正式版 DLL 前请核对版本。
 
 ### 7.2 本机构建 Rust
 

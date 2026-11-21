@@ -127,7 +127,6 @@ provider-sdk-kmp/rust/target/
 # 放行发布所需的预编译二进制库
 !app/native/
 !app/native/*
-/app/native/rust_lib_flick_player.dll
 
 # 私有发卡与算号脚本（仅限本地商业发卡，绝不入库）
 scripts/*vip*
