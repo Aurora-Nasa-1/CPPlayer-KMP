@@ -19,6 +19,8 @@ interface UnifiedMusicSource : ExtendedMusicSource {
     val accountChanges: kotlinx.coroutines.flow.Flow<Unit> get() = kotlinx.coroutines.flow.emptyFlow()
     suspend fun getRecommendedSongs(limit: Int = 30): MusicResult<List<TrackSummary>> =
         cp.player.core.BackendResult.Unsupported("Recommendations not supported")
+    suspend fun getDailyStyleRecommendations(limit: Int = 30): MusicResult<List<TrackSummary>> =
+        cp.player.core.BackendResult.Unsupported("Style recommendations not supported")
     suspend fun getRecommendedPlaylists(limit: Int = 30): MusicResult<List<PlaylistSummary>> =
         cp.player.core.BackendResult.Unsupported("Recommendations not supported")
     suspend fun getPersonalizedPlaylists(limit: Int = 30): MusicResult<List<PlaylistSummary>> =

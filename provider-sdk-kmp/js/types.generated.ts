@@ -236,10 +236,12 @@ export interface PagedIdRequest {
   readonly offset: number;
 }
 
-/** A bounded recommendation/discovery selection, not offset pagination. */
+/** A bounded recommendation/discovery selection, not offset pagination. mode selects daily or dailyStyle when the provider supports both. */
 export interface RecommendationsRequest {
   /** Requested item bound, 1..500; a response must not exceed it. */
   readonly limit: number;
+  /** Provider-specific recommendation mode; daily is the compatibility default and dailyStyle selects the newer style-based daily feed. */
+  readonly mode: string;
 }
 
 /** Playlist category and order selectors with a bounded selection size. */

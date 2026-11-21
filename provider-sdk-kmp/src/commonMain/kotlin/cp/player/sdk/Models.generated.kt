@@ -775,23 +775,29 @@ data class PagedIdRequest(
     }
 }
 
-/** A bounded recommendation/discovery selection, not offset pagination. */
+/** A bounded recommendation/discovery selection, not offset pagination. mode selects daily or dailyStyle when the provider supports both. */
 data class RecommendationsRequest(
     /** Requested item bound, 1..500; a response must not exceed it. */
-    val limit: Int,
+    val limit: Int = 30,
+    /** Provider-specific recommendation mode; daily is the compatibility default and dailyStyle selects the newer style-based daily feed. */
+    val mode: String = "daily",
 ) {
     fun write(w: WireWriter) { with(w) {
         int(this@RecommendationsRequest.limit)
+        string(this@RecommendationsRequest.mode)
     } }
     fun values(): Map<String, Any?> = mapOf(
         "limit" to limit,
+        "mode" to mode,
     )
     companion object {
         fun read(r: WireReader): RecommendationsRequest = with(r) { RecommendationsRequest(
             int(),
+            string(),
         ) }
         fun fromValues(v: Map<String, Any?>): RecommendationsRequest = RecommendationsRequest(
             valueInt(v["limit"]),
+            valueString(v["mode"]),
         )
     }
 }

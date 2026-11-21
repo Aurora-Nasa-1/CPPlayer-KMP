@@ -107,6 +107,16 @@ class UnifiedMusicSourceImpl private constructor(
         })
     }
 
+    override suspend fun getDailyStyleRecommendations(limit: Int): MusicResult<List<TrackSummary>> = boundary("getDailyStyleRecommendations") {
+        require(limit in 1..MAX_ITEMS)
+        val host = sdkHost() ?: return@boundary BackendResult.Error("No active SDK provider")
+        BackendResult.Success(
+            host.getRecommendedSongs(RecommendationsRequest(limit, "dailyStyle")).items.map {
+                it.toDomain(host.context.session.providerId)
+            },
+        )
+    }
+
     override suspend fun getRecommendedPlaylists(limit: Int): MusicResult<List<PlaylistSummary>> = boundary("getRecommendedPlaylists") {
         require(limit in 1..MAX_ITEMS)
         val host = sdkHost() ?: return@boundary BackendResult.Error("No active SDK provider")

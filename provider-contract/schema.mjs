@@ -17,7 +17,8 @@ export default {
     "AlbumPageRequest": { "area": "ALL", "limit": 30, "offset": 0 },
     "AlbumChartRequest": { "area": "ALL", "kind": "new", "limit": 50, "offset": 0 },
     "UserCursorRequest": { "limit": 30 },
-    "DjRankingRequest": { "kind": "new", "limit": 30, "offset": 0 }
+    "DjRankingRequest": { "kind": "new", "limit": 30, "offset": 0 },
+    "RecommendationsRequest": { "limit": 30, "mode": "daily" }
   },
   "records": {
     "Artist": { "id": "string?", "name": "string" },
@@ -44,7 +45,7 @@ export default {
     "StorageRequest": { "key": "string", "value": "bytes?" },
     "StorageValue": { "value": "bytes?" },
     "PagedIdRequest": { "id": "string", "limit": "int", "offset": "int" },
-    "RecommendationsRequest": { "limit": "int" },
+    "RecommendationsRequest": { "limit": "int", "mode": "string" },
     "PlaylistBrowseRequest": { "category": "string", "limit": "int", "order": "string" },
     "AlbumBrowseRequest": { "area": "string", "limit": "int" },
     "TopSongsRequest": { "limit": "int", "region": "int" },
