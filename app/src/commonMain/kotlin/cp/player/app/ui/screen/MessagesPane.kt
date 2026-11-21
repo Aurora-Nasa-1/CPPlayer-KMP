@@ -1,7 +1,6 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -21,19 +20,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
+import cp.player.app.presentation.SocialAvailability
+import cp.player.app.presentation.SocialFeature
 import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.ContentState
-import cp.player.app.ui.component.CpBreakpoints
+import cp.player.app.ui.component.CpAdaptiveListDetailScaffold
 import cp.player.app.ui.component.CpContactListSkeleton
 import cp.player.app.ui.component.CpSkeletonCaption
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.navigation.LocalAppNavigator
-import cp.player.app.ui.component.CpTwoPane
+import cp.player.app.ui.navigation.socialFeatureAvailability
+import cp.player.app.ui.navigation.statusText
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.MessageNotifyGuideSheet
 import cp.player.app.ui.component.rememberMessageNotifyGuide
 import cp.player.core.model.Contact
 import kotlinx.coroutines.launch
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 
 /**
  * 桌面消息双栏：**左栏会话列表 + 右栏对话**。
@@ -46,22 +50,21 @@ import kotlinx.coroutines.launch
  * 都不经过 `CpRouteScaffold`。[MessagesScreen] 则是窄屏（安卓 / 手机宽度窗口）push 出去的
  * **整页**，自带顶栏和返回键 —— 两者外壳要求正好相反，硬塞进一个类里迟早要靠布尔分支打架。
  *
- * ## 宽度判据为什么要自己读 `maxWidth`
+ * ## 自适应窗格
  *
- * 内嵌面板的可用宽度**小于**窗口宽度（左侧还有 248dp 的桌面侧栏），不能用
- * `LocalIsExpanded`（那是按窗口算的）。同 `PlayerScreen.Content()` /
- * `PlaylistDetailScreen` 的做法：`BoxWithConstraints` + [CpBreakpoints.isExpanded]。
+ * 左右栏由 [CpAdaptiveListDetailScaffold] 和 Material 3 Adaptive 导航器管理。
+ * 窗格布局随窗口尺寸类别变化，页面不再手工测量宽度或维护独立 breakpoint。
  *
  * ## 窄栏回落
  *
- * 面板被挤到 < 840dp（用户把窗口拖小）时不再硬撑双栏 —— 320dp 的左栏加一个右栏
- * 会互相压住。此时回落成**单栏**：只出列表，点会话 push [ChatScreen] 整页。
+ * 紧凑窗口下回落成**单栏**：只出列表，点会话 push [ChatScreen] 整页。
  *
  * @param onChatOpenChanged 右栏是否已经打开了一个对话（= 屏幕底部多了一条固定输入栏）。
  *   宿主（`MainScreen`）据此让小播放器让位给输入栏 —— 桌面宽屏的对话在面板右栏里，
  *   `App.kt` 那个全局小播放器宿主看不到它。离开组合时会复位为 false。
  */
 @Composable
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
 fun MessagesPane(
     onChatOpenChanged: (Boolean) -> Unit = {},
 ) {
@@ -72,6 +75,7 @@ fun MessagesPane(
     val profile by AppModel.userProfileFlow.collectAsState()
     val loggedIn = profile != null
     val activeProvider by AppModel.activeProviderFlow.collectAsState()
+    val availability = socialFeatureAvailability(activeProvider, SocialFeature.Inbox)
     val providerId = activeProvider?.id ?: AppModel.activeProviderId()
     val sourceGeneration by AppModel.sourceGeneration.collectAsState()
     val sessionKey = MessagesSessionKey(providerId, sourceGeneration, profile?.uid)
@@ -82,7 +86,8 @@ fun MessagesPane(
     // 当前选中的会话。刻意**不自动选第一个**：进消息面板先看到一句「选择左侧会话」，
     // 比替用户决定看谁的私信更合适（也和设置页宽屏一致）。
     var selected by remember { mutableStateOf<Contact?>(null) }
-    val visibleSelected = if (model.isCurrentSession(sessionKey)) selected else null
+    val visibleSelected = if (availability == SocialAvailability.Available && loggedIn &&
+        model.isCurrentSession(sessionKey)) selected else null
 
     // 右栏一旦有对话就给宿主发「让位」信号（见 onChatOpenChanged 的 KDoc）。
     LaunchedEffect(visibleSelected) { onChatOpenChanged(visibleSelected != null) }
@@ -90,9 +95,9 @@ fun MessagesPane(
     // 否则离开消息面板之后小播放器会一直不出现。
     DisposableEffect(Unit) { onDispose { onChatOpenChanged(false) } }
 
-    LaunchedEffect(sessionKey) {
+    LaunchedEffect(sessionKey, availability) {
         selected = null
-        if (loggedIn) {
+        if (loggedIn && availability == SocialAvailability.Available) {
             model.load(strings = strings, sessionKey = sessionKey)
             AppModel.refreshUnreadMessages()
         } else {
@@ -106,64 +111,51 @@ fun MessagesPane(
     )
     MessageNotifyGuideSheet(visible = guideVisible, onDismiss = dismissGuide)
 
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val wide = CpBreakpoints.isExpanded(maxWidth)
-
-        val openContact: (Contact) -> Unit = { contact ->
+    val adaptiveNavigator = rememberListDetailPaneScaffoldNavigator<Unit>()
+    val openContact: (Contact, Boolean) -> Unit = { contact, detailVisible ->
             // 本地标已读 + 上报服务端。服务端失败静默：用户已经在看这个会话了，
             // 为此弹一条报错只是噪音（与 [MessagesScreen] 同一取舍）。
             model.markReadLocally(contact.userId)
             scope.launch { AppModel.socialRepository.markRead(contact.userId) }
             AppModel.refreshUnreadMessages()
-            if (wide) selected = contact else navigator.push(AppRoute.Chat(contact.userId, contact.nickname))
-        }
+            if (detailVisible) selected = contact
+            else navigator.push(AppRoute.Chat(contact.userId, contact.nickname))
+    }
 
-        val list: @Composable (Modifier) -> Unit = { listModifier ->
+    CpAdaptiveListDetailScaffold(
+        navigator = adaptiveNavigator,
+        listPane = { detailVisible ->
             ContactList(
                 loggedIn = loggedIn,
+                availability = availability,
                 state = state,
                 selectedUserId = visibleSelected?.userId,
-                onOpenContact = openContact,
+                onOpenContact = { contact -> openContact(contact, detailVisible) },
                 onSetNotify = { uid, enabled -> model.setNotifySubscribed(uid, enabled) },
                 onRetry = { model.load(strings = strings, sessionKey = sessionKey) },
-                modifier = listModifier,
+                modifier = Modifier.fillMaxSize(),
             )
-        }
-
-        if (!wide) {
-            // 窄栏：只出列表。外壳由窗口 chrome 承担（标题 = DesktopShell.pageTitle）。
-            list(Modifier.fillMaxSize())
-            return@BoxWithConstraints
-        }
-
-        CpTwoPane(
-            rail = { railModifier ->
-                list(railModifier)
-            },
-            detail = {
-                val contact = visibleSelected
-                if (contact == null) {
-                    ContentState(
-                        title = strings.social.messages.selectConversation,
-                        message = strings.social.messages.selectConversationNote,
-                        modifier = Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
-                    )
-                } else {
-                    // ⚠️ 判据是「contact == null」而不是「列表里还有没有人」：右栏是
-                    // **第二个组合位置**，左栏刷新期间它不该跟着闪空态。
-                    ChatContent(
-                        peerUid = contact.userId,
-                        peerName = contact.nickname,
-                        model = chatModel,
-                        onBack = { selected = null },
-                        embedded = true,
-                        // 左栏还列着别的会话，此刻清掉总角标等于撒谎 —— 见该参数的 KDoc。
-                        clearGlobalUnread = false,
-                    )
-                }
-            },
-        )
-    }
+        },
+        detailPane = {
+            val contact = visibleSelected
+            if (contact == null) {
+                ContentState(
+                    title = strings.social.messages.selectConversation,
+                    message = strings.social.messages.selectConversationNote,
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp),
+                )
+            } else {
+                ChatContent(
+                    peerUid = contact.userId,
+                    peerName = contact.nickname,
+                    model = chatModel,
+                    onBack = { selected = null },
+                    embedded = true,
+                    clearGlobalUnread = false,
+                )
+            }
+        },
+    )
 }
 
 /**
@@ -175,6 +167,7 @@ fun MessagesPane(
 @Composable
 private fun ContactList(
     loggedIn: Boolean,
+    availability: SocialAvailability,
     state: MessagesUiState,
     selectedUserId: Long?,
     onOpenContact: (Contact) -> Unit,
@@ -187,6 +180,12 @@ private fun ContactList(
     val s = cpStrings()
     val messages = s.social.messages
     when {
+        availability != SocialAvailability.Available || state.unsupported -> ContentState(
+            title = (if (availability == SocialAvailability.Available) SocialAvailability.Unsupported
+                else availability).statusText("会话列表"),
+            loading = availability == SocialAvailability.Loading,
+            modifier = modifier.padding(top = 24.dp),
+        )
         !loggedIn -> ContentState(
             title = messages.loginRequired,
             message = messages.accountBound,
@@ -208,7 +207,7 @@ private fun ContactList(
             item { CpContactListSkeleton(rows = 8) }
         }
         state.contacts.isEmpty() -> ContentState(
-            title = messages.empty,
+            title = if (state.error != null) messages.loadFailed else messages.empty,
             message = state.error ?: messages.emptyHint,
             error = state.error != null,
             actionLabel = if (state.error != null) s.player.retry else null,

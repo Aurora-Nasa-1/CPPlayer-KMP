@@ -107,7 +107,10 @@ import cp.player.core.music.COMMENT_MAX_LENGTH
 import cp.player.core.music.Comment
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.commentCodePointLength
-import cp.player.core.provider.ProviderCapability
+import cp.player.app.presentation.SocialAvailability
+import cp.player.app.presentation.SocialFeature
+import cp.player.app.ui.navigation.statusText
+import cp.player.app.ui.navigation.socialFeatureAvailability
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -137,17 +140,21 @@ class DynamicScreen(
         val isRoutePage = navigator.currentKey == key
         val provider by AppModel.activeProviderFlow.collectAsState()
         val providerId = provider?.id ?: AppModel.activeProviderId()
-        val activeProvider = provider
-        val supportsFeed = activeProvider != null &&
-            activeProvider.isFeatureAvailable(ProviderCapability.SOCIAL_FEED)
+        val following = socialFeatureAvailability(provider, SocialFeature.Feed)
+        val userFeed = socialFeatureAvailability(provider, SocialFeature.UserFeed)
+        val availability = if (state.filter is DynamicFilter.User ||
+            (!state.initialized && !userId.isNullOrBlank())) userFeed else following
         val profile by AppModel.userProfileFlow.collectAsState()
         val selfId = profile?.uid?.toString().orEmpty()
         val scope = rememberCoroutineScope()
 
-        LaunchedEffect(userId) {
+        LaunchedEffect(userId, provider, following, userFeed, selfId) {
             if (!userId.isNullOrBlank()) {
-                model.setFilter(DynamicFilter.User(userId, userName ?: "TA 的动态"))
-            } else {
+                if (userFeed == SocialAvailability.Available) {
+                    model.setFilter(DynamicFilter.User(userId, userName ?: "TA 的动态"))
+                    model.ensureLoaded()
+                }
+            } else if (following == SocialAvailability.Available && selfId.isNotBlank()) {
                 model.ensureLoaded()
             }
         }
@@ -159,7 +166,11 @@ class DynamicScreen(
         val body: @Composable (Modifier) -> Unit = { modifier ->
             DynamicContent(
                 state = state,
-                supportsFeed = supportsFeed,
+                supportsFeed = availability == SocialAvailability.Available,
+                availability = availability,
+                supportsFollowing = following == SocialAvailability.Available,
+                supportsUserFeed = userFeed == SocialAvailability.Available,
+                requiresLogin = userId.isNullOrBlank() && selfId.isBlank(),
                 selfId = selfId,
                 modifier = modifier,
                 onRefresh = model::refresh,
@@ -236,6 +247,10 @@ class DynamicScreen(
 internal fun DynamicContent(
     state: DynamicUiState,
     supportsFeed: Boolean,
+    availability: SocialAvailability = if (supportsFeed) SocialAvailability.Available else SocialAvailability.Unsupported,
+    supportsFollowing: Boolean = supportsFeed,
+    supportsUserFeed: Boolean = supportsFeed,
+    requiresLogin: Boolean = false,
     selfId: String,
     modifier: Modifier,
     onRefresh: () -> Unit,
@@ -271,10 +286,12 @@ internal fun DynamicContent(
                     subtitle = "关注的人与自己的最新分享",
                     modifier = Modifier.padding(bottom = 8.dp),
                     action = {
-                        FilledTonalButton(onClick = onRefresh) {
-                            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            CpText("刷新")
+                        if (supportsFeed && !state.unsupported && !requiresLogin) {
+                            FilledTonalButton(onClick = onRefresh) {
+                                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                CpText("刷新")
+                            }
                         }
                     },
                 )
@@ -292,13 +309,14 @@ internal fun DynamicContent(
                         onCheckedChange = { if (it) onSelectFollowing() },
                         label = "关注",
                         icon = Icons.Filled.DynamicFeed,
+                        enabled = supportsFollowing && !requiresLogin,
                     )
                     CpToggleChip(
                         checked = userFilter != null,
                         onCheckedChange = { if (it) onSelectOwn() },
                         label = if (viewingOtherUser) "TA 的动态" else "我的动态",
                         icon = Icons.Filled.Person,
-                        enabled = selfId.isNotBlank(),
+                        enabled = supportsUserFeed && selfId.isNotBlank(),
                     )
                     Spacer(Modifier.weight(1f))
                     if (state.posts.isNotEmpty()) {
@@ -312,13 +330,22 @@ internal fun DynamicContent(
             }
 
             when {
+                availability == SocialAvailability.Loading -> item {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        repeat(3) { DynamicSkeletonCard() }
+                    }
+                }
                 !supportsFeed -> item {
                     StateSurface(Modifier.padding(top = 12.dp)) {
                         ContentState(
-                            title = "当前音源不支持动态",
-                            message = "动态需要音源声明 social.events 能力；切换音源后这里会自动刷新。",
+                            title = availability.statusText("此动态列表"),
                             modifier = Modifier.padding(vertical = 12.dp),
                         )
+                    }
+                }
+                requiresLogin -> item {
+                    StateSurface {
+                        ContentState(title = "登录后查看动态")
                     }
                 }
                 state.unsupported -> item {

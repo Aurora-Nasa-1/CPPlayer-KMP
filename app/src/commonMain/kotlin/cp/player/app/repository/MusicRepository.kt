@@ -10,6 +10,7 @@ import cp.player.core.music.BannerItem
 import cp.player.core.music.Comment
 import cp.player.core.music.CommentFloorPage
 import cp.player.core.music.CommentPage
+import cp.player.core.music.CPMediaId
 import cp.player.core.music.MusicResult
 import cp.player.core.music.PlaylistDetail
 import cp.player.core.music.PlaylistSummary
@@ -468,16 +469,37 @@ class MusicRepository(
         subMode: String = "",
         limit: Int = 3,
     ): MusicResult<List<TrackSummary>> {
-        return unifiedSource?.getPersonalFmMode(mode, subMode, limit)
-            ?: BackendResult.Unsupported("Unified music source is not configured")
+        val source = unifiedSource
+            ?: return BackendResult.Unsupported("Unified music source is not configured")
+        val result = source.getPersonalFmMode(mode, subMode, limit)
+        return if (result is BackendResult.Unsupported && mode == "DEFAULT" && subMode.isEmpty()) {
+            when (val fallback = source.getPersonalFm()) {
+                is BackendResult.Success -> BackendResult.Success(fallback.data.take(limit))
+                is BackendResult.Error -> fallback
+                is BackendResult.Unsupported -> fallback
+            }
+        } else {
+            result
+        }
     }
 
-    suspend fun getPersonalFmBatch(targetSize: Int = 18, maxRequests: Int = 8): MusicResult<List<TrackSummary>> {
+    suspend fun getPersonalFmBatch(
+        targetSize: Int = 18,
+        maxRequests: Int = 8,
+        mode: String = "DEFAULT",
+        subMode: String = "",
+        excludedIds: Set<String> = emptySet(),
+    ): MusicResult<List<TrackSummary>> {
+        require(targetSize > 0)
+        val seen = excludedIds.mapTo(mutableSetOf(), CPMediaId::toRawResourceId)
+        val session = readCacheKey("personal-fm")
         val merged = mutableListOf<TrackSummary>()
         repeat(maxRequests.coerceAtLeast(1)) {
-            when (val page = getPersonalFm()) {
+            val page = getPersonalFmMode(mode, subMode, limit = minOf(3, targetSize - merged.size))
+            if (readCacheKey("personal-fm") != session) return BackendResult.Error("Personal FM session changed")
+            when (page) {
                 is BackendResult.Success -> {
-                    val newItems = page.data.filter { candidate -> merged.none { it.id == candidate.id } }
+                    val newItems = page.data.filter { seen.add(CPMediaId.toRawResourceId(it.id)) }
                     merged += newItems
                     if (merged.size >= targetSize) return BackendResult.Success(merged.take(targetSize))
                     if (page.data.isEmpty()) return BackendResult.Success(merged)
@@ -495,6 +517,12 @@ class MusicRepository(
         MusicReadCaches.tracks, "home:daily", shouldCache = { it.isNotEmpty() }, onRefresh = onRefresh,
     ) {
         unifiedSource?.getRecommendedSongs() ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
+
+    suspend fun refreshDailyRecommendations(byStyle: Boolean): MusicResult<List<TrackSummary>> {
+        val source = unifiedSource
+            ?: return BackendResult.Unsupported("Unified music source is not configured")
+        return if (byStyle) source.getDailyStyleRecommendations() else source.getRecommendedSongs()
     }
 
     suspend fun getRecommendedPlaylists(

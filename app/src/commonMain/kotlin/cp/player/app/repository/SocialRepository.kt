@@ -52,7 +52,10 @@ internal fun cp.player.sdk.PrivateMessage.toMessage(myUid: Long): Message? {
  * 保留 [Contact] / [Message] 这两个展示模型不动：私信只在 app 侧被消费，
  * 没必要把 SDK 的 `SocialUser` / `PrivateMessage` 直接漏进 UI 层。
  */
-class SocialRepository(private val source: UnifiedMusicSource) {
+class SocialRepository(
+    private val source: UnifiedMusicSource,
+    private val onUnsupported: (String) -> Unit = {},
+) {
 
     /** 未读私信数。取不到时返回 0 —— 角标不该让整页变错误态。 */
     suspend fun getUnreadCount(): Int {
@@ -74,16 +77,21 @@ class SocialRepository(private val source: UnifiedMusicSource) {
      */
     suspend fun getContacts(): MusicResult<List<Contact>> {
         val conversations = source.getPrivateMessages(CursorRequest())
+        if (conversations is BackendResult.Unsupported) onUnsupported(cp.player.sdk.ExtendedCapability.GETPRIVATEMESSAGES)
         if (conversations is BackendResult.Success && conversations.data.items.isNotEmpty()) {
             return BackendResult.Success(conversations.data.items.mapNotNull { it.toContact() })
         }
         val recent = source.getRecentContacts(PageRequest())
+        if (recent is BackendResult.Unsupported) onUnsupported(cp.player.sdk.ExtendedCapability.GETRECENTCONTACTS)
         if (recent is BackendResult.Success) {
             return BackendResult.Success(recent.data.items.mapNotNull { it.toContact() })
         }
-        // 两条路都失败：交回主路径（会话列表）的失败原因。
-        return conversations.failureOrUnsupported<List<Contact>>()
-            ?: BackendResult.Unsupported("messages are not supported")
+        if (conversations is BackendResult.Success) return BackendResult.Success(emptyList())
+        // An implemented fallback can fail transiently even when the primary operation is absent.
+        if (conversations is BackendResult.Unsupported && recent is BackendResult.Error) {
+            return BackendResult.Error(recent.message, recent.code, recent.cause)
+        }
+        return checkNotNull(conversations.failureOrUnsupported())
     }
 
     /** 与某个用户的私信历史（按时间正序，最新的在最后）。 */
@@ -116,6 +124,7 @@ class SocialRepository(private val source: UnifiedMusicSource) {
      */
     suspend fun getFeed(limit: Int = 20, cursor: String? = null): MusicResult<DynamicPage> {
         val result = source.getEvents(EventPageRequest(limit = limit, cursor = cursor))
+        if (result is BackendResult.Unsupported) onUnsupported(cp.player.sdk.ExtendedCapability.GETEVENTS)
         return result.mapPage()
     }
 

@@ -3,6 +3,9 @@ package cp.player.app.presentation.dynamic
 import cp.player.app.AppModel
 import cp.player.app.model.DynamicPost
 import cp.player.app.presentation.UiPresenter
+import cp.player.app.presentation.SocialAvailability
+import cp.player.app.presentation.SocialFeature
+import cp.player.core.provider.BackendProvider
 import cp.player.app.repository.DynamicPage
 import cp.player.core.BackendResult
 import cp.player.core.music.Comment
@@ -13,7 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -82,7 +85,7 @@ interface DynamicContract : UiPresenter<DynamicUiState> {
  *   不把「关注流」说成上游没有承诺的东西：`getEvents` 的语义就是「当前账号的社交流」；
  * - 音源能力缺失（Unsupported）与网络失败（Error）在 UI 上是两种页面，
  *   前者不给「重试」按钮，因为重试永远不会成功；
- * - 登录态变化 / 切换音源都会作废旧结果（`drop(1)` 跳过启动恢复的那次发射）；
+ * - 登录态变化 / 切换音源都会作废旧结果；
  * - 点赞先乐观更新，失败再回滚并提示，避免每次点赞都等一个来回。
  */
 class DynamicPresenter(
@@ -94,20 +97,41 @@ class DynamicPresenter(
 
     private var loadJob: Job? = null
     private var loadGen = 0
+    private data class Session(val provider: BackendProvider?, val generation: Int, val uid: Long?)
+    private fun currentSession() = Session(
+        AppModel.activeProviderFlow.value, AppModel.sourceGeneration.value, AppModel.userProfileFlow.value?.uid,
+    )
+    private var session = currentSession()
 
     init {
-        // 不在 init 里发请求：本页既是常驻 tab、又是可 push 的路由页，
-        // 真正的首次加载由 `ensureLoaded()` 在进入组合时触发。
         scope.launch {
-            AppModel.accountGeneration.drop(1).collect { refresh() }
+            combine(AppModel.activeProviderFlow, AppModel.sourceGeneration, AppModel.userProfileFlow) { _, _, _ -> Unit }
+                .collect {
+                    val wasLoaded = _state.value.initialized || loadJob?.isActive == true
+                    if (syncSession() && wasLoaded) refresh()
+                }
         }
-        scope.launch {
-            AppModel.sourceGeneration.drop(1).collect { refresh() }
-        }
+    }
+
+    private fun syncSession(): Boolean {
+        val next = currentSession()
+        if (session == next) return false
+        val previous = session
+        session = next
+        ++loadGen
+        loadJob?.cancel()
+        val filter = _state.value.filter
+        _state.value = DynamicUiState(
+            filter = if (next.provider !== previous.provider || next.generation != previous.generation ||
+                (filter is DynamicFilter.User && filter.userId == previous.uid?.toString())
+            ) DynamicFilter.Following else filter,
+        )
+        return true
     }
 
     /** 切到关注流 / 指定用户。 */
     override fun setFilter(filter: DynamicFilter) {
+        syncSession()
         if (_state.value.filter == filter) return
         _state.update {
             it.copy(
@@ -125,6 +149,7 @@ class DynamicPresenter(
 
     /** 首次进入 tab 时懒加载：已加载过（含空态 / 不支持态）就不再自动重打。 */
     override fun ensureLoaded() {
+        syncSession()
         val s = _state.value
         if (s.loading || s.refreshing || s.posts.isNotEmpty() || s.unsupported) return
         if (s.error != null) return
@@ -133,9 +158,15 @@ class DynamicPresenter(
 
     /** 下拉刷新 / 首屏加载。已有数据时保持列表可见，只置 [DynamicUiState.refreshing]。 */
     override fun refresh() {
+        syncSession()
         loadJob?.cancel()
         val gen = ++loadGen
         val current = _state.value
+        val requestSession = session
+        val feature = if (current.filter is DynamicFilter.User) SocialFeature.UserFeed else SocialFeature.Feed
+        if (AppModel.socialAvailability(feature) != SocialAvailability.Available ||
+            (current.filter is DynamicFilter.Following && requestSession.uid == null)
+        ) return
         loadJob = scope.launch {
             val silent = current.posts.isNotEmpty()
             _state.update {
@@ -148,7 +179,7 @@ class DynamicPresenter(
                 )
             }
             val result = fetchPage(current.filter, cursor = null)
-            if (gen != loadGen) return@launch
+            if (gen != loadGen || requestSession != currentSession()) return@launch
             when (result) {
                 is BackendResult.Success -> {
                     val page = result.data
@@ -191,14 +222,19 @@ class DynamicPresenter(
 
     /** 触底加载下一页。没有游标 / 没有更多 / 已在加载时直接返回。 */
     override fun loadMore() {
+        if (syncSession()) {
+            refresh()
+            return
+        }
         val s = _state.value
         if (s.loading || s.refreshing || s.loadingMore || !s.hasMore) return
         val cursor = s.cursor ?: return
         val gen = loadGen
+        val requestSession = session
         _state.update { it.copy(loadingMore = true) }
         scope.launch {
             val result = fetchPage(s.filter, cursor = cursor)
-            if (gen != loadGen) return@launch
+            if (gen != loadGen || requestSession != currentSession()) return@launch
             when (result) {
                 is BackendResult.Success -> {
                     val page = result.data
@@ -212,7 +248,7 @@ class DynamicPresenter(
                     }
                 }
                 is BackendResult.Unsupported -> _state.update {
-                    it.copy(loadingMore = false, unsupported = true, hasMore = false)
+                    it.copy(loadingMore = false, hasMore = false)
                 }
                 is BackendResult.Error -> _state.update {
                     it.copy(loadingMore = false, error = result.message)
