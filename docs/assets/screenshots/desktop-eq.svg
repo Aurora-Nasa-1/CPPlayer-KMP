@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" width="1200" height="560" font-family="system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <defs>
+    <linearGradient id="ebg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#12121C"/>
+      <stop offset="1" stop-color="#0D0D16"/>
+    </linearGradient>
+    <linearGradient id="ebrand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7C6BF2"/>
+      <stop offset="1" stop-color="#3E86DE"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8A7BF5"/>
+      <stop offset="1" stop-color="#4A90E2"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="560" rx="16" fill="url(#ebg)"/>
+  <rect x="0" y="0" width="230" height="560" fill="#14141F"/>
+  <line x1="230" y1="0" x2="230" y2="560" stroke="#232333"/>
+
+  <!-- sidebar -->
+  <rect x="24" y="24" width="32" height="32" rx="9" fill="url(#ebrand)"/>
+  <path d="M35 33 L49 41 L35 49 Z" fill="#fff"/>
+  <text x="66" y="46" fill="#F2F2F7" font-size="17" font-weight="700">CPPlayer</text>
+  <g font-size="14" fill="#7A7A90">
+    <text x="54" y="120">播放与音质</text>
+    <rect x="14" y="146" width="182" height="40" rx="9" fill="#202034"/>
+    <rect x="14" y="146" width="3" height="40" rx="1.5" fill="url(#ebrand)"/>
+    <text x="54" y="172" fill="#F2F2F7" font-weight="600">音效</text>
+    <text x="54" y="228">歌词</text>
+    <text x="54" y="274">导航入口</text>
+    <text x="54" y="320">快捷键</text>
+    <text x="54" y="366">外部访问</text>
+    <text x="54" y="412">下载与存储</text>
+  </g>
+
+  <!-- header -->
+  <text x="266" y="58" fill="#F2F2F7" font-size="22" font-weight="700">音效</text>
+  <text x="266" y="84" fill="#8A8AA0" font-size="13">10 频段参数均衡器 · 实时预览，所见即所闻</text>
+
+  <!-- presets -->
+  <text x="266" y="132" fill="#B9B9CC" font-size="13" font-weight="600">风格预设</text>
+  <g font-size="13">
+    <rect x="266" y="146" width="96" height="34" rx="17" fill="url(#ebrand)"/><text x="298" y="168" fill="#fff" font-weight="600">自定义</text>
+    <rect x="374" y="146" width="82" height="34" rx="17" fill="#1C1C2A" stroke="#333348"/><text x="396" y="168" fill="#B9B9CC">流行</text>
+    <rect x="468" y="146" width="82" height="34" rx="17" fill="#1C1C2A" stroke="#333348"/><text x="490" y="168" fill="#B9B9CC">摇滚</text>
+    <rect x="562" y="146" width="82" height="34" rx="17" fill="#1C1C2A" stroke="#333348"/><text x="584" y="168" fill="#B9B9CC">爵士</text>
+    <rect x="656" y="146" width="82" height="34" rx="17" fill="#1C1C2A" stroke="#333348"/><text x="678" y="168" fill="#B9B9CC">古典</text>
+    <rect x="750" y="146" width="82" height="34" rx="17" fill="#1C1C2A" stroke="#333348"/><text x="772" y="168" fill="#B9B9CC">人声</text>
+  </g>
+
+  <!-- EQ panel -->
+  <rect x="266" y="206" width="880" height="248" rx="14" fill="#16161F" stroke="#262638"/>
+  <line x1="286" y1="330" x2="1126" y2="330" stroke="#2E2E40" stroke-dasharray="4 4"/>
+  <g font-size="11" fill="#6E6E86" text-anchor="middle">
+    <text x="286" y="298">+12</text>
+    <text x="286" y="346">0</text>
+    <text x="286" y="394">-12</text>
+  </g>
+
+  <!-- bars: center y=330, top=236(+12), bottom=424(-12) -->
+  <g text-anchor="middle">
+    <rect x="330" y="300" width="26" height="60" rx="6" fill="url(#bar)"/><text x="343" y="446" fill="#8A8AA0" font-size="11">31</text>
+    <rect x="404" y="284" width="26" height="92" rx="6" fill="url(#bar)"/><text x="417" y="446" fill="#8A8AA0" font-size="11">62</text>
+    <rect x="478" y="312" width="26" height="36" rx="6" fill="url(#bar)"/><text x="491" y="446" fill="#8A8AA0" font-size="11">125</text>
+    <rect x="552" y="326" width="26" height="8" rx="4" fill="url(#bar)"/><text x="565" y="446" fill="#8A8AA0" font-size="11">250</text>
+    <rect x="626" y="340" width="26" height="20" rx="6" fill="url(#bar)"/><text x="639" y="446" fill="#8A8AA0" font-size="11">500</text>
+    <rect x="700" y="318" width="26" height="24" rx="6" fill="url(#bar)"/><text x="713" y="446" fill="#8A8AA0" font-size="11">1k</text>
+    <rect x="774" y="296" width="26" height="68" rx="6" fill="url(#bar)"/><text x="787" y="446" fill="#8A8AA0" font-size="11">2k</text>
+    <rect x="848" y="288" width="26" height="84" rx="6" fill="url(#bar)"/><text x="861" y="446" fill="#8A8AA0" font-size="11">4k</text>
+    <rect x="922" y="308" width="26" height="44" rx="6" fill="url(#bar)"/><text x="935" y="446" fill="#8A8AA0" font-size="11">8k</text>
+    <rect x="996" y="322" width="26" height="16" rx="6" fill="url(#bar)"/><text x="1009" y="446" fill="#8A8AA0" font-size="11">16k</text>
+  </g>
+  <g fill="#C9B8FF">
+    <circle cx="356" cy="306" r="7"/><circle cx="430" cy="288" r="7"/><circle cx="504" cy="316" r="7"/><circle cx="578" cy="330" r="7"/><circle cx="652" cy="344" r="7"/>
+    <circle cx="726" cy="322" r="7"/><circle cx="800" cy="300" r="7"/><circle cx="874" cy="292" r="7"/><circle cx="948" cy="312" r="7"/><circle cx="1022" cy="326" r="7"/>
+  </g>
+
+  <!-- toggles -->
+  <g font-size="13">
+    <text x="266" y="490" fill="#B9B9CC">响度归一化</text>
+    <rect x="760" y="473" width="44" height="24" rx="12" fill="url(#ebrand)"/><circle cx="792" cy="485" r="9" fill="#fff"/>
+    <text x="266" y="526" fill="#B9B9CC">防爆音削顶 · 声道平衡</text>
+    <rect x="760" y="509" width="44" height="24" rx="12" fill="url(#ebrand)"/><circle cx="792" cy="521" r="9" fill="#fff"/>
+  </g>
+
+  <!-- placeholder tag -->
+  <rect x="1004" y="14" width="166" height="30" rx="15" fill="#0E0E17" fill-opacity="0.9" stroke="#3A3A50"/>
+  <circle cx="1022" cy="29" r="4" fill="url(#ebrand)"/>
+  <text x="1034" y="33" fill="#C9C9D6" font-size="12">界面示意 · 待替换</text>
+</svg>

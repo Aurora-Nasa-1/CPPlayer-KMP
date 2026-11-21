@@ -156,7 +156,6 @@ androidx-media3-datasource = { group = "androidx.media3", name = "media3-datasou
 androidx-media3-datasource-okhttp = { group = "androidx.media3", name = "media3-datasource-okhttp", version.ref = "media3" }
 androidx-media3-database = { group = "androidx.media3", name = "media3-database", version.ref = "media3" }
 androidx-media-compat = { module = "androidx.media:media", version = "1.7.0" }
-composemediaplayer-audio = { module = "io.github.kdroidfilter:composemediaplayer-audio", version = "0.11.4" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 quickjs = { module = "io.github.dokar3:quickjs-kt", version.ref = "quickjs" }
@@ -189,6 +188,7 @@ composenativetray = { module = "dev.nucleusframework:composenativetray", version
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

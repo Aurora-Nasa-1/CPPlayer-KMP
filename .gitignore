@@ -39,10 +39,12 @@ local.properties
 # --- Build artifacts / diagnostics ---------------------------------------
 *.so
 *.hprof
+*.jfr
 *.aot
 *.aotconf
 *.jsa
 dist-jbr/
+.release-cache/
 
 # --- Read-only reference checkouts (not part of the Gradle build) --------
 # Legacy Android project: a plain local checkout, excluded on purpose.
