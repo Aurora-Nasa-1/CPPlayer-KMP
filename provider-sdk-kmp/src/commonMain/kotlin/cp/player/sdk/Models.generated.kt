@@ -802,6 +802,39 @@ data class RecommendationsRequest(
     }
 }
 
+/** A bounded personal-radio request. mode and subMode are provider-defined selectors; limit is the maximum number of tracks. */
+data class FmModeRequest(
+    /** Provider-specific recommendation mode; daily is the compatibility default and dailyStyle selects the newer style-based daily feed. */
+    val mode: String = "DEFAULT",
+    /** Optional provider-specific sub-mode for recommendation or personal-radio requests. */
+    val subMode: String = "",
+    /** Requested item bound, 1..500; a response must not exceed it. */
+    val limit: Int = 3,
+) {
+    fun write(w: WireWriter) { with(w) {
+        string(this@FmModeRequest.mode)
+        string(this@FmModeRequest.subMode)
+        int(this@FmModeRequest.limit)
+    } }
+    fun values(): Map<String, Any?> = mapOf(
+        "mode" to mode,
+        "subMode" to subMode,
+        "limit" to limit,
+    )
+    companion object {
+        fun read(r: WireReader): FmModeRequest = with(r) { FmModeRequest(
+            string(),
+            string(),
+            int(),
+        ) }
+        fun fromValues(v: Map<String, Any?>): FmModeRequest = FmModeRequest(
+            valueString(v["mode"]),
+            valueString(v["subMode"]),
+            valueInt(v["limit"]),
+        )
+    }
+}
+
 /** Playlist category and order selectors with a bounded selection size. */
 data class PlaylistBrowseRequest(
     /** Provider-supported category selector. */
@@ -5863,6 +5896,7 @@ object ProviderProtocol {
     const val POSTCOMMENT = 50
     const val LIKECOMMENT = 51
     const val GETPERSONALFM = 52
+    const val GETPERSONALFMMODE = 170
     const val GETSIMILARSONGS = 53
     const val GETINTELLIGENCESONGS = 54
     const val SUBSCRIBEALBUM = 55

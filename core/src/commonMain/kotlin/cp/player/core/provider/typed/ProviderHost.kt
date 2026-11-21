@@ -430,6 +430,17 @@ class ProviderHost(
         }
     }
 
+    suspend fun getPersonalFmMode(request: FmModeRequest): TrackPage {
+        require(request.limit in 1..MAX_ITEMS)
+        return call {
+            requireCapability(Capability.PERSONAL_FM_MODE)
+            adapter.getPersonalFmMode(request).also {
+                validatePage(it.items, request.limit, it.total, ::validateTrack)
+                it.write(WireWriter())
+            }
+        }
+    }
+
     suspend fun getSimilarSongs(request: SimilarSongsRequest): TrackPage {
         validateId(request.id)
         require(request.limit in 1..MAX_ITEMS)

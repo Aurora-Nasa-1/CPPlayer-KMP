@@ -29,6 +29,7 @@ import cp.player.app.ui.screen.LyricsPluginSettingsScreen
 import cp.player.app.ui.screen.MessagesScreen
 import cp.player.app.ui.screen.MobilePlayerSettingsScreen
 import cp.player.app.ui.screen.PlayerScreen
+import cp.player.app.ui.screen.PersonalFmScreen
 import cp.player.app.ui.screen.PlaylistDetailScreen
 import cp.player.app.ui.screen.PluginHubScreen
 import cp.player.app.ui.screen.PluginRepositoryScreen
@@ -154,6 +155,7 @@ fun AppRoute.toVoyagerScreen(): Screen = when (this) {
     AppRoute.Account -> AccountScreen()
     AppRoute.Messages -> MessagesScreen()
     AppRoute.Player -> PlayerScreen()
+    AppRoute.PersonalFm -> PersonalFmScreen()
     is AppRoute.Comment -> CommentScreen(resourceId, resourceType)
 }
 

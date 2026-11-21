@@ -18,7 +18,8 @@ export default {
     "AlbumChartRequest": { "area": "ALL", "kind": "new", "limit": 50, "offset": 0 },
     "UserCursorRequest": { "limit": 30 },
     "DjRankingRequest": { "kind": "new", "limit": 30, "offset": 0 },
-    "RecommendationsRequest": { "limit": 30, "mode": "daily" }
+    "RecommendationsRequest": { "limit": 30, "mode": "daily" },
+    "FmModeRequest": { "mode": "DEFAULT", "subMode": "", "limit": 3 }
   },
   "records": {
     "Artist": { "id": "string?", "name": "string" },
@@ -46,6 +47,7 @@ export default {
     "StorageValue": { "value": "bytes?" },
     "PagedIdRequest": { "id": "string", "limit": "int", "offset": "int" },
     "RecommendationsRequest": { "limit": "int", "mode": "string" },
+    "FmModeRequest": { "mode": "string", "subMode": "string", "limit": "int" },
     "PlaylistBrowseRequest": { "category": "string", "limit": "int", "order": "string" },
     "AlbumBrowseRequest": { "area": "string", "limit": "int" },
     "TopSongsRequest": { "limit": "int", "region": "int" },
@@ -237,6 +239,7 @@ export default {
     "postComment": { "tag": 50, "request": "PostCommentRequest", "response": "CreatedComment", "group": "Comments", "capability": "comments.post" },
     "likeComment": { "tag": 51, "request": "CommentLikeRequest", "response": "MutationResult", "group": "Comments", "capability": "comments.like" },
     "getPersonalFm": { "tag": 52, "request": "Bytes", "response": "TrackPage", "group": "Recommendations", "capability": "recommendations.personalFm" },
+    "getPersonalFmMode": { "tag": 170, "request": "FmModeRequest", "response": "TrackPage", "group": "Recommendations", "capability": "recommendations.personalFmMode" },
     "getSimilarSongs": { "tag": 53, "request": "SimilarSongsRequest", "response": "TrackPage", "group": "Recommendations", "capability": "recommendations.similarSongs" },
     "getIntelligenceSongs": { "tag": 54, "request": "IntelligenceSongsRequest", "response": "TrackPage", "group": "Recommendations", "capability": "recommendations.intelligenceSongs" },
     "subscribeAlbum": { "tag": 55, "request": "AlbumSubscribeRequest", "response": "MutationResult", "group": "AlbumMutations", "capability": "albums.subscribe" },

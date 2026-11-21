@@ -224,6 +224,8 @@ class JsSdkProvider(
         business("likeComment", request.values(), MutationResult::fromValues)
     override suspend fun getPersonalFm(request: Bytes): TrackPage =
         business("getPersonalFm", request.values(), TrackPage::fromValues)
+    override suspend fun getPersonalFmMode(request: FmModeRequest): TrackPage =
+        business("getPersonalFmMode", request.values(), TrackPage::fromValues)
     override suspend fun getSimilarSongs(request: SimilarSongsRequest): TrackPage =
         business("getSimilarSongs", request.values(), TrackPage::fromValues)
     override suspend fun getIntelligenceSongs(request: IntelligenceSongsRequest): TrackPage =

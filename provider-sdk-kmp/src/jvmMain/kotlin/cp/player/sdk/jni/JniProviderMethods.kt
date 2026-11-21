@@ -101,6 +101,8 @@ abstract class JniProviderMethods : ExtendedJniProviderMethods() {
         dispatch(ProviderProtocol.LIKECOMMENT, request) as MutationResult
     override suspend fun getPersonalFm(request: Bytes): TrackPage =
         dispatch(ProviderProtocol.GETPERSONALFM, request) as TrackPage
+    override suspend fun getPersonalFmMode(request: FmModeRequest): TrackPage =
+        dispatch(ProviderProtocol.GETPERSONALFMMODE, request) as TrackPage
     override suspend fun getSimilarSongs(request: SimilarSongsRequest): TrackPage =
         dispatch(ProviderProtocol.GETSIMILARSONGS, request) as TrackPage
     override suspend fun getIntelligenceSongs(request: IntelligenceSongsRequest): TrackPage =

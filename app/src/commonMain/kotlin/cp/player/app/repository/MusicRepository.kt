@@ -463,6 +463,15 @@ class MusicRepository(
             ?: BackendResult.Unsupported("Unified music source is not configured")
     }
 
+    suspend fun getPersonalFmMode(
+        mode: String = "DEFAULT",
+        subMode: String = "",
+        limit: Int = 3,
+    ): MusicResult<List<TrackSummary>> {
+        return unifiedSource?.getPersonalFmMode(mode, subMode, limit)
+            ?: BackendResult.Unsupported("Unified music source is not configured")
+    }
+
     suspend fun getPersonalFmBatch(targetSize: Int = 18, maxRequests: Int = 8): MusicResult<List<TrackSummary>> {
         val merged = mutableListOf<TrackSummary>()
         repeat(maxRequests.coerceAtLeast(1)) {

@@ -110,6 +110,12 @@ interface UnifiedMusicSource : ExtendedMusicSource {
     ): MusicResult<Boolean> = cp.player.core.BackendResult.Unsupported("Comment likes not supported")
     suspend fun getPersonalFm(): MusicResult<List<TrackSummary>> =
         cp.player.core.BackendResult.Unsupported("Personal FM not supported")
+    suspend fun getPersonalFmMode(
+        mode: String = "DEFAULT",
+        subMode: String = "",
+        limit: Int = 3,
+    ): MusicResult<List<TrackSummary>> =
+        cp.player.core.BackendResult.Unsupported("Personal FM modes not supported")
     suspend fun getSimilarSongs(mediaId: String, limit: Int = 30): MusicResult<List<TrackSummary>> =
         cp.player.core.BackendResult.Unsupported("Similar songs not supported")
     suspend fun getIntelligenceSongs(mediaId: String, playlistId: String, limit: Int = 30): MusicResult<List<TrackSummary>> =

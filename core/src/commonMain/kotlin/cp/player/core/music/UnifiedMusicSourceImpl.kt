@@ -419,6 +419,19 @@ class UnifiedMusicSourceImpl private constructor(
         BackendResult.Success(host.getPersonalFm().items.map { it.toDomain(host.context.session.providerId) })
     }
 
+    override suspend fun getPersonalFmMode(
+        mode: String,
+        subMode: String,
+        limit: Int,
+    ): MusicResult<List<TrackSummary>> = boundary("getPersonalFmMode") {
+        require(limit in 1..100)
+        val host = sdkHost() ?: return@boundary BackendResult.Error("No active SDK provider")
+        BackendResult.Success(
+            host.getPersonalFmMode(FmModeRequest(mode, subMode, limit)).items
+                .map { it.toDomain(host.context.session.providerId) },
+        )
+    }
+
     override suspend fun getSimilarSongs(mediaId: String, limit: Int): MusicResult<List<TrackSummary>> = boundary("getSimilarSongs") {
         require(limit in 1..MAX_ITEMS)
         val id = parse(mediaId)
