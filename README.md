@@ -17,7 +17,7 @@
 
 <div align="center">
 
-<img src="docs/assets/screenshots/desktop-home.svg" alt="CPPlayer 桌面端主界面" width="94%" />
+<img src="docs/assets/screenshots/desktop-home.png" alt="CPPlayer 桌面端主界面" width="94%" />
 
 <sub>桌面端主界面。当前文件为界面示意图。</sub>
 
@@ -34,16 +34,12 @@ CPPlayer 是一款支持 Android、Windows、macOS 和 Linux 的音乐播放器�
 <table>
   <tr>
     <td align="center" width="34%">
-      <img src="docs/assets/screenshots/desktop-player.svg" alt="桌面端全屏播放与逐字歌词" width="100%" />
+      <img src="docs/assets/screenshots/desktop-player.png" alt="桌面端全屏播放与逐字歌词" width="100%" />
       <br /><sub>桌面端播放界面与逐字歌词</sub>
     </td>
     <td align="center" width="30%">
-      <img src="docs/assets/screenshots/mobile-player.svg" alt="移动端播放界面" width="82%" />
+      <img src="docs/assets/screenshots/mobile-player.png" alt="移动端播放界面" width="82%" />
       <br /><sub>移动端播放界面</sub>
-    </td>
-    <td align="center" width="36%">
-      <img src="docs/assets/screenshots/desktop-eq.svg" alt="10 频段参数均衡器" width="100%" />
-      <br /><sub>10 频段参数均衡器</sub>
     </td>
   </tr>
 </table>
@@ -80,7 +76,7 @@ CPPlayer 不包含受版权保护的在线音源，在线内容由插件提供�
 ---
 
 <details>
-<summary><b>面向开发者与技术好奇者</b></summary>
+<summary><b>面向开发者</b></summary>
 
 <br />
 
