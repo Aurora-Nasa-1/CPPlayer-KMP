@@ -238,7 +238,7 @@ JVM 包的版本号走启动器 `app/CPPlayer.cfg` 里的 `-Dcp.player.*`；原�
 
 | 判据 | 期望 |
 |---|---|
-| `app/build/compose/tmp/main/graalvm/nativeCompile/native-image-args.txt` | 出现 `"--pgo=<绝对路径>"`，且没有 `--pgo-instrument`（插桩版只有 `-Ob`，不能发版） |
+| `app/build/compose/tmp/main/graalvm/nativeCompile/native-image-args.txt` | 出现 `"--pgo=<绝对路径>"`，且没有 `--pgo-instrument`（插桩版带 `--pgo-instrument`，不能发版） |
 | 构建日志 | 有 `PGO: applying recorded profile ...`；若出现 `PGO: recorded profile ... ignored`，说明工具链不是 Oracle GraalVM |
 
 `desktop-release.yml` 的 Windows job 把这两条做成硬断言：profile 被误删或构建退化成「ML 推断版发行包」，发行 job 直接变红。

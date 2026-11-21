@@ -8,6 +8,15 @@ on:
         type: boolean
         required: false
         default: false
+      optimization_level:
+        description: "Native Image 优化级别（默认 O2）"
+        type: choice
+        options:
+          - "O2"
+          - "Ob"
+          - "O1"
+          - "O3"
+        default: "O2"
 
 permissions:
   contents: write
@@ -68,7 +77,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew :app:packageGraalvmNative -Pnucleus.graalvm.pgo=instrument --no-daemon
+          ./gradlew :app:packageGraalvmNative \
+            -Pnucleus.graalvm.pgo=instrument \
+            -Pcp.graalvm.optimization="${{ github.event.inputs.optimization_level || 'O2' }}" \
+            --no-daemon
 
       - name: Package Instrumented ZIP
         shell: pwsh
@@ -76,6 +88,14 @@ jobs:
           $appDir = "app/build/compose/binaries/main/graalvm-app/CPPlayer"
           if (-not (Test-Path "$appDir/CPPlayer.exe")) {
             throw "CPPlayer.exe not found in $appDir"
+          }
+          if (Test-Path "app/native/rust_lib_flick_player.dll") {
+            Copy-Item "app/native/rust_lib_flick_player.dll" -Destination $appDir -Force
+            New-Item -ItemType Directory -Path "$appDir/native" -Force | Out-Null
+            Copy-Item "app/native/rust_lib_flick_player.dll" -Destination "$appDir/native" -Force
+            Write-Host "Ensured rust_lib_flick_player.dll is present in $appDir"
+          } else {
+            Write-Warning "app/native/rust_lib_flick_player.dll not found; FlickEngine will not be bundled."
           }
           $zipPath = "CPPlayer-win-x64-pgo-instrument.zip"
           Compress-Archive -Path "$appDir/*" -DestinationPath $zipPath -Force

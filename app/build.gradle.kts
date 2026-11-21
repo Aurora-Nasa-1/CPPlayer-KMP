@@ -806,7 +806,7 @@ nucleus {
             // Windows Native Image 使用 Serial；Windows 不支持 G1 Native Image collector。
             garbageCollector.set(NativeImageGarbageCollector.SERIAL)
             // instrumented 镜像只用于收集 PGO profile，不参与分发。
-            // 采用 Quick Build Mode (-Ob) 加快 instrumented 构建并降低编译内存占用；
+            // 默认采用 Level 2 (-O2) 优化；可通过 -Pcp.graalvm.optimization=... 覆盖。
             // 生产正式镜像仍使用 -O3。
             val pgoInstrumenting: Boolean =
                 (findProperty("nucleus.graalvm.pgo") as String?)?.equals("instrument", ignoreCase = true) == true ||
@@ -814,8 +814,21 @@ nucleus {
                         val name = it.substringAfterLast(':')
                         name == "runWithPgoInstrument" || name.endsWith("WithPgoInstrument")
                     }
-            if (pgoInstrumenting) {
-                optimization.set(dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.QUICK_BUILD)
+            val explicitOptimization = ((findProperty("cp.graalvm.optimization") ?: findProperty("nucleus.graalvm.optimization")) as String?)?.trim()
+            if (!explicitOptimization.isNullOrEmpty()) {
+                val opt = when (explicitOptimization.uppercase()) {
+                    "0", "O0", "NONE" -> dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.NONE
+                    "1", "O1", "LEVEL_1" -> dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.LEVEL_1
+                    "2", "O2", "LEVEL_2" -> dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.LEVEL_2
+                    "3", "O3", "LEVEL_3" -> dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.LEVEL_3
+                    "B", "OB", "QUICK", "QUICK_BUILD" -> dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.QUICK_BUILD
+                    "S", "OS", "SIZE" -> dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.SIZE
+                    else -> throw GradleException("未知的 Native Image 优化级别: '$explicitOptimization'，可选: O0, O1, O2, O3, Ob, Os")
+                }
+                optimization.set(opt)
+            } else if (pgoInstrumenting) {
+                // 插桩编译默认使用 Level 2 (-O2)
+                optimization.set(dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.LEVEL_2)
             } else {
                 // Oracle-only 最高优化级别；25.3.4.1 对符合条件的数组算术循环默认执行 SIMD 向量化。
                 optimization.set(dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.LEVEL_3)
@@ -1216,6 +1229,38 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
                 "没有它，应用内的 Velopack 更新源就不可用。"
         }
         logger.lifecycle("Velopack 产物：${setup.name}（${setup.length() / 1024 / 1024} MiB）in ${out.absolutePath}")
+    }
+}
+
+// 确保 packageGraalvmNative 产物包含预编译原生动态库（如 rust_lib_flick_player.dll），
+// 使得直接运行 graalvm-app 或打包 PGO 插桩 ZIP 时 FlickEngine 原生音频库就绪。
+tasks.matching { it.name == "packageGraalvmNative" }.configureEach {
+    doLast {
+        val graalvmAppDir = layout.buildDirectory.dir("compose/binaries/main/graalvm-app/$cpPackageName").get().asFile
+        if (graalvmAppDir.isDirectory) {
+            val nativeFiles = listOf(
+                project.file("native"),
+                rootProject.file("native"),
+            ).filter { it.isDirectory }
+                .flatMap { it.listFiles()?.filter { f -> f.isFile }?.toList() ?: emptyList() }
+                .associateBy { it.name }
+                .values
+
+            if (nativeFiles.isNotEmpty()) {
+                val targets = listOf(
+                    graalvmAppDir,
+                    graalvmAppDir.resolve("native"),
+                )
+                nativeFiles.forEach { f ->
+                    targets.forEach { targetDir ->
+                        targetDir.mkdirs()
+                        val dest = targetDir.resolve(f.name)
+                        f.copyTo(dest, overwrite = true)
+                        logger.lifecycle("已注入原生动态库至 GraalVM 应用镜像: ${f.name} -> ${dest.absolutePath}")
+                    }
+                }
+            }
+        }
     }
 }
 
