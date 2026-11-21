@@ -14,11 +14,10 @@ import kotlin.test.assertTrue
 /**
  * 领域模型必须实现 [java.io.Serializable]。
  *
- * 背景：Android 上 Voyager 保存返回栈（锁屏 / 切后台触发 `onSaveInstanceState`）走的是
- * Java 序列化，`Screen` 构造参数里携带的领域模型不可序列化就会抛
- * `NotSerializableException`（实锤：日推歌单页携带 `List<TrackSummary>`，锁屏即崩）。
+ * 背景：Android 上保存导航返回栈（锁屏 / 切后台触发 `onSaveInstanceState`）走的是
+ * Java 序列化，导航条目携带的领域模型不可序列化就会抛 `NotSerializableException`。
  * 各模型经 `cp.player.core.util.JavaSerializable`（expect/actual = `java.io.Serializable`）桥接，
- * 本测试保证这条链没被无意拆掉。
+ * 本测试保证现有 Android 状态保存兼容性没有被无意拆掉。
  */
 class JavaSerializableTest {
 
@@ -26,7 +25,7 @@ class JavaSerializableTest {
         for (instance in instances) {
             assertTrue(
                 instance is Serializable,
-                "${instance::class.simpleName} 必须实现 java.io.Serializable（Voyager 返回栈持久化依赖）",
+                "${instance::class.simpleName} 必须实现 java.io.Serializable（Android 返回栈持久化依赖）",
             )
         }
     }

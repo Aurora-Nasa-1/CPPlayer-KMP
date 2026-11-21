@@ -130,6 +130,7 @@ class MusicBackend private constructor(
     private val settings: SettingsStorage,
     private val providerManager: ProviderManager,
     private val moduleManager: ModuleManager,
+    private val applicationVersionName: String?,
 ) {
 
     /** 模块内可见：供兼容层转发。 */
@@ -490,6 +491,7 @@ class MusicBackend private constructor(
             settings = defaultSettingsStorage("plugin_repositories_v1"),
             io = createPluginRepositoryIO(context),
             target = currentPluginTarget(),
+            currentAppVersion = applicationVersionName,
             installedPlugins = {
                 moduleManager.getAvailableProviders().map {
                     InstalledRepositoryPlugin("provider:${it.id}", it.version, name = it.name)
@@ -505,9 +507,11 @@ class MusicBackend private constructor(
                 when (plugin.kind) {
                     RepositoryPluginKind.PROVIDER -> {
                         val previous = moduleManager.getProvider(plugin.id)
-                        check(plugin.compatibility(currentPluginTarget()).first != null) {
-                            "No compatible plugin package"
-                        }
+                        val incompatibility = plugin.compatibility(
+                            currentPluginTarget(),
+                            applicationVersionName,
+                        ).second
+                        check(incompatibility == null) { incompatibility ?: "No compatible plugin package" }
                         // 已安装的 provider 都是进程内 SDK（JNI / JS），运行中无法卸下旧实例，
                         // 因此一律排队到下次启动再替换。旧版可热替换的 HTTP provider 已不存在。
                         if (previous != null) {
@@ -864,6 +868,9 @@ class MusicBackend private constructor(
     /** 当前活跃 Provider（便捷快照；变更请使用 [stateFlow] 或 [activeProviderFlow]）。 */
     fun activeProvider(): BackendProvider? = providerManager.currentProvider ?: state.activeProvider
 
+    /** Exact capabilities of the current SDK session, without manifest UI aliases. */
+    suspend fun activeSdkCapabilities(): List<String>? = providerManager.sdkSessions.current()?.capabilities()?.supported
+
     /** Provider 名称（UI 标题用，无活跃时返回占位串）。 */
     fun activeProviderName(): String = providerManager.getCurrentProviderName()
 
@@ -1137,6 +1144,7 @@ class MusicBackend private constructor(
                     settings = settings,
                     providerManager = providerManager,
                     moduleManager = moduleManager,
+                    applicationVersionName = applicationVersionName,
                 )
                 backend._stateFlow.value = BackendState.Initializing
 

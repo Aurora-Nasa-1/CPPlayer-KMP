@@ -2,8 +2,11 @@ package cp.player.app.ui.model
 
 import cafe.adriel.voyager.core.model.ScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
+import cp.player.app.AppModel
 import cp.player.app.presentation.search.SearchPresenter
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
 
 // 兼容现有引用的类型别名
 typealias SearchUiState = cp.player.app.presentation.search.SearchUiState
@@ -20,6 +23,14 @@ class SearchScreenModel(initialQuery: String = "") : ScreenModel {
         initialQuery = initialQuery,
         scope = screenModelScope,
     )
+
+    init {
+        screenModelScope.launch {
+            AppModel.sourceGeneration.drop(1).collect {
+                presenter.loadHotSearches()
+            }
+        }
+    }
 
     val state: StateFlow<SearchUiState> get() = presenter.state
 
