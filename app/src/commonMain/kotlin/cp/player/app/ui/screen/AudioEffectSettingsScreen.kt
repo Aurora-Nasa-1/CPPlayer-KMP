@@ -418,7 +418,7 @@ internal fun EqualizerCurveCard(
     // 频率轴刻度文字：对数轴下 100 / 1k / 10k 才是等距的三档。
     val measurer = rememberTextMeasurer()
     val tickStyle = MaterialTheme.typography.labelSmall.copy(
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         fontSize = 9.sp,
     )
     val tickLabels = remember(measurer, tickStyle) {
@@ -551,19 +551,19 @@ internal fun EqualizerCurveCard(
         CpText(
             text = "+12 dB",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.align(Alignment.TopStart).background(containerBg),
         )
         CpText(
             text = "0 dB",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.align(Alignment.CenterStart).background(containerBg),
         )
         CpText(
             text = "-12 dB",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.align(Alignment.BottomStart).background(containerBg),
         )
     }

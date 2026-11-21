@@ -9,7 +9,7 @@
 
 | 结论 | 内容 |
 |---|---|
-| rodio 链路 | `AudioPlayerImpl` 在桌面已是死代码；不能再拿「rodio 能做」当兜底 |
+| rodio 链路 | 旧 `AudioPlayerImpl` 已移除；不能再拿「rodio 能做」当兜底 |
 | 原生库 | 硬依赖：DLL 缺失时返回 `NoopDesktopPlatformPlayer`，桌面任何音频都放不出来（state = Error） |
 
 ### 1.1 DLL 版本握手

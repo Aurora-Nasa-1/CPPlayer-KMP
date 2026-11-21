@@ -34,6 +34,14 @@ val sentryDsn: String = System.getenv("SENTRY_DSN")
     ?: localProps.getProperty("sentry.dsn")
     ?: ""
 
+val requireFlick = providers.gradleProperty("flick.required").map(String::toBoolean).orElse(false)
+val flickJniDir = providers.environmentVariable("FLICK_ANDROID_JNI_DIR")
+    .map { rootProject.file(it) }
+    .orElse(layout.projectDirectory.dir("src/main/jniLibs").asFile)
+val flickPublicKey = providers.gradleProperty("flick.vipPublicKey")
+    .orElse(providers.environmentVariable("FLICK_VIP_PUBLIC_KEY"))
+    .orElse("")
+
 android {
     namespace = "cp.player.app"
     // material-kolor 5.x 的 android 产物要求 compileSdk ≥ 37（AAR metadata 强制），
@@ -111,6 +119,7 @@ android {
         }
     }
     buildFeatures { buildConfig = true }
+    sourceSets.getByName("main").jniLibs.setSrcDirs(listOf(flickJniDir.get()))
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
@@ -125,6 +134,7 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
         jniLibs {
+            keepDebugSymbols += "**/librust_lib_flick_player.so"
             // Android 端仅支持 arm64-v8a (ARMv8 64位架构)，严格过滤并排除其余老旧架构动态库
             excludes += listOf(
                 "lib/armeabi-v7a/**",
@@ -138,6 +148,21 @@ android {
         }
     }
 }
+
+val verifyFlickInputs = tasks.register("verifyFlickInputs") {
+    onlyIf { requireFlick.get() }
+    doLast {
+        val so = flickJniDir.get().resolve("arm64-v8a/librust_lib_flick_player.so")
+        check(so.isFile && so.length() > 0) { "FLICK ARM64 library missing: $so" }
+        val key = flickPublicKey.get().trim()
+        check(key.isNotEmpty()) { "FLICK_VIP_PUBLIC_KEY is required for a FLICK distribution" }
+        val runtime = so.readBytes().toString(Charsets.ISO_8859_1)
+        check("Java_cp_player_engine_RustEngine_nativeSetVipLicenseV2" in runtime && key in runtime) {
+            "Rebuild the FLICK library with native VIP support and the same FLICK_VIP_PUBLIC_KEY"
+        }
+    }
+}
+tasks.named("preBuild") { dependsOn(verifyFlickInputs) }
 
 androidComponents {
     onVariants(selector().all()) { variant ->

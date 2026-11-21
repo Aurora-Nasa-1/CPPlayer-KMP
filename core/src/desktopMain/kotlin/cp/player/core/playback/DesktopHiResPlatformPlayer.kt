@@ -67,7 +67,7 @@ class DesktopHiResPlatformPlayer(
     private var currentMediaId: String? = null
     private val queuedMediaIds = mutableMapOf<String, String>()
 
-    override val supportsExclusiveAudio: Boolean get() = isExclusive
+    override val supportsExclusiveAudio: Boolean get() = isExclusive && DesktopHiResEngine.isExclusiveMode
 
     /**
      * 响度均衡（compressor + limiter）只有 apiLevel ≥ 2 的 DLL 才有 JNI 导出。

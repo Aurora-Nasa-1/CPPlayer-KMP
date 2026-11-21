@@ -16,12 +16,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cp.player.core.license.VipLicenseManager
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.cpSheetSurface
+import kotlinx.coroutines.launch
 
 /**
  * VIP 发烧友特权卡密激活弹层。
@@ -34,6 +36,8 @@ fun VipActivationDialog(
     val s = cpStrings().playback
     var inputCode by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var activating by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -62,6 +66,7 @@ fun VipActivationDialog(
                 Spacer(Modifier.height(16.dp))
                 OutlinedTextField(
                     value = inputCode,
+                    enabled = !activating,
                     onValueChange = {
                         inputCode = it
                         errorMessage = null
@@ -77,13 +82,20 @@ fun VipActivationDialog(
         },
         confirmButton = {
             TextButton(
+                enabled = !activating,
                 onClick = {
-                    val result = VipLicenseManager.activate(inputCode)
-                    result.onSuccess {
-                        onSuccess()
-                        onDismiss()
-                    }.onFailure {
-                        errorMessage = it.message ?: s.vipActivateFailed
+                    activating = true
+                    scope.launch {
+                        try {
+                            VipLicenseManager.activate(inputCode).onSuccess {
+                                onSuccess()
+                                onDismiss()
+                            }.onFailure {
+                                errorMessage = it.message ?: s.vipActivateFailed
+                            }
+                        } finally {
+                            activating = false
+                        }
                     }
                 }
             ) {

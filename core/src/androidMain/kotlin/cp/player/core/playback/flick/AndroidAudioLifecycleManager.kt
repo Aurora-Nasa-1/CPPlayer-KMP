@@ -14,6 +14,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.util.Log
+import androidx.core.content.ContextCompat
 import cp.player.engine.RustEngine
 import kotlinx.coroutines.launch
 
@@ -48,6 +49,7 @@ class AndroidAudioLifecycleManager(
     private var isReceiverRegistered = false
     private var registeredDeviceName: String? = null
     private var usbConnection: UsbDeviceConnection? = null
+    private var pendingUsbDevice: String? = null
     private var usbReconnectJob: kotlinx.coroutines.Job? = null
     private val usbScope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
@@ -101,13 +103,19 @@ class AndroidAudioLifecycleManager(
                     Log.i(TAG, "USB Device attached: ${device?.productName ?: "unknown"}")
                     handleUsbDeviceAttached(device)
                 }
-                ACTION_USB_PERMISSION -> {
-                    val device = intent.usbDevice()
-                    if (device != null && intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                        tryRegisterUsbDevice(device)
-                    } else {
-                        Log.w(TAG, "USB permission denied: ${device?.productName ?: "unknown"}")
-                    }
+            }
+        }
+    }
+
+    private val usbPermissionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context?, intent: Intent?) {
+            if (intent?.action != ACTION_USB_PERMISSION) return
+            val device = intent.usbDevice() ?: return
+            synchronized(this@AndroidAudioLifecycleManager) {
+                if (pendingUsbDevice != device.deviceName) return
+                pendingUsbDevice = null
+                if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
+                    tryRegisterUsbDevice(device)
                 }
             }
         }
@@ -163,14 +171,18 @@ class AndroidAudioLifecycleManager(
     }
 
     /** 开始监听硬件热插拔与声音外泄广播 */
+    @Synchronized
     fun startListening() {
         if (isReceiverRegistered) return
         val filter = IntentFilter().apply {
             addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
             addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
             addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
-            addAction(ACTION_USB_PERMISSION)
         }
+        ContextCompat.registerReceiver(
+            context, usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             context.registerReceiver(hardwareBroadcastReceiver, filter, Context.RECEIVER_EXPORTED)
         } else {
@@ -181,21 +193,27 @@ class AndroidAudioLifecycleManager(
     }
 
     /** 停止监听 */
+    @Synchronized
     fun stopListening() {
         abandonAudioFocus()
         releaseUsbDevice()
         if (isReceiverRegistered) {
             try {
                 context.unregisterReceiver(hardwareBroadcastReceiver)
+                context.unregisterReceiver(usbPermissionReceiver)
             } catch (_: Throwable) {
             }
             isReceiverRegistered = false
+            pendingUsbDevice = null
             Log.i(TAG, "Hardware lifecycle listener unregistered")
         }
     }
 
+    @Synchronized
     private fun handleUsbDeviceDetached(device: UsbDevice?) {
-        if (device?.deviceName != registeredDeviceName) return
+        if (device == null) return
+        if (device.deviceName == pendingUsbDevice) pendingUsbDevice = null
+        if (device.deviceName != registeredDeviceName) return
         releaseUsbDevice()
         onPauseRequested()
     }
@@ -225,8 +243,9 @@ class AndroidAudioLifecycleManager(
         }
     }
 
+    @Synchronized
     private fun handleUsbDeviceAttached(device: UsbDevice?) {
-        if (device == null) return
+        if (!isReceiverRegistered || device == null || usbConnection != null) return
         val um = usbManager ?: return
         if (!isUsbAudioDevice(device)) return
         if (um.hasPermission(device)) {
@@ -236,17 +255,17 @@ class AndroidAudioLifecycleManager(
         }
     }
 
+    @Synchronized
     fun scanForUsbAudioDevices() {
-        usbManager?.deviceList?.values?.forEach { device ->
-            if (isUsbAudioDevice(device)) {
-                if (usbManager.hasPermission(device)) tryRegisterUsbDevice(device)
-                else requestUsbPermission(device)
-            }
-        }
+        val um = usbManager ?: return
+        if (!isReceiverRegistered || usbConnection != null) return
+        val devices = um.deviceList.values.filter(::isUsbAudioDevice).sortedBy { it.deviceName }
+        if (devices.any { um.hasPermission(it) && tryRegisterUsbDevice(it) }) return
+        devices.firstOrNull { !um.hasPermission(it) }?.let(::requestUsbPermission)
     }
 
     private fun requestUsbPermission(device: UsbDevice) {
-        if (!isUsbAudioDevice(device)) return
+        if (pendingUsbDevice != null || !isUsbAudioDevice(device)) return
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
         val permissionIntent = PendingIntent.getBroadcast(
@@ -255,7 +274,11 @@ class AndroidAudioLifecycleManager(
             Intent(ACTION_USB_PERMISSION).setPackage(context.packageName),
             flags,
         )
-        usbManager?.requestPermission(device, permissionIntent)
+        pendingUsbDevice = device.deviceName
+        runCatching { usbManager?.requestPermission(device, permissionIntent) }.onFailure {
+            pendingUsbDevice = null
+            Log.w(TAG, "Unable to request USB audio permission", it)
+        }
     }
 
     private fun isUsbAudioDevice(device: UsbDevice): Boolean =
@@ -265,10 +288,11 @@ class AndroidAudioLifecycleManager(
             }
 
     /** 尝试将已授权的 USB DAC 注册到底层 Rust 驱动 */
-    fun tryRegisterUsbDevice(device: UsbDevice): Boolean {
+    @Synchronized
+    private fun tryRegisterUsbDevice(device: UsbDevice): Boolean {
         val um = usbManager ?: return false
-        if (!isUsbAudioDevice(device) || !um.hasPermission(device)) return false
-        if (registeredDeviceName == device.deviceName && usbConnection != null) return true
+        if (!isReceiverRegistered || !isUsbAudioDevice(device) || !um.hasPermission(device)) return false
+        if (usbConnection != null) return registeredDeviceName == device.deviceName
 
         val conn = um.openDevice(device) ?: run {
             Log.w(TAG, "Failed to open USB device connection: ${device.deviceName}")
@@ -296,7 +320,6 @@ class AndroidAudioLifecycleManager(
                 deviceName = device.deviceName,
             )
             if (ok) {
-                usbConnection?.close()
                 usbConnection = conn
                 registeredDeviceName = device.deviceName
             } else {

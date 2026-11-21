@@ -1,4 +1,9 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.net.URI
+import java.security.KeyFactory
+import java.security.interfaces.RSAPublicKey
+import java.security.spec.X509EncodedKeySpec
+import java.util.Base64
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -8,6 +13,44 @@ plugins {
 
 group = "cp.player"
 version = "1.0.0"
+
+val flickVipPublicKey = providers.gradleProperty("flick.vipPublicKey")
+    .orElse(providers.environmentVariable("FLICK_VIP_PUBLIC_KEY"))
+    .orElse("")
+val flickVipLeaseUrl = providers.gradleProperty("flick.vipLeaseUrl")
+    .orElse(providers.environmentVariable("FLICK_VIP_LEASE_URL"))
+    .orElse("")
+val flickLicenseSources = layout.buildDirectory.dir("generated/flickLicense")
+val generateFlickLicenseKey = tasks.register("generateFlickLicenseKey") {
+    inputs.property("publicKey", flickVipPublicKey)
+    inputs.property("leaseUrl", flickVipLeaseUrl)
+    outputs.dir(flickLicenseSources)
+    doLast {
+        val encoded = flickVipPublicKey.get().trim()
+        val leaseUrl = flickVipLeaseUrl.get().trim()
+        if (leaseUrl.isNotEmpty()) {
+            val uri = URI(leaseUrl)
+            require(uri.scheme == "https" && uri.host != null && uri.userInfo == null &&
+                uri.rawQuery == null && uri.rawFragment == null) {
+                "FLICK_VIP_LEASE_URL must be an HTTPS endpoint without credentials, query or fragment"
+            }
+        }
+        if (encoded.isNotEmpty()) {
+            val bytes = Base64.getDecoder().decode(encoded)
+            val key = KeyFactory.getInstance("RSA").generatePublic(X509EncodedKeySpec(bytes))
+            require(key is RSAPublicKey && key.modulus.bitLength() in 2048..8192) {
+                "FLICK_VIP_PUBLIC_KEY must be a 2048–8192 bit RSA public key"
+            }
+        }
+        val output = flickLicenseSources.get().file("FlickLicenseKey.kt").asFile
+        output.parentFile.mkdirs()
+        val url = Base64.getEncoder().encodeToString(leaseUrl.toByteArray(Charsets.UTF_8))
+        output.writeText(
+            "package cp.player.core.license\ninternal const val FLICK_VIP_PUBLIC_KEY = \"$encoded\"\n" +
+                "internal const val FLICK_VIP_LEASE_URL_B64 = \"$url\"\n",
+        )
+    }
+}
 
 kotlin {
     compilerOptions {
@@ -41,6 +84,7 @@ kotlin {
         commonMain.get().kotlin.exclude("cp/player/core/provider/compat/**")
         val jvmMain by creating
         jvmMain.dependsOn(commonMain.get())
+        jvmMain.kotlin.srcDir(generateFlickLicenseKey)
         androidMain.get().dependsOn(jvmMain)
         val desktopMain by getting
         desktopMain.dependsOn(jvmMain)
@@ -61,7 +105,6 @@ kotlin {
         commonMain.dependencies {
             api(project(":provider-sdk-kmp"))
             implementation(libs.accompanist.lyrics.core)
-            implementation(libs.composemediaplayer.audio)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.datetime)
@@ -112,7 +155,7 @@ kotlin {
         }
 
         // 注意：这里曾声明 org.openjfx:javafx-graphics / javafx-base，但全仓 Kotlin 源码
-        // 对 javafx.* 零引用（音频走 nucleus.rodio 的 Rust JNI，播控走 FFM），
+        // 对 javafx.* 零引用（音频走 FlickEngine Rust JNI，播控走 FFM），
         // 属死依赖，已移除。JavaFX 的 Prism 自带 DWM/vblank vsync 线程，一旦被谁初始化
         // 就会多出一个帧节奏参与者，在 VRR 显示器上属风险项。
     }

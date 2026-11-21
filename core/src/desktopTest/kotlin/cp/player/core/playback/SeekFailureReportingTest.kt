@@ -29,8 +29,8 @@ import kotlin.test.assertTrue
  * 也就是最初的「拖了没反应」。这里钉住「平台层 → 控制器 → 前端」这条链路不断。
  *
  * 单测覆盖的是**转发**这一段（确定性可测）。真正把 `Tick.GaveUp` 变成事件的那一步在
- * [AudioPlayerImpl] / 安卓 `Media3PlatformPlayer` 的轮询里，需要不可定位的音源才能触发，
- * 由 `AudioPlayerImplSeekE2ETest` 那类端到端测试负责。
+ * 安卓 `Media3PlatformPlayer` 的轮询里，需要不可定位的音源才能触发；
+ * 桌面旧播放器实现已退役，此行为由 tracker 单测覆盖。
  */
 class SeekFailureReportingTest {
 

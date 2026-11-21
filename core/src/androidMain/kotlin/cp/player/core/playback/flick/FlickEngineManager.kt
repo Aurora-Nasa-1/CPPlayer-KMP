@@ -20,6 +20,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -61,9 +64,8 @@ object FlickEngineManager {
         context: Context,
         preferredEngine: AndroidPlayerEngineType? = null,
         storage: SettingsStorage = defaultSettingsStorage(),
-        isVipUser: Boolean = false,
     ): PlatformPlayer {
-        val player = DynamicAndroidPlatformPlayer(context, storage, preferredEngine, isVipUser)
+        val player = DynamicAndroidPlatformPlayer(context, storage, preferredEngine)
         activeDynamicPlayer = player
         return player
     }
@@ -77,11 +79,10 @@ object FlickEngineManager {
 /**
  * 安卓端动态切换代理播放器：在标准 ExoPlayer 与发烧 FlickEngine 之间无缝热切换。
  */
-class DynamicAndroidPlatformPlayer(
+internal class DynamicAndroidPlatformPlayer(
     private val context: Context,
     private val storage: SettingsStorage,
     private val preferredEngine: AndroidPlayerEngineType?,
-    private val isVipUser: Boolean,
 ) : PlatformPlayer {
 
     companion object {
@@ -111,6 +112,8 @@ class DynamicAndroidPlatformPlayer(
     override val audioEffectCapabilities: AudioEffectCapabilities
         get() = activePlayer.audioEffectCapabilities
 
+    /** Used during the initial route decision as well as during subsequent loads. */
+    @Volatile private var drmPinned = false
     private var currentEngineType: AndroidPlayerEngineType = resolveDesiredEngine()
     private var activePlayer: PlatformPlayer = createUnderlyingPlayer(currentEngineType)
     private var forwardJob: Job? = null
@@ -119,8 +122,6 @@ class DynamicAndroidPlatformPlayer(
     private var lastEffectConfig: AudioEffectConfig? = null
     private var lastPlaybackSpeed: Float? = null
     private var lastCrossfade: Pair<Boolean, Long>? = null
-    /** DRM 只能交给 Media3；置位期间设置页的引擎选择不得把播放切回 Flick。 */
-    @Volatile private var drmPinned = false
 
     override val supportsPlaybackSpeed: Boolean get() = activePlayer.supportsPlaybackSpeed
     override val playbackSpeed: Float get() = activePlayer.playbackSpeed
@@ -133,19 +134,23 @@ class DynamicAndroidPlatformPlayer(
 
     init {
         bindUnderlyingPlayer(activePlayer)
+        scope.launch {
+            VipLicenseManager.licenseState.map { it.isActivated }.distinctUntilChanged().collect { active ->
+                if (active) {
+                    checkAndSwitchEngine()
+                } else if (currentEngineType == AndroidPlayerEngineType.HIRES_FLICK) {
+                    switchEngine(AndroidPlayerEngineType.STANDARD_MEDIA3)
+                }
+            }
+        }
     }
 
     private fun resolveDesiredEngine(): AndroidPlayerEngineType {
         if (drmPinned) return AndroidPlayerEngineType.STANDARD_MEDIA3
-        if (preferredEngine != null) return preferredEngine
-        val key = storage.getString(PlaybackSessionSettings.KEY_AUDIO_ENGINE)
-        val isVip = isVipUser || VipLicenseManager.isVipActive
-        return if (key == PlaybackSessionSettings.ENGINE_FLICK_HIRES) {
-            if (isVip && FlickEngineManager.isHiResEngineSupported) {
-                AndroidPlayerEngineType.HIRES_FLICK
-            } else {
-                AndroidPlayerEngineType.STANDARD_MEDIA3
-            }
+        val wantsFlick = preferredEngine?.let { it == AndroidPlayerEngineType.HIRES_FLICK }
+            ?: (storage.getString(PlaybackSessionSettings.KEY_AUDIO_ENGINE) == PlaybackSessionSettings.ENGINE_FLICK_HIRES)
+        return if (wantsFlick && VipLicenseManager.isVipActive && FlickEngineManager.isHiResEngineSupported) {
+            AndroidPlayerEngineType.HIRES_FLICK
         } else {
             AndroidPlayerEngineType.STANDARD_MEDIA3
         }
@@ -199,7 +204,6 @@ class DynamicAndroidPlatformPlayer(
         Log.i(TAG, "Switching active engine from $currentEngineType to $target")
         val oldPlayer = activePlayer
         try {
-            oldPlayer.stop()
             oldPlayer.release()
         } catch (t: Throwable) {
             Log.w(TAG, "Error releasing old player: ${t.message}")
@@ -215,7 +219,6 @@ class DynamicAndroidPlatformPlayer(
             Log.i(TAG, "Switching engine from $currentEngineType to $desired")
             val oldPlayer = activePlayer
             try {
-                oldPlayer.stop()
                 oldPlayer.release()
             } catch (t: Throwable) {
                 Log.w(TAG, "Error releasing player: ${t.message}")
@@ -279,7 +282,7 @@ class DynamicAndroidPlatformPlayer(
     override fun getVolume(): Float = activePlayer.getVolume()
 
     override fun release() {
-        forwardJob?.cancel()
+        scope.cancel()
         activePlayer.release()
     }
 
