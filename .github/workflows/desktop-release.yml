@@ -239,18 +239,17 @@ jobs:
       - name: Fetch pinned FLICK Windows runtime
         if: matrix.platform == 'windows'
         env:
-          GH_TOKEN: ${{ secrets.FLICK_RELEASE_READ_TOKEN }}
-          FLICK_REPO: ${{ vars.FLICK_ANDROID_RELEASE_REPO }}
-          FLICK_TAG: ${{ vars.FLICK_ANDROID_RELEASE_TAG }}
+          GH_TOKEN: ${{ github.token }}
+          FLICK_TAG: ${{ vars.FLICK_NATIVE_RELEASE_TAG }}
           FLICK_SHA256: ${{ vars.FLICK_WINDOWS_SHA256 }}
         shell: bash
         run: |
           set -euo pipefail
-          : "${GH_TOKEN:?Missing FLICK_RELEASE_READ_TOKEN}" "${FLICK_REPO:?Missing FLICK_ANDROID_RELEASE_REPO}" "${FLICK_TAG:?Missing FLICK_ANDROID_RELEASE_TAG}" "${FLICK_VIP_PUBLIC_KEY:?Missing FLICK_VIP_PUBLIC_KEY}"
+          : "${FLICK_TAG:?Missing FLICK_NATIVE_RELEASE_TAG}" "${FLICK_VIP_PUBLIC_KEY:?Missing FLICK_VIP_PUBLIC_KEY}"
           [[ "${FLICK_SHA256:-}" =~ ^[a-fA-F0-9]{64}$ ]]
           dir="$RUNNER_TEMP/flick-windows"
           mkdir -p "$dir"
-          gh release download "$FLICK_TAG" --repo "$FLICK_REPO" --dir "$dir" --pattern rust_lib_flick_player.dll
+          gh release download "$FLICK_TAG" --repo "$GITHUB_REPOSITORY" --dir "$dir" --pattern rust_lib_flick_player.dll
           dll="$dir/rust_lib_flick_player.dll"
           printf '%s  %s\n' "$FLICK_SHA256" "$dll" | sha256sum -c
           grep -aFq -- 'Java_cp_player_core_playback_DesktopHiResEngine_nativeSetVipLicenseV2' "$dll"

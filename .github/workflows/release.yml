@@ -85,19 +85,20 @@ jobs:
 
       - name: Fetch pinned FLICK Android runtime
         env:
-          GH_TOKEN: ${{ secrets.FLICK_RELEASE_READ_TOKEN }}
-          FLICK_REPO: ${{ vars.FLICK_ANDROID_RELEASE_REPO }}
-          FLICK_TAG: ${{ vars.FLICK_ANDROID_RELEASE_TAG }}
+          GH_TOKEN: ${{ github.token }}
+          FLICK_TAG: ${{ vars.FLICK_NATIVE_RELEASE_TAG }}
           FLICK_SHA256: ${{ vars.FLICK_ANDROID_SHA256 }}
+          FLICK_VIP_PUBLIC_KEY: ${{ vars.FLICK_VIP_PUBLIC_KEY }}
         shell: bash
         run: |
           set -euo pipefail
-          : "${GH_TOKEN:?Missing FLICK_RELEASE_READ_TOKEN}" "${FLICK_REPO:?Missing FLICK_ANDROID_RELEASE_REPO}" "${FLICK_TAG:?Missing FLICK_ANDROID_RELEASE_TAG}"
+          : "${FLICK_TAG:?Missing FLICK_NATIVE_RELEASE_TAG}" "${FLICK_VIP_PUBLIC_KEY:?Missing FLICK_VIP_PUBLIC_KEY}"
           [[ "${FLICK_SHA256:-}" =~ ^[a-fA-F0-9]{64}$ ]]
           dir="$RUNNER_TEMP/flick-jni/arm64-v8a"
           mkdir -p "$dir"
-          gh release download "$FLICK_TAG" --repo "$FLICK_REPO" --dir "$dir" --pattern librust_lib_flick_player.so
+          gh release download "$FLICK_TAG" --repo "$GITHUB_REPOSITORY" --dir "$dir" --pattern librust_lib_flick_player.so
           printf '%s  %s\n' "$FLICK_SHA256" "$dir/librust_lib_flick_player.so" | sha256sum -c
+          grep -aFq -- "$FLICK_VIP_PUBLIC_KEY" "$dir/librust_lib_flick_player.so"
           echo "FLICK_ANDROID_JNI_DIR=$RUNNER_TEMP/flick-jni" >> "$GITHUB_ENV"
 
       - name: Build release APK

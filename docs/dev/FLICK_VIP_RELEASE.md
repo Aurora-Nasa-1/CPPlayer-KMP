@@ -56,20 +56,21 @@ independently enforces its signature and expiry.
 
 ## APK build and device acceptance
 
-- Stable Android CI requires `FLICK_ANDROID_RELEASE_REPO`,
-  `FLICK_ANDROID_RELEASE_TAG`, `FLICK_ANDROID_SHA256`, and
-  `FLICK_VIP_PUBLIC_KEY` as repository variables. Supply a read-only
-  `FLICK_RELEASE_READ_TOKEN` for the native release and the existing APK
-  signing secrets. The private asset is named `librust_lib_flick_player.so`.
+- Publish `librust_lib_flick_player.so` and `rust_lib_flick_player.dll` as assets
+  of a dedicated prerelease in this repository. Use a `flick-native-*` tag to
+  keep runtime releases outside the app release workflows and update channels.
+  Both workflows download from this repository with the built-in Actions token.
+  Set `FLICK_NATIVE_RELEASE_TAG`, `FLICK_ANDROID_SHA256`, `FLICK_WINDOWS_SHA256`,
+  and `FLICK_VIP_PUBLIC_KEY` as repository variables. Keep the APK signing
+  secrets configured for the stable Android build.
   Build the asset from the private engine with ARM64, UAC2, the production
   public key, the `nativeSetVipLicenseV2` JNI entry point and 16 KiB ELF alignment.
   CI checks the digest, embedded bytes,
   public key, JNI exports, ELF/ZIP alignment and signing before publishing.
   From the private engine checkout, use NDK r28 or later and
   `cargo ndk -t arm64-v8a --platform 24 -o <jni-root> build --release`.
-- Put the Windows `rust_lib_flick_player.dll` in the same private release
-  and configure `FLICK_WINDOWS_SHA256`. The desktop job checks the native
-  verifier entry point and matching public key before packaging.
+- The Windows job checks the DLL digest, native verifier entry point and
+  matching public key before packaging.
 - Locally point `FLICK_ANDROID_JNI_DIR` at a directory containing
   `arm64-v8a/librust_lib_flick_player.so`; it defaults to
   `app-android/src/main/jniLibs`. Set `FLICK_VIP_PUBLIC_KEY`, then run
