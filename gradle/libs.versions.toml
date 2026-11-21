@@ -3,17 +3,17 @@ agp = "9.1.1"
 kotlin = "2.4.21"
 coroutines = "1.11.0"
 serialization = "1.7.3"
-ktor = "3.6.0"
+ktor = "3.6.1"
 datetime = "0.6.1"
 # 1.12.2 = 当前 stable 线最新。这一行同时**决定 skiko 版本**（1.11.1→0.144.6，1.12.x→0.150.1），
 # 而 skiko 又是 Coil 选型的分水岭（见下面 coil 的注释）：两边一致时 compose 插件才不会报
 # "Skiko dependencies' versions are incompatible"。
-compose = "1.13.0-beta02"
-nucleus = "3.0.0-dev-202611141550"
+compose = "1.13.0-rc01"
+nucleus = "3.0.0-dev-202611161221"
 # Nucleus 同作者的无 AWT 托盘库：托盘图标与右键菜单都走平台原生 API
 # （Windows Shell_NotifyIcon / macOS NSStatusItem / Linux AppIndicator），
 # 不创建 `java.awt.SystemTray` / `TrayIcon`。
-composenativetray = "2.1.6"
+composenativetray = "2.1.7"
 adaptive = "1.4.0-alpha01"
 a2ui = "1.0.0-alpha02"
 # 2.2.21-1.10.3 是「Kotlin 2.2.21 + Compose 1.10.3」的兼容性标记，不是语义版本。
@@ -25,7 +25,7 @@ a2ui = "1.0.0-alpha02"
 voyager = "2.2.21-1.10.3"
 androidx-activity = "1.9.3"
 androidx-profileinstaller = "1.4.1"
-qrose = "1.3.0"
+qrose = "1.3.1"
 # 1.11.1：从 1.4.1 跨了 7 个 minor，但逐类 javap 核对后**项目用到的 API 全部保留** ——
 # `COMMAND_SEEK_*` 13 个常量一字未变、`onUpdateNotification(MediaSession, boolean)` 签名相同、
 # `addSession` / `removeSession` / `SERVICE_INTERFACE` / `DefaultMediaNotificationProvider.setSmallIcon`
@@ -47,7 +47,7 @@ media3 = "1.11.1"
 coil = "3.6.3"
 sentry = "8.3.0"
 # QuickJS-kt：支持 Android 与 JVM 桌面端的现代化 QuickJS KMP 引擎（ES2023、原生 async/await、协程支持）
-quickjs = "1.0.15"
+quickjs = "1.0.18"
 # —— 歌词对外投放（系统级歌词渠道）——
 # 这四个都是 AAR，且**只在 androidMain 用**：桌面端没有对应生态，commonMain 只留
 # 「纯协议层」（OPlus 的 LRC/JSON 构建、节流与重试策略），才能在 desktopTest 里单测。
@@ -67,9 +67,9 @@ hyperFocusApi = "1.4"
 shizuku = "13.1.5"
 # HiddenApiBypass：豁免隐藏 API 限制（`IConnectivityManager` 的 TRANSACTION_* 常量、
 # `ServiceManager.getService` 都要反射读）。**进程级、非永久**，进程重建后要重装。
-hiddenApiBypass = "6.1"
-accompanist-lyrics-ui = "2.0.0-rc.2"
-accompanist-lyrics-core = "0.5.0"
+hiddenApiBypass = "6.2"
+accompanist-lyrics-ui = "2.0.0-rc.4"
+accompanist-lyrics-core = "0.5.1"
 # ⚠️ material-kolor 必须与上面的 compose 行保持一致：5.0.0 依赖 compose 1.11.1，
 # 5.0.1 依赖 compose 1.12.0 + material3 1.12.0-alpha03。一旦错配，它会把整个项目的
 # Compose 运行时顶上去而 **compose 插件版本不会跟着变** ⇒ 编译期与运行期版本不一致。
@@ -86,14 +86,8 @@ material-color-utilities = "5.0.1"
 # （见 compose-gradle-plugin 里的 ComposeBuildConfig），而 1.9.0 缺少 M3 Expressive 的
 # 标志性 API —— `MaterialShapes` / `WavyProgressIndicator` / `LoadingIndicator` /
 # `ToggleButton` / `ButtonGroup` / `FloatingToolbar` / `SplitButton` 全都不在。
-# 这里显式声明 1.12.0-alpha03 把它顶上去。注意**这条线只有 alpha、没有 stable**
-# （1.12.0 从未发正式版，再往上就是 1.13.0-alpha01）——要用 Expressive API 就只能吃实验版。
-# 方向是安全的：
-#   - 它依赖 compose `1.12.0-beta01` < 本项目的 `1.12.1`（拿到的比它编译时的更新）；
-#   - 它依赖 `androidx.graphics:graphics-shapes`（形状变形的底层实现）；
-#   - 与 `material-kolor` 5.0.1 的编译目标**完全一致**（5.0.1 自己就依赖这个精确版本）。
-# 换版本后必须复核 material-kolor 的字节码兼容性（见 TOPICS.md「主题 / 取色」）。
-material3 = "1.13.0-beta02"
+# 这里显式声明 1.13.0-rc01 把它顶上去（对齐 AndroidX Material 3 1.5.0-rc01 / 1.5.0 轨道）。
+material3 = "1.13.0-rc01"
 # 核心库脱糖（core library desugaring）：把 `java.time` / `java.util.stream` /
 # `java.util.function` / `java.util.Optional` 这些 **Java 8+ 才有的 JDK API**
 # 打包进 APK，让 minSdk 24（Android 7.0）也能跑。

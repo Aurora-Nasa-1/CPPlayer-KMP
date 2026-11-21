@@ -4,7 +4,8 @@
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-purple.svg)](https://kotlinlang.org)
-[![Compose Multiplatform](https://img.shields.io/badge/Compose%20Multiplatform-1.12.2-blue.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
+[![Compose Multiplatform](https://img.shields.io/badge/Compose%20Multiplatform-1.13.0--rc01-blue.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
+[![Nucleus](https://img.shields.io/badge/Nucleus-3.0.0--dev--202611161221-blue.svg)](https://github.com/NucleusFramework/Nucleus)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E8%B5%9E%E5%8A%A9%E6%94%AF%E6%8C%81-ff69b4.svg)](#赞助与支持)
 
 ## 为什么存在
@@ -108,6 +109,7 @@ Hi-Res 音频内核（FlickEngine / WASAPI 独占直通 / DSD 解码）的设计
 | [Symphonia](https://github.com/pdeljanov/Symphonia) | 解码 |
 | [cpal](https://github.com/RustAudio/cpal) | 设备与独占模式 |
 | [Lyrico](https://github.com/Replica0110/Lyrico) | 歌词插件 API |
+| [Nucleus](https://github.com/NucleusFramework/Nucleus) | 桌面端无 AWT 窗口、原生系统托盘与 GraalVM Native Image 运行时（3.0.0-dev-202611161221） |
 
 完整清单见 [NOTICE](NOTICE) 与 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
 

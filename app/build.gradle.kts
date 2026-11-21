@@ -348,8 +348,8 @@ tasks.withType<JavaCompile>().configureEach {
                 implementation(compose.runtime)
                 implementation(compose.foundation)
                 implementation(compose.material3)
-                // 把 material3 顶到 1.12.0-alpha03（插件的 compose.material3 只有 1.9.0，
-                // 缺少 M3 Expressive 的 MaterialShapes / 波形进度条 / 变形加载指示器 / SplitButton / 浮动工具栏等）。
+                // 把 material3 顶到 1.13.0-rc01（对齐 AndroidX Material 3 1.5.0-rc01/1.5.0 轨道；
+                // 插件默认的 compose.material3 只有 1.9.0，缺少 M3 Expressive 的全部 API）。
                 // 版本冲突时 Gradle 取高者，所以这一行足以覆盖插件给的 1.9.0。
                 implementation(libs.material3)
                 implementation(libs.compose.material3.adaptive)

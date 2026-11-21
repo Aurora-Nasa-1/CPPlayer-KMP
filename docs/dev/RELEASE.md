@@ -184,7 +184,7 @@ JBR 的 `.sha256` 文件未发布（cache-redirector 返回 403），`app/build.
 
 ### 5.4 Native Image（Nucleus 3.0）
 
-Nucleus 固定在 `gradle/libs.versions.toml` 的 `3.0.0-dev-202611061347`。3.0 移除了 `NucleusBackend` / `LocalNucleusBackend`：`nucleusApplication(args) { ... }` 是唯一入口，且必须转发 `args`（单实例移交、深链、`--veloapp-*` 钩子都从那里进来）。
+Nucleus 固定在 `gradle/libs.versions.toml` 的 `3.0.0-dev-202611161221`。3.0 移除了 `NucleusBackend` / `LocalNucleusBackend`：`nucleusApplication(args) { ... }` 是唯一入口，且必须转发 `args`（单实例移交、深链、`--veloapp-*` 钩子都从那里进来）。
 
 | 项 | 内容 |
 |---|---|
@@ -254,7 +254,7 @@ Nucleus 3.0 没有 AWT 窗口后端，桌面外壳也去掉了 AWT 托盘。
 
 | 能力 | 实现 |
 |---|---|
-| 托盘图标 + 右键菜单 | `dev.nucleusframework:composenativetray`（`2.1.6`）；Windows 用 `Shell_NotifyIcon`，macOS 用 `NSStatusItem`，Linux 用 AppIndicator / StatusNotifierItem |
+| 托盘图标 + 右键菜单 | `dev.nucleusframework:composenativetray`（`2.1.7`）；Windows 用 `Shell_NotifyIcon`，macOS 用 `NSStatusItem`，Linux 用 AppIndicator / StatusNotifierItem |
 | 消息通知 | Nucleus `notification-windows`（WinRT Toast）与 `notification-linux`（freedesktop D-Bus）；macOS 故意不发 |
 | 通知点击 | 携带 `MessageNotification.key`，可按会话路由与取消；托盘不再持有通知状态 |
 | 已删除 | `SystemTray` / `TrayIcon` / `PopupMenu`、离屏 `TrayMenuScene`、`JWindow` 菜单弹层、`DesktopWindowPlacement` / `WindowMaximizer`、`JbrWindowChrome` |
