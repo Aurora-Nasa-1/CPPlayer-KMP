@@ -14,7 +14,6 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -24,6 +23,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cp.player.app.AppModel
+import cp.player.app.presentation.SocialAvailability
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpText
@@ -32,6 +32,8 @@ import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.navigation.LocalAppNavigator
+import cp.player.app.ui.navigation.socialNavigationState
+import cp.player.app.ui.navigation.statusText
 import cp.player.core.provider.ProviderCapability
 
 /**
@@ -49,13 +51,8 @@ import cp.player.core.provider.ProviderCapability
 class NavigationSettingsScreen(private val targetSettingId: String? = null) : Screen {
     @Composable
     override fun Content() {
-        val dynamicReplacesSearch by AppModel.dynamicReplacesSearchFlow.collectAsState()
-        val hideDynamic by AppModel.hideDynamicEntryFlow.collectAsState()
-        val hideMessages by AppModel.hideMessagesEntryFlow.collectAsState()
         val provider by AppModel.activeProviderFlow.collectAsState()
-        val supportsDynamic = provider?.isFeatureAvailable(ProviderCapability.SOCIAL_FEED) ?: true
-        val supportsMessages = provider?.isFeatureAvailable(ProviderCapability.MESSAGES) ?: true
-        val providerName = provider?.name.orEmpty()
+        val navigation = socialNavigationState(provider)
         // 必须在 composable 上下文里取好导航器：`onBack` 是普通 lambda，不能在里面读 CompositionLocal。
         val navigator = LocalAppNavigator.current
 
@@ -64,44 +61,35 @@ class NavigationSettingsScreen(private val targetSettingId: String? = null) : Sc
                 SettingsSection("主 tab") {
                     SettingsSwitchItem(
                         title = "用「动态」替代「搜索」tab",
-                        subtitle = "打开后第 2 个 tab 变成动态，搜索移到顶栏动作位；两种布局用的是同一个搜索页",
-                        checked = dynamicReplacesSearch,
+                        subtitle = when {
+                            !navigation.replaceSearch -> "关闭时保留搜索 tab"
+                            navigation.dynamicAsTab -> "已生效，搜索位于顶栏"
+                            navigation.hideDynamic -> "暂未生效：动态入口已隐藏"
+                            else -> "暂未生效：${navigation.feed.statusText("主动态")}"
+                        },
+                        checked = navigation.replaceSearch,
                         onCheckedChange = AppModel::setDynamicReplacesSearch,
                         icon = Icons.Filled.Search,
                         index = 0,
                         total = 1,
                     )
                 }
-                SettingsNote(
-                    "搜索始终可用，只是有动态 tab 时不再占一个底部 / 侧栏位置。" +
-                        "动态入口还需要当前音源声明社交动态能力。",
-                )
 
                 SettingsSection("入口可见性") {
                     SettingsSwitchItem(
                         title = "隐藏「动态」入口",
-                        subtitle = if (supportsDynamic) {
-                            "隐藏主 tab / 侧栏 / 顶栏的动态入口，数据不受影响"
-                        } else {
-                            "当前音源不支持社交动态，入口本来就不会出现"
-                        },
-                        checked = hideDynamic,
+                        subtitle = navigation.feed.statusText("主动态"),
+                        checked = navigation.hideDynamic,
                         onCheckedChange = AppModel::setHideDynamicEntry,
-                        enabled = supportsDynamic,
                         icon = Icons.Filled.DynamicFeed,
                         index = 0,
                         total = 2,
                     )
                     SettingsSwitchItem(
                         title = "隐藏「消息」入口",
-                        subtitle = if (supportsMessages) {
-                            "隐藏顶栏 / 侧栏 / 底栏的消息入口，未读数不再请求"
-                        } else {
-                            "当前音源不支持私信，入口本来就不会出现"
-                        },
-                        checked = hideMessages,
+                        subtitle = navigation.inbox.statusText("会话列表"),
+                        checked = navigation.hideMessages,
                         onCheckedChange = AppModel::setHideMessagesEntry,
-                        enabled = supportsMessages,
                         icon = Icons.Filled.Forum,
                         index = 1,
                         total = 2,
@@ -115,23 +103,21 @@ class NavigationSettingsScreen(private val targetSettingId: String? = null) : Sc
                     ProviderFeatureRow(
                         icon = Icons.Filled.DynamicFeed,
                         title = "社交动态",
-                        capability = ProviderCapability.SOCIAL_FEED,
-                        supported = supportsDynamic,
-                        providerName = providerName,
+                        availability = navigation.feed,
                     )
                     ProviderFeatureRow(
                         icon = Icons.Filled.Forum,
                         title = "私信与消息",
-                        capability = ProviderCapability.MESSAGES,
-                        supported = supportsMessages,
-                        providerName = providerName,
+                        availability = navigation.inbox,
                     )
                     ProviderFeatureRow(
                         icon = Icons.Filled.Search,
                         title = "搜索",
-                        capability = ProviderCapability.SEARCH,
-                        supported = provider?.isFeatureAvailable(ProviderCapability.SEARCH) ?: true,
-                        providerName = providerName,
+                        availability = when (provider?.isFeatureAvailable(ProviderCapability.SEARCH)) {
+                            true -> SocialAvailability.Available
+                            false -> SocialAvailability.Unsupported
+                            null -> navigation.feed
+                        },
                     )
                 }
                 SettingsNote(
@@ -154,15 +140,9 @@ class NavigationSettingsScreen(private val targetSettingId: String? = null) : Sc
 private fun ProviderFeatureRow(
     icon: ImageVector,
     title: String,
-    capability: String,
-    supported: Boolean,
-    providerName: String,
+    availability: SocialAvailability,
 ) {
-    val container = if (supported) {
-        MaterialTheme.colorScheme.secondaryContainer
-    } else {
-        cpNestedSurface()
-    }
+    val supported = availability == SocialAvailability.Available
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -182,11 +162,7 @@ private fun ProviderFeatureRow(
         Column(Modifier.weight(1f)) {
             CpText(title, style = MaterialTheme.typography.bodyLarge)
             CpText(
-                text = if (supported) {
-                    "支持 · $capability"
-                } else {
-                    "不支持 · $capability${if (providerName.isBlank()) "" else " · $providerName"}"
-                },
+                text = availability.statusText(title),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

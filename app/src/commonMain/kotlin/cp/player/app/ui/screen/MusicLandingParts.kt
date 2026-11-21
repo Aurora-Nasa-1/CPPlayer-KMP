@@ -1,11 +1,7 @@
 package cp.player.app.ui.screen
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -35,7 +31,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import cp.player.app.ui.theme.cpCardSurface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -62,9 +57,7 @@ import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.CpWavyProgress
 import cp.player.app.ui.component.cpPressScale
 import cp.player.app.ui.component.rememberActiveProviderSupports
-import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.cpCardSurface
-import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.resized
 import cp.player.core.music.TrackSummary
@@ -265,17 +258,10 @@ internal fun LandingTrackRow(
     modifier: Modifier = Modifier,
     artworkSize: Dp = 48.dp,
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
     val current = snapshot.track?.id == track.id
-    val container by animateColorAsState(
-        when {
-            current -> MaterialTheme.colorScheme.secondaryContainer
-            hovered -> cpNestedSurface()
-            else -> cpCardSurface()
-        },
-        animationSpec = CpMotion.effectsFast(), label = "trackHover",
-    )
+    // 只表达「正在播放」；hover 反馈交给 Surface 自带的 M3 ripple，
+    // 不再另加容器色（两层叠加 + 弹簧动画会闪两种颜色）。
+    val container = if (current) MaterialTheme.colorScheme.secondaryContainer else cpCardSurface()
     CpContextMenu(
         items = listOf(
             CpContextMenuItem("播放", Icons.Filled.PlayArrow, onClick = onPlay),
@@ -284,9 +270,8 @@ internal fun LandingTrackRow(
         modifier = modifier,
     ) {
         Surface(
-            modifier = Modifier.fillMaxWidth().hoverable(interaction).cpPressScale(),
+            modifier = Modifier.fillMaxWidth().cpPressScale(),
             onClick = onPlay,
-            interactionSource = interaction,
             color = container,
             shape = MaterialTheme.shapes.medium,
         ) {

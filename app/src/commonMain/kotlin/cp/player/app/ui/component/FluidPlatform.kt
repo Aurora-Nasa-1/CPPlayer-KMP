@@ -1,6 +1,7 @@
 package cp.player.app.ui.component
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import kotlin.math.roundToInt
@@ -54,7 +55,6 @@ expect fun resolveFluidRenderTier(): FluidRenderTier
 @Composable
 internal expect fun Modifier.renderPlatformFluid(
     tier: FluidRenderTier,
-    sceneModel: FluidSceneModel,
-    scale: Float,
+    sceneModel: State<FluidSceneModel>,
     fallback: Brush,
 ): Modifier

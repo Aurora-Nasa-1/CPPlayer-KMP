@@ -431,7 +431,7 @@ object CpStringsEn : CpStrings {
             "Both include DSD64/128 software decoding and 64-bit floating-point DSP. Exclusive mode " +
             "is off by default; turn it on in Settings after activation."
         override val vipKeyLabel = "License key"
-        override val vipKeyPlaceholder = "Enter the 16-character license key"
+        override val vipKeyPlaceholder = "Paste an offline or cloud license key"
         override val vipActivateFailed = "Activation failed. Check the license key."
         override val vipActivateNow = "Activate"
         override val vipActivateLater = "Not now"
@@ -1100,6 +1100,8 @@ object CpStringsEn : CpStrings {
         override val removeFromCloud = "Delete from cloud drive"
         override val removeSelected = "Remove"
 
+        override fun removeTrackMessage(playlistName: String, trackName: String) =
+            "Remove \"$trackName\" from \"$playlistName\"?"
         override fun removeSelectedMessage(name: String, count: Int) =
             "Remove $count selected tracks from \"$name\"?"
         override fun deletePlaylistMessage(name: String) =
@@ -1469,6 +1471,10 @@ object CpStringsEn : CpStrings {
         override val localShuffleNote = "Shuffle music stored on this device"
         override val personalFm = "Personal FM"
         override val personalFmNote = "Continuous playback, no picking"
+        override val fmRecommended = "For you"
+        override val fmExplore = "Explore"
+        override val fmFamiliar = "Familiar"
+        override val fmPuzzle = "Puzzle"
         override val localLibrary = "Local library"
         override val localLibraryNote = "Browse music files on this device"
         override val intelligenceNote = "Built around today's picks"

@@ -17,7 +17,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -147,6 +146,7 @@ import cp.player.core.playback.PlaybackUiState
 import cp.player.core.playback.RepeatMode
 import cp.player.core.provider.ProviderCapability
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.Flow
 
 /**
  * 桌面 / 平板播放页：左侧封面 + 控件，右侧队列 / 歌词 / 评论。
@@ -165,6 +165,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun DesktopPlayerScreen(
     state: PlaybackUiState,
+    positionFlow: Flow<Long>? = null,
+    initialPositionMs: Long = state.positionMs,
     onBack: () -> Unit,
     onTogglePlay: () -> Unit,
     onSeek: (Long) -> Unit,
@@ -190,6 +192,8 @@ fun DesktopPlayerScreen(
     // 由「决定显示播放页的人」登记：壳层是 `MainScreen`，路由是 `App` 看栈顶。
     DesktopPlayerLayout(
         state = state,
+        positionFlow = positionFlow,
+        initialPositionMs = initialPositionMs,
         volume = state.volume,
         onVolumeChange = { v -> playback.setVolume(v) },
         onBack = onBack,
@@ -382,6 +386,8 @@ private fun playerMetrics(maxWidth: Dp, maxHeight: Dp): PlayerMetrics {
 @Composable
 internal fun DesktopPlayerLayout(
     state: PlaybackUiState,
+    positionFlow: Flow<Long>? = null,
+    initialPositionMs: Long = state.positionMs,
     volume: Float,
     onVolumeChange: (Float) -> Unit,
     onBack: () -> Unit,
@@ -424,7 +430,9 @@ internal fun DesktopPlayerLayout(
     val seekable = SeekAvailability.isSeekable(duration, state.isLocalizing)
 
     val surfaceHigh = MaterialTheme.colorScheme.surfaceContainerHigh
-    val background0 = MaterialTheme.colorScheme.background
+    // M3 已弃用 `background` / `onBackground`，一律用 `surface` / `onSurface`
+    // ——两者在 M3 里本来就是等值的，继续读 `background` 只是留了个将来会消失的别名。
+    val background0 = MaterialTheme.colorScheme.surface
     val background = remember(surfaceHigh, background0) {
         Brush.radialGradient(
             colors = listOf(surfaceHigh, background0),
@@ -700,13 +708,15 @@ internal fun DesktopPlayerLayout(
                                     .size(artSize)
                                     .aspectRatio(1f)
                                     .shadow(
-                                        elevation = if (state.isPlaying) 22.dp else 10.dp,
+                                        // Keep depth while avoiding a large animated offscreen shadow pass.
+                                        elevation = if (state.isPlaying) 12.dp else 6.dp,
                                         shape = artShape,
                                         clip = false,
                                         ambientColor = Color.Black.copy(alpha = 0.22f),
                                         spotColor = Color.Black.copy(alpha = 0.28f),
                                     )
                                     .clip(artShape),
+                                targetSize = artSize,
                             )
                         }
 
@@ -817,43 +827,15 @@ internal fun DesktopPlayerLayout(
 
                             Spacer(Modifier.height(metrics.titleToSeek))
 
-                            // 波形进度条
-                            CpSeekBar(
-                                positionMs = state.positionMs,
-                                durationMs = duration,
-                                onSeek = onSeek,
-                                enabled = seekable,
-                                waveFlowing = state.isPlaying,
+                            DesktopProgressSection(
+                                state = state,
+                                positionFlow = positionFlow,
+                                initialPositionMs = initialPositionMs,
+                                duration = duration,
+                                seekable = seekable,
                                 trackKey = track.id,
-                                modifier = Modifier.fillMaxWidth(),
+                                onSeek = onSeek,
                             )
-
-                            // 时间行与禁用原因
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                val formattedPosition = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
-                                CpText(
-                                    formattedPosition,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                CpText(
-                                    SeekAvailability.durationLabel(duration),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            SeekAvailability.disabledReason(duration, state.isLocalizing)?.let { reason ->
-                                CpText(
-                                    reason,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
 
                             Spacer(Modifier.height(metrics.seekToTransport))
 
@@ -903,6 +885,8 @@ internal fun DesktopPlayerLayout(
                                 when (tabIndex) {
                                     0 -> DesktopLyricsContent(
                                         state = state,
+                                        positionFlow = positionFlow,
+                                        initialPositionMs = initialPositionMs,
                                         onSeek = onSeek,
                                         showTranslation = showTranslation,
                                         onRepeat = onRepeat,
@@ -1057,6 +1041,9 @@ private fun PlayerSheetGrabber(
     modifier: Modifier = Modifier,
 ) {
     val s = cpStrings()
+    // hover 只驱动「横条变 ✕」这个行为；视觉反馈统一交给 M3 自带 ripple。
+    // 不再改图标颜色 —— 以前自定义色 + ripple 两层叠在一起，且颜色动画用弹簧
+    // 会先冲到深色再回落到浅色，就是用户说的「先闪深色再保持浅色」。
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
     val morph by animateFloatAsState(
@@ -1064,19 +1051,14 @@ private fun PlayerSheetGrabber(
         animationSpec = CpMotion.spatialFast(),
         label = "playerGrabberMorph",
     )
-    val color = if (hovered) {
-        MaterialTheme.colorScheme.onSurface
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-    }
+    val color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
     Box(
         modifier = modifier
             .width(68.dp)
             .height(24.dp)
-            .hoverable(interaction)
             .clickable(
                 interactionSource = interaction,
-                indication = null,
+                indication = androidx.compose.material3.ripple(),
                 onClickLabel = s.player.collapsePlayer,
                 onClick = onClick,
             ),
@@ -1127,21 +1109,19 @@ internal fun DesktopTabSelector(
     ) {
         tabs.forEachIndexed { index, title ->
             val selected = selectedTab == index
-            val interaction = remember { MutableInteractionSource() }
-            val hovered by interaction.collectIsHoveredAsState()
-
+            // 这里只表达「选中」状态；hover / press 反馈统一交给 Surface 自带的 M3 ripple。
+            // 以前另有 hover 底色 + Surface 自带状态层两层叠加，观感就是两种悬停样式。
             val containerColor by animateColorAsState(
-                targetValue = when {
-                    selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
-                    hovered -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.45f)
-                    else -> Color.Transparent
+                targetValue = if (selected) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+                } else {
+                    Color.Transparent
                 },
                 animationSpec = CpMotion.effects(),
                 label = "desktopTabBg$index",
             )
             val contentColor by animateColorAsState(
                 targetValue = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-                else if (hovered) MaterialTheme.colorScheme.onSurface
                 else MaterialTheme.colorScheme.onSurfaceVariant,
                 animationSpec = CpMotion.effects(),
                 label = "desktopTabContent$index",
@@ -1157,10 +1137,7 @@ internal fun DesktopTabSelector(
                 shape = CircleShape,
                 color = containerColor,
                 contentColor = contentColor,
-                interactionSource = interaction,
-                modifier = Modifier
-                    .size(38.dp)
-                    .hoverable(interaction),
+                modifier = Modifier.size(38.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
@@ -1175,7 +1152,7 @@ internal fun DesktopTabSelector(
     }
 }
 
-/** 顶栏右侧的圆形工具按钮（翻译 / 更多）。桌面端补一层悬停底色。 */
+/** 顶栏右侧的圆形工具按钮（翻译 / 更多）。hover / press 反馈由 M3 自带 ripple 提供。 */
 @Composable
 internal fun PlayerTopToolButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -1183,14 +1160,9 @@ internal fun PlayerTopToolButton(
     active: Boolean,
     onClick: () -> Unit,
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
     val container by animateColorAsState(
-        targetValue = when {
-            active -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
-            hovered -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.45f)
-            else -> Color.Transparent
-        },
+        targetValue = if (active) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+        else Color.Transparent,
         animationSpec = CpMotion.effectsFast(),
         label = "topToolContainer",
     )
@@ -1201,10 +1173,10 @@ internal fun PlayerTopToolButton(
     )
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(38.dp).hoverable(interaction),
+        modifier = Modifier.size(38.dp),
         shape = CircleShape,
         color = container,
-        interactionSource = interaction,
+        contentColor = contentColor,
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -1217,7 +1189,7 @@ internal fun PlayerTopToolButton(
     }
 }
 
-/** 曲名右侧的小动作（MV / 收藏）：32dp 触达区，悬停才出底。 */
+/** 曲名右侧的小动作（MV / 收藏）：32dp 触达区，悬停反馈由 M3 ripple 提供。 */
 @Composable
 internal fun PlayerInlineAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -1226,20 +1198,11 @@ internal fun PlayerInlineAction(
     tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurfaceVariant,
     onClick: () -> Unit,
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    val container by animateColorAsState(
-        targetValue = if (hovered) MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f)
-        else Color.Transparent,
-        animationSpec = CpMotion.effectsFast(),
-        label = "inlineActionContainer",
-    )
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(32.dp).hoverable(interaction),
+        modifier = Modifier.size(32.dp),
         shape = CircleShape,
-        color = container,
-        interactionSource = interaction,
+        color = Color.Transparent,
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -1283,6 +1246,56 @@ private fun PlayerMetaChip(
  * 每颗按钮都是**定尺寸**，行内用 `SpaceBetween` 摊开剩余宽度，占满父级 `controlsWidth`，
  * 与上方的进度条和下方的音量控制形成完全一致的边界对齐。
  */
+@Composable
+private fun DesktopProgressSection(
+    state: PlaybackUiState,
+    positionFlow: Flow<Long>?,
+    initialPositionMs: Long,
+    duration: Long,
+    seekable: Boolean,
+    trackKey: String,
+    onSeek: (Long) -> Unit,
+) {
+    // Keep the 200ms position tick inside this small subtree. The surrounding desktop
+    // player owns artwork, metadata, queue and transport controls and remains skippable.
+    val positionMs = positionFlow?.collectAsState(initial = initialPositionMs)?.value
+        ?: state.positionMs
+    CpSeekBar(
+        positionMs = positionMs,
+        durationMs = duration,
+        onSeek = onSeek,
+        enabled = seekable,
+        waveFlowing = state.isPlaying,
+        trackKey = trackKey,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val formattedPosition = remember(positionMs / 1000) { formatTimeMs(positionMs) }
+        CpText(
+            formattedPosition,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        CpText(
+            SeekAvailability.durationLabel(duration),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    SeekAvailability.disabledReason(duration, state.isLocalizing)?.let { reason ->
+        CpText(
+            reason,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
 @Composable
 internal fun PlayerTransportRow(
     state: PlaybackUiState,
@@ -1349,23 +1362,17 @@ private fun PlayerModeButton(
     onClick: () -> Unit,
     size: Dp = 40.dp,
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
+    // 只保留激活态；hover / press 反馈统一交给 Surface 自带的 M3 ripple。
     val container by animateColorAsState(
-        targetValue = when {
-            active -> MaterialTheme.colorScheme.primaryContainer
-            hovered -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.8f)
-            else -> Color.Transparent
-        },
+        targetValue = if (active) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
         animationSpec = CpMotion.effectsFast(),
         label = "modeButtonContainer",
     )
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(size).hoverable(interaction),
+        modifier = Modifier.size(size),
         shape = CircleShape,
         color = container,
-        interactionSource = interaction,
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -1475,11 +1482,7 @@ internal fun DesktopVolumeControl(
     SideEffect { if (volume > 0.05f) lastNonZero = volume }
     val isMuted = volume <= 0.001f
 
-    val leftInteraction = remember { MutableInteractionSource() }
-    val rightInteraction = remember { MutableInteractionSource() }
-    val leftHovered by leftInteraction.collectIsHoveredAsState()
-    val rightHovered by rightInteraction.collectIsHoveredAsState()
-
+    // 两端图标的 hover 反馈统一用 M3 ripple；不再自己改 tint（会和 ripple 状态层叠成两种样式）。
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
@@ -1489,10 +1492,9 @@ internal fun DesktopVolumeControl(
             modifier = Modifier
                 .size(24.dp)
                 .clip(CircleShape)
-                .hoverable(leftInteraction)
                 .clickable(
-                    interactionSource = leftInteraction,
-                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = androidx.compose.material3.ripple(),
                     onClickLabel = if (isMuted) s.player.unmute else s.player.mute,
                 ) {
                     if (isMuted) onVolumeChange(lastNonZero) else onVolumeChange(0f)
@@ -1507,11 +1509,8 @@ internal fun DesktopVolumeControl(
                 },
                 contentDescription = if (isMuted) s.player.unmute else s.player.mute,
                 modifier = Modifier.size(16.dp),
-                tint = when {
-                    isMuted -> MaterialTheme.colorScheme.error
-                    leftHovered -> MaterialTheme.colorScheme.onSurface
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
+                tint = if (isMuted) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
@@ -1537,10 +1536,9 @@ internal fun DesktopVolumeControl(
             modifier = Modifier
                 .size(24.dp)
                 .clip(CircleShape)
-                .hoverable(rightInteraction)
                 .clickable(
-                    interactionSource = rightInteraction,
-                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = androidx.compose.material3.ripple(),
                     onClickLabel = s.player.maxVolume,
                 ) {
                     onVolumeChange(1f)
@@ -1551,17 +1549,28 @@ internal fun DesktopVolumeControl(
                 imageVector = Icons.AutoMirrored.Rounded.VolumeUp,
                 contentDescription = s.player.maxVolume,
                 modifier = Modifier.size(16.dp),
-                tint = if (rightHovered) MaterialTheme.colorScheme.onSurface
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
 }
 
 @Composable
-internal fun Artwork(url: String?, modifier: Modifier) {
+internal fun Artwork(
+    url: String?,
+    modifier: Modifier,
+    targetSize: Dp = 420.dp,
+) {
     if (!url.isNullOrBlank()) {
-        AsyncImage(model = url.resized(900), contentDescription = null, modifier = modifier, contentScale = ContentScale.Crop)
+        val targetPx = with(LocalDensity.current) { targetSize.toPx() }
+            .toInt()
+            .coerceIn(160, 720)
+        AsyncImage(
+            model = url.resized(targetPx),
+            contentDescription = null,
+            modifier = modifier,
+            contentScale = ContentScale.Crop,
+        )
     } else {
         // 与移动端 PlayerScreen 统一走静态占位块，避免常驻 MorphingShape 引起死循环渲染
         CpCoverPlaceholder(

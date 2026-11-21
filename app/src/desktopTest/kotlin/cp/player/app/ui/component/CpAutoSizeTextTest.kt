@@ -46,7 +46,7 @@ class CpAutoSizeTextTest {
         CpTheme(themeMode = ThemeMode.DARK) {
             Box(
                 Modifier.fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
+                    .background(MaterialTheme.colorScheme.surface)
                     .padding(8.dp),
             ) {
                 CpAutoSizeText(

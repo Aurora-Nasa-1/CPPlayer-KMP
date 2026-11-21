@@ -570,7 +570,7 @@ object AppDiagnostics {
                 result = when (recResult) {
                     is BackendResult.Success -> BackendResult.Success(emptyList())
                     is BackendResult.Error -> BackendResult.Error(recResult.message)
-                    is BackendResult.Unsupported -> BackendResult.Unsupported(recResult.reason)
+                    is BackendResult.Unsupported -> BackendResult.Unsupported(recResult.message)
                 }
             }
         }
@@ -731,7 +731,7 @@ object AppDiagnostics {
                         }
                         ProbeResult.Success("search", elapsed, "成功返回 ${songs.size} 首歌曲", details, songs)
                     }
-                    is BackendResult.Unsupported -> ProbeResult.Unsupported("search", elapsed, result.reason)
+                    is BackendResult.Unsupported -> ProbeResult.Unsupported("search", elapsed, result.message)
                     is BackendResult.Error -> ProbeResult.Error("search", elapsed, result.message)
                 }
             }
@@ -754,7 +754,7 @@ object AppDiagnostics {
                         }
                         ProbeResult.Success("getTrackDetail", elapsed, "获取单曲详情成功: ${s.name} - ${s.artist}", details)
                     }
-                    is BackendResult.Unsupported -> ProbeResult.Unsupported("getTrackDetail", elapsed, result.reason)
+                    is BackendResult.Unsupported -> ProbeResult.Unsupported("getTrackDetail", elapsed, result.message)
                     is BackendResult.Error -> ProbeResult.Error("getTrackDetail", elapsed, result.message)
                 }
             }
@@ -783,7 +783,7 @@ object AppDiagnostics {
                         val summary = if (s.url.isNotBlank()) "成功获取播放直链 (${s.level})" else "返回空直链地址"
                         ProbeResult.Success("getSongUrl", elapsed, summary, details)
                     }
-                    is BackendResult.Unsupported -> ProbeResult.Unsupported("getSongUrl", elapsed, result.reason)
+                    is BackendResult.Unsupported -> ProbeResult.Unsupported("getSongUrl", elapsed, result.message)
                     is BackendResult.Error -> ProbeResult.Error("getSongUrl", elapsed, result.message)
                 }
             }
@@ -808,7 +808,7 @@ object AppDiagnostics {
                         }
                         ProbeResult.Success("getLyric", elapsed, "歌词解析成功 (${lines.size} 行)", details)
                     }
-                    is BackendResult.Unsupported -> ProbeResult.Unsupported("getLyric", elapsed, result.reason)
+                    is BackendResult.Unsupported -> ProbeResult.Unsupported("getLyric", elapsed, result.message)
                     is BackendResult.Error -> ProbeResult.Error("getLyric", elapsed, result.message)
                 }
             }
@@ -827,7 +827,7 @@ object AppDiagnostics {
                         }
                         ProbeResult.Success("getRankings", elapsed, "获取到 ${list.size} 个排行榜", details)
                     }
-                    is BackendResult.Unsupported -> ProbeResult.Unsupported("getRankings", elapsed, result.reason)
+                    is BackendResult.Unsupported -> ProbeResult.Unsupported("getRankings", elapsed, result.message)
                     is BackendResult.Error -> ProbeResult.Error("getRankings", elapsed, result.message)
                 }
             }
@@ -841,12 +841,12 @@ object AppDiagnostics {
                         val details = buildString {
                             appendLine("推荐歌单数量: ${list.size}")
                             list.take(10).forEachIndexed { i, p ->
-                                appendLine("${i + 1}. ${p.name} [播放量: ${p.playCount ?: 0}] (ID: ${p.id})")
+                                appendLine("${i + 1}. ${p.name} [曲目数: ${p.trackCount}] (ID: ${p.id})")
                             }
                         }
                         ProbeResult.Success("getRecommendedPlaylists", elapsed, "获取到 ${list.size} 个推荐歌单", details)
                     }
-                    is BackendResult.Unsupported -> ProbeResult.Unsupported("getRecommendedPlaylists", elapsed, result.reason)
+                    is BackendResult.Unsupported -> ProbeResult.Unsupported("getRecommendedPlaylists", elapsed, result.message)
                     is BackendResult.Error -> ProbeResult.Error("getRecommendedPlaylists", elapsed, result.message)
                 }
             }
@@ -925,7 +925,7 @@ object AppDiagnostics {
      * 清理所有临时流缓存。
      */
     fun clearStreamCache(): Int {
-        return AppModel.backend.songCache.clearAll()
+        return AppModel.backend.songCache.clear()
     }
 
     /**

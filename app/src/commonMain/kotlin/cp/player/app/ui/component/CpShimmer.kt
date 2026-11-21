@@ -71,13 +71,15 @@ private const val ShimmerSweepFraction = 0.6f
  *   **只有在容器里**才需要覆盖：卡片行里卡片是 `surfaceContainerLow`，块若仍是 High，
  *   与卡片只差一档、出图后几乎看不出结构（这条是离屏出图核对出来的）。
  * @param highlight 扫光高光色，**必须比 [base] 浅**（否则扫光是「扫暗」）。
- *   用 `surfaceBright`：浅色与深色主题下它都在 `surfaceContainerHighest` 之上。
+ *   用 `surfaceBright`：浅色与深色主题下它都在 `surfaceContainerHigh` 之上。
+ *   ⚠️ 不要用 `surfaceContainerHighest` —— 在新的表面阶梯里它比 `High` **更靠前**
+ *   （浅色更深、深色更亮），浅色下会把扫光变成「扫暗」。
  */
 @Composable
 fun Modifier.cpShimmer(
     shape: Shape = MaterialTheme.shapes.small,
     base: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    highlight: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    highlight: Color = MaterialTheme.colorScheme.surfaceBright,
 ): Modifier {
     // 窗口隐藏到托盘时降级成静态底色：骨架扫光是纯装饰，看不见时不该继续逐帧请求新帧。
     if (DesktopShell.isWindowHidden) {

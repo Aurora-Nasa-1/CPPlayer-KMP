@@ -7,7 +7,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -61,29 +60,25 @@ val LocalWindowAdaptiveInfo = staticCompositionLocalOf<WindowAdaptiveInfo?> { nu
 val LocalEmbeddedInPane = staticCompositionLocalOf { false }
 
 /**
- * 按「本层可用宽度」发布 [LocalIsExpanded]。
+ * 按 Material 3 Adaptive 提供的窗口尺寸类发布 [LocalIsExpanded]。
  *
  * 必须挂在**根 Navigator 之上**（见 `App.kt`）：`MainScreen` 内部也 provide 了这个 local，
  * 但 push 出去的路由页与 `MainScreen` 在 Navigator 里是**兄弟节点**，拿不到它 ——
  * 于是设置 / 账号 / 引导 / 首页生成歌单这些路由页在宽窗口上读到的都是默认 `false`，
  * 也就是一律走手机布局。两处 provide 的值同源（都是窗口宽度），内层覆盖无害。
  *
- * ⚠️ 这**不能**替代"路由页自己判宽屏"：宽度可能因为内嵌面板、`BoxWithConstraints`
- * 局部约束而与窗口不同，需要按自身可用宽度决策的页面仍应自己读 `maxWidth`。
+ * 局部容器仍可基于实际可用宽度调整内部密度；窗口级布局统一以 Adaptive 尺寸类为准。
  */
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 fun ProvideIsExpanded(content: @Composable () -> Unit) {
     @Suppress("DEPRECATION")
     val adaptiveInfo = currentWindowAdaptiveInfo()
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val expanded = CpBreakpoints.isExpanded(maxWidth)
-        CompositionLocalProvider(
-            LocalIsExpanded provides expanded,
-            LocalWindowAdaptiveInfo provides adaptiveInfo,
-        ) {
-            content()
-        }
+    CompositionLocalProvider(
+        LocalIsExpanded provides CpBreakpoints.isExpanded(adaptiveInfo),
+        LocalWindowAdaptiveInfo provides adaptiveInfo,
+    ) {
+        content()
     }
 }
 
@@ -228,33 +223,44 @@ object CpIconSize {
 }
 
 /**
- * 布局断点。
+ * 内容区栅格密度阈值。
  *
- * 原先这个 `840.dp` 以内联魔法数的形式散落在 `MainScreen` 与设置页里，各写各的 ——
- * 想调一次「什么时候从手机布局切到桌面布局」得全仓库找。收敛到这里，只此一份。
+ * 页面级窗口分栏已交给 Material 3 Adaptive；这里只保留按实际内容宽度计算卡片列数的阈值。
  */
 object CpBreakpoints {
-    /** 小于此宽度：单栏（手机 / 窄窗口）。 */
+    /** Local grid density threshold; window-level pane decisions use WindowAdaptiveInfo below. */
     val medium = 840.dp
 
-    /** 大于等于此宽度：双栏（左列表 + 右详情），内容居中留白。 */
-    val expanded = 1200.dp
-
-    /** 是否进入「桌面式」双栏布局。取代原先内联的 `maxWidth >= 840.dp`。 */
-    fun isExpanded(width: Dp): Boolean = width >= medium
-
-    /** 基于 M3 Adaptive 的标准判定：宽度达到 EXPANDED 断点时进入桌面宽屏/双栏模式。 */
+    /** Window-level expanded width check from Material 3 Adaptive. */
     @OptIn(ExperimentalMaterial3AdaptiveApi::class)
     fun isExpanded(info: WindowAdaptiveInfo?): Boolean =
         info?.windowSizeClass?.isWidthAtLeastBreakpoint(androidx.window.core.layout.WindowSizeClass.WIDTH_DP_EXPANDED_LOWER_BOUND) == true
 
-    enum class Level { COMPACT, MEDIUM, EXPANDED }
+    /** Window-level medium or wider check from Material 3 Adaptive (>=600dp). */
+    @OptIn(ExperimentalMaterial3AdaptiveApi::class)
+    fun isAtLeastMedium(info: WindowAdaptiveInfo?): Boolean =
+        info?.windowSizeClass?.isWidthAtLeastBreakpoint(
+            androidx.window.core.layout.WindowSizeClass.WIDTH_DP_MEDIUM_LOWER_BOUND,
+        ) == true
+}
 
-    fun levelOf(width: Dp): Level = when {
-        width >= expanded -> Level.EXPANDED
-        width >= medium -> Level.MEDIUM
-        else -> Level.COMPACT
-    }
+/**
+ * 判定当前是否处于平板界面：
+ * 在 Android 平台或桌面移动预览模式下，且窗口宽度达到 Medium 及以上（>=600dp）。
+ */
+@Composable
+fun isTabletLayout(): Boolean {
+    val info = LocalWindowAdaptiveInfo.current
+    return (cp.player.app.platform.isAndroidPlatform() || cp.player.app.ui.util.DesktopShell.isMobileMode) &&
+        CpBreakpoints.isAtLeastMedium(info)
+}
+
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
+@Composable
+fun isWindowAdaptiveExpanded(): Boolean {
+    @Suppress("DEPRECATION")
+    val adaptiveInfo = currentWindowAdaptiveInfo()
+    return CpBreakpoints.isExpanded(adaptiveInfo)
 }
 
 @Composable

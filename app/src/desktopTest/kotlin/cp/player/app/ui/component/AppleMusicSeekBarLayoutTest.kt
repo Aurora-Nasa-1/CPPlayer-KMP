@@ -138,6 +138,56 @@ class AppleMusicSeekBarLayoutTest {
     }
 
     @Test
+    fun `拖动时播放进度随手指实时移动`() {
+        var scrubbedMs: Long? = null
+        val scene = ImageComposeScene(width = 360, height = 80, density = Density(1f)) {
+            CpTheme(themeMode = ThemeMode.DARK) {
+                Box(Modifier.fillMaxWidth().background(Color.Black).padding(8.dp)) {
+                    CpMinimalSeekBar(
+                        positionMs = 60_000L,
+                        durationMs = 240_000L,
+                        onSeek = {},
+                        onScrubPreview = { scrubbedMs = it },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                    )
+                }
+            }
+        }
+        try {
+            var t = 0L
+            repeat(4) {
+                scene.render(t)
+                t += 16_000_000L
+            }
+            // 初始在 25%（x≈94）。按下并在 x=266（75%，对应 180_000ms）处拖动。
+            scene.sendPointerEvent(
+                PointerEventType.Press, Offset(94f, 40f), Offset.Zero, 0L, PointerType.Touch,
+            )
+            scene.sendPointerEvent(
+                PointerEventType.Move, Offset(266f, 40f), Offset.Zero, 0L, PointerType.Touch,
+            )
+            repeat(40) {
+                scene.render(t)
+                t += 16_000_000L
+            }
+            val bytes = scene.render().encodeToData()?.bytes ?: error("PNG encode failed")
+            val shot = Shot(bytes, readPng(bytes))
+            dump("am-seekbar-dragged", shot)
+
+            // x=200 原先是未播（在 25% 之外），拖到 75% 后应成为高亮已播区域。轨道竖向中心在 y=32。
+            val lumaAt200 = luma(shot.image.getRGB(200, 32))
+            val lumaAheadAt300 = luma(shot.image.getRGB(300, 32))
+            println("[seekbar] dragged lumaAt200=$lumaAt200 lumaAheadAt300=$lumaAheadAt300 scrubbedMs=$scrubbedMs")
+
+            assertTrue(lumaAt200 > 100, "拖动到 75% 时 x=200 处应是高亮已播轨道，实测 luma=$lumaAt200")
+            assertTrue(lumaAheadAt300 < 80, "未播区域亮度应较低，实测 luma=$lumaAheadAt300")
+            assertTrue(scrubbedMs != null && scrubbedMs!! > 150_000L, "拖动中应实时触发预览回调，实测 $scrubbedMs")
+        } finally {
+            scene.close()
+        }
+    }
+
+    @Test
     fun `按住变粗的绘制不读组合期状态`() {
         // 结构断言：粗细必须在 Canvas 的 draw lambda 里由动画值算出，
         // 提到组合期就等于每帧重组整条滑条（含 M3 交互层）。

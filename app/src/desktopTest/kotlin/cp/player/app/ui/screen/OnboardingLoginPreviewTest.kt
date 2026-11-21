@@ -47,7 +47,7 @@ class OnboardingLoginPreviewTest {
             CpTheme(themeMode = ThemeMode.DARK) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
+                    color = MaterialTheme.colorScheme.surface,
                 ) {
                     content()
                 }

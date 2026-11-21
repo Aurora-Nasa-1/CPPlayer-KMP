@@ -182,7 +182,7 @@ private fun CpContextMenuPanel(
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = cpElevatedSurface(),
-        tonalElevation = 3.dp,
+        tonalElevation = 0.dp,
         shadowElevation = 8.dp,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
     ) {

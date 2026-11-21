@@ -1332,6 +1332,7 @@ interface LibraryStrings {
     val removeFromCloud: String
     val removeSelected: String
 
+    fun removeTrackMessage(playlistName: String, trackName: String): String
     fun removeSelectedMessage(name: String, count: Int): String
     fun deletePlaylistMessage(name: String): String
     fun unfavoritePlaylistMessage(name: String): String
@@ -1723,6 +1724,10 @@ interface HomeStrings {
     val localShuffleNote: String
     val personalFm: String
     val personalFmNote: String
+    val fmRecommended: String
+    val fmExplore: String
+    val fmFamiliar: String
+    val fmPuzzle: String
     val localLibrary: String
     val localLibraryNote: String
     val intelligenceNote: String

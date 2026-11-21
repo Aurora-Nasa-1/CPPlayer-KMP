@@ -5,90 +5,114 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 /**
- * Material 3 Expressive (M3E) 统一语义表面层级令牌。
+ * Material 3 Expressive **分组界面**（grouped settings / bento card）的表面层级令牌。
  *
- * M3 的 surface 色阶是一组**有序的容器角色**，而非简单的「背景 + 卡片」。
- * 真正决定空间层次感的是**垂直进深与相邻层级之间的明度阶梯 (Tonal Stepping)**：
+ * ### 核心规则：卡片恒定浮起 —— 深浅两种模式下卡片都比背景亮
  *
- * ### 双模式层级架构 (Dual Surface Paradigm)：
- * 1. **模式 A：标准内容流模式 (Standard Canvas)**
- *    - 页面底色：[CpSurfaceTokens.canvas] (`surface`，浅色 Tone 98 / 深色 Tone 6 / OLED 纯黑 #000000)
- *    - 卡片层级：[CpSurfaceTokens.standardCard] (`surfaceContainerLow` 浅 / `surfaceContainer` 深)
- *    - 适用：播放大页、歌词全屏、媒体扁平列表。
+ * 这是 M3E 设置页的分组模型，和「普通内容流的单调容器阶梯」是**两套不同的模型**：
  *
- * 2. **模式 B：卡片分组模式 (Grouped / Bento Canvas)**
- *    - 页面底色：[CpSurfaceTokens.grouped] (`surfaceContainer`，浅色 Tone 94 / 深色 Tone 12)
- *    - 卡片层级：[CpSurfaceTokens.groupedCard] (`surfaceContainerLowest` 浅 Tone 100 / `surfaceContainerHigh` 深 Tone 17)
- *    - 卡片内嵌：[CpSurfaceTokens.nested] (`surfaceContainerLow` 浅 Tone 96 / `surfaceContainer` 深 Tone 12)
- *    - 适用：设置页、表单页、仪表盘、Bento 结构化卡片流。
+ * - 单调阶梯：越强调越远离 `surface`，所以浅色下容器比页面**暗**、深色下比页面**亮**；
+ * - **分组模型**：底层是带主题色调的容器色（偏深），卡片是更亮的表面（白 / 亮灰），
+ *   **深浅两色卡片都比背景亮**。Android 16 系统设置、Gmail 的 M3E 改版都是这套 ——
+ *   官方描述即「容器整体再以更明亮的色调与背景区分」。
  *
- * ### 顶层浮层与遮罩 (Overlays & Sheets)：
- * - 浮层底色：[CpSurfaceTokens.overlay]
- *   - 浅色：`surfaceContainerLowest` (Tone 100 纯白) 配合 Scrim 遮罩
- *   - 深色：**`surfaceContainerHighest` (Tone 22)**，严格保证明度高于所有普通卡片 (Tone 17) 与页面 (Tone 12)，消除倒挂。
- * - 浮层内嵌次级块：[CpSurfaceTokens.overlayInner]
- *   - 浅色：`surfaceContainerLow` (Tone 96，比浮层 100 暗 4 阶，内凹感 Inset)
- *   - 深色：`surfaceContainerHigh` (Tone 17，比浮层 22 暗 5 阶，内凹感 Inset)
+ * 本项目原本就是分组模型（`SettingsKit` 里还留着原注释：「页面 `surfaceContainer` T94、
+ * 卡片 `surfaceContainerLowest` T100」）。曾把它误判成「阶梯倒置的 bug」改成
+ * 「页面 `surface` + 卡片 `surfaceContainer`」，于是浅色变成白底灰卡、卡片糊在页面上 ——
+ * 这正是「卡片不明显 / 层级奇怪」的根源。现在改回分组模型。
  *
- * ⚠️ **深色模式下更高层级对应更亮色阶**：
- * `overlay` (22) > `groupedCard` (17) > `grouped` (12) > `canvas` (6)。
- * 任何悬浮对话框、抽屉、菜单在深色下均具有最强的前置浮起感。
+ * ### 为什么令牌要按明暗分支
+ *
+ * M3 的 `Lowest`/`High` 是**相对 surface 的强调方向**，不是绝对明度：
+ * 浅色下 `Lowest`=T100（白）、深色下 `Lowest`=#000（黑），是同一个角色的两端。
+ * 要让「卡片永远亮于页面」，浅色必须取 `Lowest`、深色必须取 `High` —— 写死一个角色
+ * 必然有一端是黑卡。分支集中在令牌这一处，语义固定为「卡片浮起」，不会漂移。
+ *
+ * ### 层级映射
+ *
+ * | 语义 | 浅色角色 | 深色角色 | 纯黑 |
+ * |---|---|---|---|
+ * | [canvas] / [grouped] 页面 | `surfaceContainer` T94 带染色 | `surface` L\*6 / `#000` | `#000` |
+ * | [standardCard] / [groupedCard] 卡片 | `surfaceContainerLowest` T100 白 | `surfaceContainerHigh` L\*18 | L\*6.1 |
+ * | [nested] 卡片内嵌槽（凹陷） | `surfaceContainerLow` T96 | `surfaceContainer` L\*13 | L\*3 |
+ * | [overlay] 浮层 | `surfaceContainerLowest` T100 白 | `surfaceContainerHighest` L\*23 | L\*9 |
+ * | [overlayInner] 浮层内块 | `surfaceContainerLow` T96 | `surfaceContainerHigh` L\*18 | L\*6.1 |
+ *
+ * ### 为什么浅色浮层和卡片同色（都是 T100 白）
+ *
+ * 浅色卡片已经是最高阶的白，浮层不可能更亮。M3 的对话框 / 底部抽屉本就用白底，
+ * 靠 **scrim + elevation 阴影** 与卡片区分，不靠色阶。深色下浮层仍比卡片亮一档
+ * （L\*23 vs L\*18）。
+ *
+ * ### 内嵌槽方向
+ *
+ * [nested] 是**卡片内部的凹陷**（搜索框、Chip、嵌套小块），比所在卡片暗一档：
+ * 白卡里是浅灰槽（T96 < T100）、亮卡里是深灰槽（L\*13 < L\*18），深浅同向。
  */
 object CpSurfaceTokens {
 
-    /** 模式 A (标准内容流)：以纯净 surface 为底，支持 OLED 绝对纯黑 */
+    /** 页面底色：浅色带染色的容器灰，深色为 surface。纯黑模式下为 `#000`。 */
     @Composable
-    fun canvas(): Color = MaterialTheme.colorScheme.surface
+    fun canvas(): Color = if (LocalIsDarkTheme.current) {
+        MaterialTheme.colorScheme.surface
+    } else {
+        MaterialTheme.colorScheme.surfaceContainer
+    }
 
-    /** 模式 B (卡片分组/设置/仪表盘)：以有调性的 surfaceContainer 为底，纯黑模式下为纯黑 surface */
+    /** 分组页底色。与 [canvas] 同值：分组页和页面只有卡片布局差别，底色只有一种。 */
     @Composable
-    fun grouped(): Color =
-        if (LocalPureBlack.current) MaterialTheme.colorScheme.surface
-        else MaterialTheme.colorScheme.surfaceContainer
+    fun grouped(): Color = canvas()
 
-    /** 模式 A 内容流卡片：浮于 canvas 之上 */
+    /** 模式 A 内容流卡片：浮于 [canvas] 之上。 */
     @Composable
-    fun standardCard(): Color =
-        if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainer
-        else MaterialTheme.colorScheme.surfaceContainerLow
+    fun standardCard(): Color = cardSurface()
 
-    /** 模式 B 分组卡片 (BentoCard)：浮于 grouped 之上 */
+    /** 模式 B 分组卡片 (BentoCard)：与 [standardCard] 同阶。 */
     @Composable
-    fun groupedCard(): Color =
-        if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHigh
-        else MaterialTheme.colorScheme.surfaceContainerLowest
+    fun groupedCard(): Color = cardSurface()
 
-    /** 卡片内部内陷槽 (搜索框底色、Chip、嵌套小块) */
+    /** 卡片内部内陷槽（搜索框底色、Chip、嵌套小块）。比卡片暗一档。 */
     @Composable
-    fun nested(): Color =
-        if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainer
-        else MaterialTheme.colorScheme.surfaceContainerLow
+    fun nested(): Color = if (LocalIsDarkTheme.current) {
+        MaterialTheme.colorScheme.surfaceContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
 
-    /**
-     * 对话框、底部抽屉、悬浮条、右键菜单底色。
-     * 深色下强制取 Highest (Tone 22)，绝对高于任何普通卡片！
-     */
+    /** 对话框、底部抽屉、悬浮条、右键菜单底色。深色下比卡片亮一档。 */
     @Composable
-    fun overlay(): Color =
-        if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHighest
-        else MaterialTheme.colorScheme.surfaceContainerLowest
+    fun overlay(): Color = if (LocalIsDarkTheme.current) {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLowest
+    }
 
-    /** 悬浮层内部的次级块 (日志容器、选项行) */
+    /** 浮层内部的次级块（日志容器、选项行）。比 [overlay] 退一阶。 */
     @Composable
-    fun overlayInner(): Color =
-        if (LocalIsDarkTheme.current) MaterialTheme.colorScheme.surfaceContainerHigh
-        else MaterialTheme.colorScheme.surfaceContainerLow
+    fun overlayInner(): Color = if (LocalIsDarkTheme.current) {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+
+    /** 卡片表面：浅色白、深色亮灰 —— 分组模型的恒定浮起层。 */
+    @Composable
+    private fun cardSurface(): Color = if (LocalIsDarkTheme.current) {
+        MaterialTheme.colorScheme.surfaceContainerHigh
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLowest
+    }
 }
 
-/** 页面底色别名：默认映射到模式 B 分组底色，保持平滑兼容 */
+/** 页面底色别名：映射到 [CpSurfaceTokens.grouped]。 */
 @Composable
 fun cpPageSurface(): Color = CpSurfaceTokens.grouped()
 
-/** 画布底色别名：模式 A 纯净底色 */
+/** 画布底色别名：[CpSurfaceTokens.canvas]。 */
 @Composable
 fun cpCanvasSurface(): Color = CpSurfaceTokens.canvas()
 
-/** 分组底色别名：模式 B 结构底色 */
+/** 分组底色别名：[CpSurfaceTokens.grouped]。 */
 @Composable
 fun cpGroupedSurface(): Color = CpSurfaceTokens.grouped()
 

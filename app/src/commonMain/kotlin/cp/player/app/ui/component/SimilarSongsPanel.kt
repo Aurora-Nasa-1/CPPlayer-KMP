@@ -278,7 +278,7 @@ fun SimilarSongsPanel(
             else -> {
                 LazyScrollColumn(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
                 ) {
                     itemsIndexed(visibleTracks, key = { _, item -> item.id }) { index, item ->
                         val playingSeed = item.id == seed

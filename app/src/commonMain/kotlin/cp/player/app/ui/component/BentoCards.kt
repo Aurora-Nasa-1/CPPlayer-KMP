@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import cp.player.app.ui.theme.LocalPureBlack
 import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpNestedSurface
 
@@ -52,10 +53,32 @@ import cp.player.app.ui.theme.cpNestedSurface
 /** 卡片行/列之间的标准间距。 */
 val BentoGap = 12.dp
 
-/** 极淡描边，用于在「纯黑」模式下保住中性卡片的轮廓。 */
+/**
+ * 卡片描边，走 M3 **Outlined card** 的官方做法：`surface` + `outlineVariant`。
+ *
+ * ### 为什么恢复完整描边
+ *
+ * M3 的 Filled card（`surfaceContainer`）本来就只差 2 个 tone，官方靠另外两种变体补区分：
+ * - Elevated card = `surfaceContainerLow` + **阴影**
+ * - Outlined card = `surface` + **`outlineVariant` 描边**
+ *
+ * 这一版把阴影和描边都拿掉了（描边只有 0.45 alpha，几乎看不见），等于让颜色独自承担
+ * M3 从没让它独自承担的活。实测浅色页面 #F9F9FA / 卡片 #EEEDEF 只差 12 个 RGB 点，
+ * 深色即使把阶梯拉宽也仍然偏弱 —— 用户反馈「卡片在深色浅色都不明显」就是这个。
+ *
+ * 现在普通深浅两色用**完整** `outlineVariant`（官方 Outlined card 的值）：浅色 #B2B2B4
+ * 压在 #EEEDEF 上是一条淡而明确的边，深色 #474750 压在 #19191B 上同理。
+ * 纯黑模式仍用 0.45 alpha —— 黑底上完整描边会变成一圈白线，违背 OLED 熄屏的目的。
+ */
 @Composable
-fun bentoOutline(): BorderStroke =
-    BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+fun bentoOutline(): BorderStroke = BorderStroke(
+    width = 1.dp,
+    color = if (LocalPureBlack.current) {
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+    } else {
+        MaterialTheme.colorScheme.outlineVariant
+    },
+)
 
 /** [contentColorFor] 只认语义角色，拿到未知色会返回 Unspecified，这里兜底成 onSurface。 */
 @Composable

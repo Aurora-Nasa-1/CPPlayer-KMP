@@ -1,6 +1,7 @@
 package cp.player.app.ui.component
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -16,16 +17,11 @@ actual fun resolveFluidRenderTier(): FluidRenderTier = FluidRenderTier.MESH_GRAD
 @Composable
 internal actual fun Modifier.renderPlatformFluid(
     tier: FluidRenderTier,
-    sceneModel: FluidSceneModel,
-    scale: Float,
+    sceneModel: State<FluidSceneModel>,
     fallback: Brush,
 ): Modifier {
     // 桌面端（Skiko）完整支持 MeshGradientPainter
-    return this.cpMeshGradientBackground(
-        sceneModel = sceneModel,
-        scale = scale,
-        fallback = fallback,
-    )
+    return this.cpMeshGradientBackground(sceneModel)
 }
 
 /**

@@ -413,7 +413,7 @@ object CpStringsZh : CpStrings {
             "在 Android 上提供 Oboe 低延迟与 USB DAC 直通；两者都内置 DSD64/128 软解与" +
             "64 位浮点 DSP。独占模式默认关闭，激活后仍需你在设置里手动开启。"
         override val vipKeyLabel = "请输入特权卡密"
-        override val vipKeyPlaceholder = "输入 16 位激活卡密"
+        override val vipKeyPlaceholder = "粘贴离线卡密或云控卡密"
         override val vipActivateFailed = "激活失败，请检查激活码"
         override val vipActivateNow = "立即激活"
         override val vipActivateLater = "暂不激活"
@@ -1033,6 +1033,8 @@ object CpStringsZh : CpStrings {
         override val removeFromCloud = "从云盘删除"
         override val removeSelected = "移除"
 
+        override fun removeTrackMessage(playlistName: String, trackName: String) =
+            "确定从「$playlistName」移除歌曲「$trackName」吗？"
         override fun removeSelectedMessage(name: String, count: Int) =
             "确定从「$name」移除选中的 $count 首歌曲吗？"
         override fun deletePlaylistMessage(name: String) = "确定删除「$name」吗？删除后无法恢复。"
@@ -1396,6 +1398,10 @@ object CpStringsZh : CpStrings {
         override val localShuffleNote = "随机畅听本地音乐"
         override val personalFm = "私人 FM"
         override val personalFmNote = "连续播放，不用挑歌"
+        override val fmRecommended = "推荐"
+        override val fmExplore = "探索"
+        override val fmFamiliar = "熟悉"
+        override val fmPuzzle = "拼图"
         override val localLibrary = "本地曲库"
         override val localLibraryNote = "浏览设备音乐文件"
         override val intelligenceNote = "围绕今日推荐延展"

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.theme.cpSheetInnerSurface
 import cp.player.app.ui.theme.cpSheetSurface
@@ -179,25 +180,23 @@ internal fun ShortcutSettingsBody(
  */
 @Composable
 internal fun ShortcutKeyChip(binding: ShortcutBinding?, conflicted: Boolean, strings: CpStrings) {
-    // ⚠️ 「未绑定」的底色**不能**用 `surfaceContainerHighest`：深色主题下设置行的底色
-    // 就是它（`settingsRowContainer()`），两者相同 ⇒ 徽标只剩文字、没有药丸形状，
-    // 和相邻的键位徽标对不齐（离屏出图实测）。`surfaceContainer` 在浅色下比行底深一档、
-    // 深色下比行底浅一档，正是「相对行底色反向」的那一档。
+    val isDark = LocalIsDarkTheme.current
     val container = when {
         conflicted -> MaterialTheme.colorScheme.errorContainer
         binding == null -> cpNestedSurface()
-        else -> MaterialTheme.colorScheme.secondaryContainer
+        else -> MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.16f else 0.10f)
     }
     val content = when {
         conflicted -> MaterialTheme.colorScheme.onErrorContainer
         binding == null -> MaterialTheme.colorScheme.onSurfaceVariant
-        else -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.primary
     }
     Surface(shape = MaterialTheme.shapes.small, color = container) {
         CpText(
             text = binding?.displayName(strings) ?: strings.shortcuts.unbound,
             style = MaterialTheme.typography.labelLarge,
             color = content,
+            fontWeight = if (binding != null && !conflicted) androidx.compose.ui.text.font.FontWeight.SemiBold else null,
             maxLines = 1,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
         )

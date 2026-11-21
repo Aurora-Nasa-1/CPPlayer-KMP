@@ -247,7 +247,13 @@ fun CpWavyProgress(
         modifier = modifier.height(16.dp),
         color = color,
         trackColor = trackColor,
-        waveSpeed = if (waveFlowing) CpWaveFlowSpeed else CpWaveStaticSpeed,
+        // 性能 A/B 探针：-Dcp.wave.probe=off 强制静止，量化流动波形对整个窗口
+        // 逐帧重组/帧率的影响。默认保持原行为，验证完移除。
+        waveSpeed = if (waveFlowing && System.getProperty("cp.wave.probe") != "off") {
+            CpWaveFlowSpeed
+        } else {
+            CpWaveStaticSpeed
+        },
     )
 }
 
@@ -762,6 +768,7 @@ fun CpMinimalSeekBar(
         onValueChange = {
             dragging = true
             dragValue = it
+            sliderState.value = it
             onScrubPreview?.invoke(it.toLong())
         },
         onValueChangeFinished = {
@@ -789,7 +796,8 @@ fun CpMinimalSeekBar(
                 val thicknessPx = (SeekTrackIdleHeight + (SeekTrackPressHeight - SeekTrackIdleHeight) * e).toPx()
                 val top = (size.height - thicknessPx) / 2f
                 val radius = CornerRadius(thicknessPx / 2f)
-                val fraction = (state.value / duration).coerceIn(0f, 1f)
+                val current = if (dragging) dragValue else state.value
+                val fraction = (current / duration).coerceIn(0f, 1f)
                 drawRoundRect(
                     color = ink.copy(alpha = idleTrackAlpha + (SeekTrackPressedTrackAlpha - SeekTrackIdleTrackAlpha) * e),
                     topLeft = Offset(0f, top),

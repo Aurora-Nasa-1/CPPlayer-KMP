@@ -45,6 +45,7 @@ import cp.player.core.music.ArtistSummary
 import cp.player.core.playback.PlaybackUiState
 import cp.player.core.provider.ProviderCapability
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.Flow
 
 internal fun modernPlayerFallbackColors(colorScheme: ColorScheme): List<Color> =
     listOf(colorScheme.surfaceContainerHigh, colorScheme.surfaceContainerLow, colorScheme.surface)
@@ -54,6 +55,8 @@ internal fun modernPlayerFallbackColors(colorScheme: ColorScheme): List<Color> =
 @Composable
 fun SharedTransitionScope.ModernPlayerScreenContent(
     state: PlaybackUiState,
+    positionFlow: Flow<Long>? = null,
+    initialPositionMs: Long = state.positionMs,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onBack: () -> Unit,
     onTogglePlay: () -> Unit,
@@ -162,6 +165,8 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
     ) {
         MobileNowPlayingLayout(
             state = state,
+            positionFlow = positionFlow,
+            initialPositionMs = initialPositionMs,
             config = config,
             lyricsExpanded = lyricsExpanded,
             supportsComments = supportsComments,
@@ -206,6 +211,8 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
         ) { modifier ->
             LyricContent(
                 state = state,
+                positionFlow = positionFlow,
+                initialPositionMs = initialPositionMs,
                 showTranslation = config.showTranslation,
                 onSeek = onSeek,
                 onChangeSource = onChangeSource,

@@ -192,7 +192,7 @@ internal fun WallZoomLadder(
                             fontSize = 12.sp,
                             fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
                             color = if (on) MaterialTheme.colorScheme.onSurface
-                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             softWrap = false,
                         )

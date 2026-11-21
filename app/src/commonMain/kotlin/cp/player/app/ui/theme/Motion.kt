@@ -14,6 +14,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MotionScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 
@@ -82,46 +84,78 @@ object CpMotion {
     fun <T> effectsSlow(): FiniteAnimationSpec<T> = MaterialTheme.motionScheme.slowEffectsSpec()
 
     /**
-     * M3 Expressive Shared Axis (X 轴横向位移) 页面切换转场动效。
+     * 页面转场规格快照：一次取值，随处可用。
      *
-     * 遵循 Material Design 3 / M3 Expressive 标准规范：
-     * - 空间轴 (Spatial): 页面滑动约 25% 距离，采用带弹性且阻尼自然的 Expressive spring (defaultSpatialSpec)
-     * - 效果轴 (Effects): 同步配合透明度进出淡化，采用严禁回弹的 effectsSpec (defaultEffectsSpec / fastEffectsSpec)
+     * **为什么不是 `@Composable fun sharedAxisX(isPop: Boolean)`**：
+     * Voyager 的 `ScreenTransition(transition = { … })` 与 `AnimatedContent(transitionSpec = { … })`
+     * 收到的都是**普通 lambda**（`AnimatedContentTransitionScope<*>.() -> ContentTransform`），
+     * 不在组合上下文里。在那里调用 `@Composable` 函数会直接报编译错误
+     * 「@Composable invocations can only happen from the context of a @Composable function」。
      *
-     * @param isPop 是否为出栈 (Pop) 返回操作；false 为进栈 (Push) 前进操作
+     * 而 spec 本身只是主题注入的几个不可变对象，**取值需要组合上下文，算转场不需要**。
+     * 所以拆成两步：取值留在组合期（[rememberCpPageTransitions]），
+     * 算转场是纯函数（本类方法）—— 页面切换是每秒都可能发生的事，
+     * 每帧在组合上下文里重算一遍转场既没必要也不成立。
      */
-    @Composable
-    fun sharedAxisX(isPop: Boolean): ContentTransform {
-        val spatialSpec: FiniteAnimationSpec<IntOffset> = spatial()
-        val enterEffectsSpec: FiniteAnimationSpec<Float> = effects()
-        val exitEffectsSpec: FiniteAnimationSpec<Float> = effectsFast()
-        return if (isPop) {
-            (slideInHorizontally(spatialSpec) { -(it * 0.25f).roundToInt() } + fadeIn(enterEffectsSpec)) togetherWith
-                (slideOutHorizontally(spatialSpec) { (it * 0.25f).roundToInt() } + fadeOut(exitEffectsSpec))
+    @Stable
+    class Transitions internal constructor(
+        private val spatialSpec: FiniteAnimationSpec<IntOffset>,
+        private val effectsSpec: FiniteAnimationSpec<Float>,
+        private val fastEffectsSpec: FiniteAnimationSpec<Float>,
+    ) {
+
+        /**
+         * M3 Expressive Shared Axis (X 轴横向位移) 页面切换转场动效。
+         *
+         * 遵循 Material Design 3 / M3 Expressive 标准规范：
+         * - 空间轴 (Spatial): 页面滑动约 25% 距离，采用带弹性且阻尼自然的 Expressive spring (defaultSpatialSpec)
+         * - 效果轴 (Effects): 同步配合透明度进出淡化，采用严禁回弹的 effectsSpec (defaultEffectsSpec / fastEffectsSpec)
+         *
+         * @param isPop 是否为出栈 (Pop) 返回操作；false 为进栈 (Push) 前进操作
+         */
+        fun sharedAxisX(isPop: Boolean): ContentTransform = if (isPop) {
+            (slideInHorizontally(spatialSpec) { -(it * 0.25f).roundToInt() } + fadeIn(effectsSpec)) togetherWith
+                (slideOutHorizontally(spatialSpec) { (it * 0.25f).roundToInt() } + fadeOut(fastEffectsSpec))
         } else {
-            (slideInHorizontally(spatialSpec) { (it * 0.25f).roundToInt() } + fadeIn(enterEffectsSpec)) togetherWith
-                (slideOutHorizontally(spatialSpec) { -(it * 0.25f).roundToInt() } + fadeOut(exitEffectsSpec))
+            (slideInHorizontally(spatialSpec) { (it * 0.25f).roundToInt() } + fadeIn(effectsSpec)) togetherWith
+                (slideOutHorizontally(spatialSpec) { -(it * 0.25f).roundToInt() } + fadeOut(fastEffectsSpec))
+        }
+
+        /**
+         * M3 Expressive Shared Axis (Y 轴纵向位移) 页面切换转场动效。
+         *
+         * 适用于自底向上弹出的全屏页面或垂直层级递进转场。
+         *
+         * @param isPop 是否为出栈 (Pop) 返回操作；false 为进栈 (Push) 前进操作
+         */
+        fun sharedAxisY(isPop: Boolean): ContentTransform = if (isPop) {
+            (slideInVertically(spatialSpec) { -(it * 0.25f).roundToInt() } + fadeIn(effectsSpec)) togetherWith
+                (slideOutVertically(spatialSpec) { (it * 0.25f).roundToInt() } + fadeOut(fastEffectsSpec))
+        } else {
+            (slideInVertically(spatialSpec) { (it * 0.25f).roundToInt() } + fadeIn(effectsSpec)) togetherWith
+                (slideOutVertically(spatialSpec) { -(it * 0.25f).roundToInt() } + fadeOut(fastEffectsSpec))
         }
     }
+}
 
-    /**
-     * M3 Expressive Shared Axis (Y 轴纵向位移) 页面切换转场动效。
-     *
-     * 适用于自底向上弹出的全屏页面或垂直层级递进转场。
-     *
-     * @param isPop 是否为出栈 (Pop) 返回操作；false 为进栈 (Push) 前进操作
-     */
-    @Composable
-    fun sharedAxisY(isPop: Boolean): ContentTransform {
-        val spatialSpec: FiniteAnimationSpec<IntOffset> = spatial()
-        val enterEffectsSpec: FiniteAnimationSpec<Float> = effects()
-        val exitEffectsSpec: FiniteAnimationSpec<Float> = effectsFast()
-        return if (isPop) {
-            (slideInVertically(spatialSpec) { -(it * 0.25f).roundToInt() } + fadeIn(enterEffectsSpec)) togetherWith
-                (slideOutVertically(spatialSpec) { (it * 0.25f).roundToInt() } + fadeOut(exitEffectsSpec))
-        } else {
-            (slideInVertically(spatialSpec) { (it * 0.25f).roundToInt() } + fadeIn(enterEffectsSpec)) togetherWith
-                (slideOutVertically(spatialSpec) { -(it * 0.25f).roundToInt() } + fadeOut(exitEffectsSpec))
-        }
+/**
+ * 在组合期取一次转场规格，供**非组合**的 `transitionSpec` / Voyager `transition` 使用。
+ *
+ * 用法：
+ * ```
+ * val pageTransitions = rememberCpPageTransitions()   // 组合上下文
+ * AnimatedContent(targetState, transitionSpec = { pageTransitions.sharedAxisX(isPop) }) { … }
+ * ```
+ *
+ * 只用 `remember` 缓存而不每次都新建：spec 由 `MaterialTheme.motionScheme` 提供，
+ * 换主题（含「减少动效」档位）时 key 变化会重建 —— 这正是我们要的行为。
+ */
+@Composable
+fun rememberCpPageTransitions(): CpMotion.Transitions {
+    val spatialSpec: FiniteAnimationSpec<IntOffset> = CpMotion.spatial()
+    val effectsSpec: FiniteAnimationSpec<Float> = CpMotion.effects()
+    val fastEffectsSpec: FiniteAnimationSpec<Float> = CpMotion.effectsFast()
+    return remember(spatialSpec, effectsSpec, fastEffectsSpec) {
+        CpMotion.Transitions(spatialSpec, effectsSpec, fastEffectsSpec)
     }
 }

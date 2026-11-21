@@ -60,7 +60,7 @@ import cp.player.core.playback.DesktopHiResEngine
 import cp.player.core.playback.PlaybackController
 import cp.player.core.playback.PlaybackUiState
 import cp.player.core.provider.typed.QuickJsWarmup
-import cp.player.core.provider.ProviderCapability
+import cp.player.app.ui.navigation.socialNavigationState
 import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.shortcut.ShortcutAction
 import cp.player.core.util.PlatformContext
@@ -499,16 +499,9 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                         // 内部自动激活 LocalWindowChromeActive = false，呈现原汁原味的手机版界面与顶栏
                         titleBar = if (isMobileMode) null else { navigator ->
                             val activeProvider by AppModel.activeProviderFlow.collectAsState()
-                            val hideMessagesEntry by AppModel.hideMessagesEntryFlow.collectAsState()
-                            val hideDynamicEntry by AppModel.hideDynamicEntryFlow.collectAsState()
-                            val dynamicReplacesSearch by AppModel.dynamicReplacesSearchFlow.collectAsState()
-                            val showMessages = activeProvider
-                                ?.isFeatureAvailable(ProviderCapability.MESSAGES) == true &&
-                                !hideMessagesEntry
-                            val showDynamic = activeProvider
-                                ?.isFeatureAvailable(ProviderCapability.SOCIAL_FEED) == true &&
-                                !hideDynamicEntry &&
-                                !dynamicReplacesSearch
+                            val socialNavigation = socialNavigationState(activeProvider)
+                            val showMessages = socialNavigation.showMessages
+                            val showDynamic = socialNavigation.dynamicAvailable && !socialNavigation.dynamicAsTab
                             DesktopTitleBar(
                                 taoWindow = taoWindow,
                                 windowState = windowState,

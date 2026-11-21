@@ -43,6 +43,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -86,6 +87,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpText
 import cp.player.app.ui.theme.LocalIsDarkTheme
@@ -247,8 +249,8 @@ fun SettingsNote(
             iconTint = MaterialTheme.colorScheme.secondary,
         )
         SettingsNoteEmphasis.INFO -> NoteStyle(
-            container = MaterialTheme.colorScheme.surfaceContainerLow,
-            content = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
+            container = cpNestedSurface(),
+            content = MaterialTheme.colorScheme.onSurfaceVariant,
             icon = Icons.Default.Info,
             iconTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
         )
@@ -370,8 +372,8 @@ fun SettingsNoteGroup(
             iconTint = MaterialTheme.colorScheme.secondary,
         )
         SettingsNoteEmphasis.INFO -> NoteStyle(
-            container = MaterialTheme.colorScheme.surfaceContainerLow,
-            content = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
+            container = cpNestedSurface(),
+            content = MaterialTheme.colorScheme.onSurfaceVariant,
             icon = Icons.Default.Info,
             iconTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
         )
@@ -510,7 +512,7 @@ fun CpInlineHelp(
             },
             confirmButton = {
                 TextButton(onClick = { showDialog = false }) {
-                    CpText(cpStrings().common.ok)
+                    CpText(cpStrings().common.close)
                 }
             },
         )
@@ -555,28 +557,32 @@ fun settingsRowContainer(): Color = cpCardSurface()
 /**
  * 「**当前生效 / 当前选中**」的行容器色。
  *
- * 选 `primaryContainer` 作为高亮容器角色色，与 [SongItem] 激活态保持一致。
- *
- * ⚠️ 配 [settingsRowHighlightContent] 使用 —— 保证在浅色与深色主题下的对比度。
+ * 选中的行使用高反差且通透柔和的主题色高光底色，
+ * 避免大块低饱和度的实体容器（如旧版的 `secondaryContainer`）造成底色混浊发脏；
+ * 文字使用鲜艳饱满的 [settingsRowHighlightContent]（即 `primary` 主色），
+ * 字重加粗，保证在浅色与深色主题下都鲜亮夺目、层次分明。
  */
 @Composable
-fun settingsRowHighlight(): Color = MaterialTheme.colorScheme.primaryContainer
+fun settingsRowHighlight(): Color {
+    val isDark = LocalIsDarkTheme.current
+    return MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.16f else 0.10f)
+}
 
-/** 与 [settingsRowHighlight] 配套的内容色。 */
+/** 与 [settingsRowHighlight] 配套的内容色：鲜艳纯正的强调主色。 */
 @Composable
-fun settingsRowHighlightContent(): Color = MaterialTheme.colorScheme.onPrimaryContainer
+fun settingsRowHighlightContent(): Color = MaterialTheme.colorScheme.primary
 
 @Composable
 private fun resolveContainer(containerColor: Color): Color =
     if (containerColor == Color.Unspecified) settingsRowContainer() else containerColor
 
-/** 行内标题：16sp Medium，**不设 maxLines** —— 大字号下允许换行撑高行，而不是截断。 */
+/** 行内标题：16sp Medium/SemiBold，**不设 maxLines** —— 大字号下允许换行撑高行，而不是截断。 */
 @Composable
-private fun RowTitle(text: String, color: Color) {
+private fun RowTitle(text: String, color: Color, fontWeight: FontWeight = FontWeight.Medium) {
     CpText(
         text = text,
         color = color,
-        fontWeight = FontWeight.Medium,
+        fontWeight = fontWeight,
         fontSize = 16.sp,
         maxLines = Int.MAX_VALUE,
     )
@@ -717,8 +723,9 @@ fun SettingsClickItem(
     val highlight = selected && containerColor == Color.Unspecified
     val resolvedContainer = if (highlight) settingsRowHighlight() else resolveContainer(containerColor)
     val titleColor = if (highlight) settingsRowHighlightContent() else MaterialTheme.colorScheme.onSurface
+    val titleFontWeight = if (highlight) FontWeight.SemiBold else FontWeight.Medium
     val subtitleColor = if (highlight) {
-        settingsRowHighlightContent().copy(alpha = 0.75f)
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.82f)
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
@@ -733,7 +740,11 @@ fun SettingsClickItem(
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+                tint = if (highlight) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                },
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -754,7 +765,7 @@ fun SettingsClickItem(
         leadingContent = leadingContent ?: icon?.let { img ->
             { SettingsLeadingIcon(img, leadingTint) }
         },
-        headlineContent = { RowTitle(title, titleColor) },
+        headlineContent = { RowTitle(title, titleColor, titleFontWeight) },
         supportingContent = if (subtitle != null || supportingContent != null) {
             {
                 subtitle?.let { RowSubtitle(it, subtitleColor) }
@@ -952,17 +963,24 @@ private fun SegmentedControl(
             .selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy(trackPadding),
     ) {
+        val isDark = LocalIsDarkTheme.current
         options.forEachIndexed { optionIndex, label ->
             val selected = optionIndex == selectedIndex
             val interactionSource = remember { MutableInteractionSource() }
+            val selectedBg = if (isDark) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
             Surface(
                 shape = optionShape,
-                color = if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                color = if (selected) selectedBg else Color.Transparent,
                 contentColor = if (selected) {
-                    MaterialTheme.colorScheme.onSecondaryContainer
+                    MaterialTheme.colorScheme.primary
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
+                shadowElevation = if (selected && !isDark) 1.5.dp else 0.dp,
                 modifier = Modifier
                     .weight(1f)
                     .clip(optionShape)
@@ -978,6 +996,7 @@ private fun SegmentedControl(
                 CpText(
                     text = label,
                     style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp),
                 )
@@ -1124,10 +1143,11 @@ fun SettingsDropdownItem(
                     val isSelected = optionIndex == selectedIndex
                     val interactionSource = remember { MutableInteractionSource() }
                     val optionShape = MaterialTheme.shapes.large
+                    val isDark = LocalIsDarkTheme.current
                     Surface(
                         shape = optionShape,
                         color = if (isSelected) {
-                            MaterialTheme.colorScheme.primaryContainer
+                            MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.16f else 0.08f)
                         } else {
                             Color.Transparent
                         },
@@ -1149,9 +1169,21 @@ fun SettingsDropdownItem(
                             modifier = Modifier.padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            RadioButton(selected = isSelected, onClick = null)
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = null,
+                                colors = androidx.compose.material3.RadioButtonDefaults.colors(
+                                    selectedColor = MaterialTheme.colorScheme.primary,
+                                    unselectedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
                             Spacer(Modifier.width(16.dp))
-                            CpText(option, style = MaterialTheme.typography.bodyLarge)
+                            CpText(
+                                option,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            )
                         }
                     }
                 }
@@ -1292,7 +1324,7 @@ fun SettingsButtonItem(
         containerColor = finalContainer,
         leadingContent = icon?.let { img -> { SettingsLeadingIcon(img, finalContent) } },
         headlineContent = { RowTitle(text, finalContent) },
-        supportingContent = subtitle?.let { sub -> { RowSubtitle(sub, finalContent.copy(alpha = 0.75f)) } },
+        supportingContent = subtitle?.let { sub -> { RowSubtitle(sub, finalContent) } },
     )
 }
 
@@ -1527,8 +1559,8 @@ fun SettingsLazyPage(
 fun SettingsBadge(
     text: String,
     modifier: Modifier = Modifier,
-    containerColor: Color = MaterialTheme.colorScheme.secondaryContainer,
-    contentColor: Color = MaterialTheme.colorScheme.onSecondaryContainer,
+    containerColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = if (LocalIsDarkTheme.current) 0.18f else 0.10f),
+    contentColor: Color = MaterialTheme.colorScheme.primary,
 ) {
     Surface(
         shape = MaterialTheme.shapes.extraSmall,
@@ -1664,7 +1696,7 @@ fun SettingsSearchBar(
                     CpText(
                         text = placeholder,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 BasicTextField(

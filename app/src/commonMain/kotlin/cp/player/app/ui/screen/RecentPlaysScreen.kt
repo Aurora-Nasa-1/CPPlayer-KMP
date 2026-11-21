@@ -3,7 +3,6 @@ package cp.player.app.ui.screen
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -85,7 +84,7 @@ import kotlinx.coroutines.launch
  * ### 为什么 [columns] 由调用方算好传进来
  * `LazyScrollColumn` 的 content lambda 是 `LazyListScope.() -> Unit`、**不是** `@Composable`，
  * 所以这个扩展里读不了任何 composable 状态（`LocalIsExpanded` 也不行）。
- * 列数判据（`BoxWithConstraints` 里的 `maxWidth >= 900.dp`）必须留在 `@Composable` 那一层。
+ * 列数判据来自 Material 3 Adaptive 的窗口尺寸类，必须留在 `@Composable` 那一层。
  */
 fun LazyListScope.recentPlaysRows(
     tracks: List<TrackSummary>,
@@ -205,13 +204,11 @@ class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
                 } else {
                     // 宽屏两列：一整行只放一首歌时，「歌名」和右端的「更多」按钮相隔上千 dp，
                     // 视线要来回跳；两列之后每列 ≈700dp，与歌单详情页的曲目宽度相近。
-                    BoxWithConstraints(
+                    Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.TopCenter,
                     ) {
-                        // 列数只能在这一层算：`LazyScrollColumn` 的 content lambda 不是
-                        // @Composable，里面的扩展函数读不到 `LocalIsExpanded`。
-                        val columns = if (maxWidth >= 900.dp) 2 else 1
+                        val columns = if (expanded) 2 else 1
                         val navInsetDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
                         LazyScrollColumn(
                             modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize(),

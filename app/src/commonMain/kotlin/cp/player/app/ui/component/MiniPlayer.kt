@@ -1,16 +1,12 @@
 package cp.player.app.ui.component
 
-import cp.player.app.ui.theme.cpElevatedSurface
 import cp.player.app.ui.theme.cpSheetSurface
+import cp.player.app.ui.theme.LocalIsDarkTheme
 
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -20,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,6 +42,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -77,12 +75,15 @@ import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpShapes
 import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.util.LyricOffsetManager
+import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.ui.util.next
 import cp.player.app.ui.util.resized
 import cp.player.core.music.TrackSummary
 import cp.player.core.playback.LyricsState
 import cp.player.core.playback.PlaybackUiState
 import cp.player.core.playback.RepeatMode
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -147,9 +148,19 @@ fun SharedTransitionScope.MiniPlayer(
     val s = cpStrings()
     val showLyrics by AppModel.showMiniPlayerLyricsFlow.collectAsState()
     val secondLineText = if (showLyrics) currentLyricLine(state) else ""
+    var wheelSeekTarget by remember(track.id) { mutableStateOf<Long?>(null) }
+    var wheelSeekJob by remember { mutableStateOf<Job?>(null) }
+    val wheelSeekScope = rememberCoroutineScope()
+    LaunchedEffect(track.id) {
+        wheelSeekJob?.cancel()
+        wheelSeekTarget = null
+    }
 
-    // 外边距：底栏停靠态取 8dp；底栏收缩隐藏或二级页面时扩展至 12dp（增强悬浮呼吸感）
-    val targetHorizontalMargin = if (desktop || isDockedToBottomBar) 8.dp else 12.dp
+    val isTablet = isTabletLayout()
+    val isDocked = isDockedToBottomBar && !isTablet
+
+    // 外边距：底栏停靠态取 8dp；底栏收缩隐藏、二级页面或平板端时扩展至 12dp（增强悬浮呼吸感）
+    val targetHorizontalMargin = if (desktop || isDocked) 8.dp else 12.dp
     val animatedHorizontalMargin by animateDpAsState(
         targetValue = targetHorizontalMargin,
         animationSpec = CpMotion.spatial(),
@@ -157,7 +168,7 @@ fun SharedTransitionScope.MiniPlayer(
     )
 
     // 内边距：底栏停靠态取 12dp；悬浮胶囊态随着圆角增大，水平内边距动态扩展至 16dp，避免封面与按钮被大圆角挤压
-    val targetInnerHorizontalPadding = if (desktop || isDockedToBottomBar) 12.dp else 16.dp
+    val targetInnerHorizontalPadding = if (desktop || isDocked) 12.dp else 16.dp
     val animatedInnerHorizontalPadding by animateDpAsState(
         targetValue = targetInnerHorizontalPadding,
         animationSpec = CpMotion.spatial(),
@@ -165,13 +176,15 @@ fun SharedTransitionScope.MiniPlayer(
     )
 
     // 手机端在底栏收缩隐藏或无底栏页面时，过渡到与屏幕同心的精致悬浮胶囊圆角：
-    // 同心圆角法则：R_inner = R_outer - margin，同时收敛在 [20.dp, 28.dp] 区间内，避免生搬物理大圆角导致笨重
+    // 同心圆角法则：R_inner = R_outer - margin，同时收敛在 [20.dp, 28.dp] 区间内，避免生搬物理大圆角导致笨重；
+    // 平板界面（侧边导航无底栏）默认与屏幕物理边角圆角完全一致。
     val screenCorner = rememberScreenCornerRadius()
     val floatingCorner = remember(screenCorner, targetHorizontalMargin) {
         (screenCorner - targetHorizontalMargin).coerceIn(20.dp, 28.dp)
     }
-    val targetBottomCorner = if (desktop || isDockedToBottomBar) 16.dp else floatingCorner
-    val targetTopCorner = if (desktop || isDockedToBottomBar) 28.dp else floatingCorner
+    val defaultCorner = if (isTablet) screenCorner else floatingCorner
+    val targetBottomCorner = if (desktop || isDocked) 16.dp else defaultCorner
+    val targetTopCorner = if (desktop || isDocked) 28.dp else defaultCorner
     val animatedBottomCorner by animateDpAsState(
         targetValue = targetBottomCorner,
         animationSpec = CpMotion.spatial(),
@@ -194,6 +207,7 @@ fun SharedTransitionScope.MiniPlayer(
     // 队列弹层 / 「更多」弹层的开关（仅桌面分支会用到）。
     var showQueueSheet by remember { mutableStateOf(false) }
     val moreSheets = rememberPlayerMoreSheetState()
+    val isDark = LocalIsDarkTheme.current
 
     Surface(
         onClick = onClick,
@@ -203,30 +217,95 @@ fun SharedTransitionScope.MiniPlayer(
             .fillMaxWidth()
             .padding(horizontal = animatedHorizontalMargin.coerceAtLeast(0.dp), vertical = 4.dp)
             .then(press.second)
+            .miniPlayerMouseWheel { deltaY ->
+                if (desktop && SeekAvailability.isSeekable(state.durationMs, state.isLocalizing)) {
+                    val basePosition = wheelSeekTarget ?: state.positionMs
+                    val target = miniPlayerWheelSeekTarget(
+                        positionMs = basePosition,
+                        durationMs = state.durationMs,
+                        deltaY = deltaY,
+                    )
+                    if (target != basePosition) {
+                        wheelSeekTarget = target
+                        wheelSeekJob?.cancel()
+                        wheelSeekJob = wheelSeekScope.launch {
+                            delay(350)
+                            AppModel.playback.seekTo(target)
+                            delay(1_500)
+                            if (wheelSeekTarget == target) wheelSeekTarget = null
+                        }
+                    }
+                }
+            }
             .sharedBounds(
                 sharedContentState = rememberSharedContentState(key = "player-container"),
                 animatedVisibilityScope = animatedVisibilityScope
             ),
-        color = cpElevatedSurface(),
+        color = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 0.dp,
-        shadowElevation = 4.dp,
+        shadowElevation = if (isDark) 4.dp else 2.dp,
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.12f else 0.20f),
+        ),
     ) {
         Column {
-            // 「一起听」条：只在已经在房间里时绘制（见 ListenTogetherStrip 的 KDoc）。
-            // 放在小播放器**内部**而不是宿主上：两个宿主共用本组件，一处改动即覆盖
-            // 三个 tab 与所有路由页；而且尾留白量的是本组件的实测高度，加在这里
-            // 留白会自动跟着变，不会出现「条把列表最后一行压住」。
-            ListenTogetherStrip()
+                // 「一起听」条：只在已经在房间里时绘制（见 ListenTogetherStrip 的 KDoc）。
+                // 放在小播放器**内部**而不是宿主上：两个宿主共用本组件，一处改动即覆盖
+                // 三个 tab 与所有路由页；而且尾留白量的是本组件的实测高度，加在这里
+                // 留白会自动跟着变，不会出现「条把列表最后一行压住」。
+                ListenTogetherStrip()
 
-            val isFavorite by AppModel.currentFavoriteFlow.collectAsState()
-            val qualityLevel by AppModel.playbackQualityFlow.collectAsState()
+                val isFavorite by AppModel.currentFavoriteFlow.collectAsState()
+                val qualityLevel by AppModel.playbackQualityFlow.collectAsState()
 
-            if (desktop) {
-                MiniPlayerDesktopBar(
-                    state = state,
-                    isFavorite = isFavorite,
-                    qualityLevel = qualityLevel,
-                    cover = {
+                if (desktop) {
+                    MiniPlayerDesktopBar(
+                        state = state,
+                        isFavorite = isFavorite,
+                        qualityLevel = qualityLevel,
+                        cover = {
+                            MiniCover(
+                                track = track,
+                                hideCover = hideCover,
+                                coverCorner = coverCorner,
+                                coverShape = coverShape,
+                                isPlaying = state.isPlaying,
+                                animatedVisibilityScope = animatedVisibilityScope,
+                                size = 48.dp,
+                                contentScale = ContentScale.Crop,
+                            )
+                        },
+                        info = {
+                            MiniTrackInfo(
+                                track = track,
+                                isPlaying = state.isPlaying,
+                                lyricText = secondLineText,
+                                titleStyle = MaterialTheme.typography.titleSmall,
+                                secondLineStyle = MaterialTheme.typography.bodySmall,
+                                animatedVisibilityScope = animatedVisibilityScope,
+                                // 桌面底栏过长歌词允许跑马灯（与手机端一致响应用户诉求）
+                                secondLineEmphasized = true,
+                            )
+                        },
+                        onTogglePlay = onTogglePlay,
+                        onSkipPrev = onSkipPrev,
+                        onSkipNext = onSkipNext,
+                        // 以下动作直接走 AppModel：它们与播放页里同名按钮是**同一个动作**，
+                        // 再经宿主转发一遍只会多两处可能漂移的接线。
+                        onShuffle = { AppModel.playback.toggleShuffle() },
+                        onRepeat = { AppModel.playback.setRepeatMode(state.repeatMode.next()) },
+                        onLike = { AppModel.toggleFavoriteOf(track.id) },
+                        onVolumeChange = { AppModel.playback.setVolume(it) },
+                        onQualityChange = AppModel::setPlaybackQuality,
+                        onQueue = { showQueueSheet = true },
+                        onMore = { moreSheets.showMoreMenu = true },
+                    )
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = animatedInnerHorizontalPadding.coerceAtLeast(0.dp), vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         MiniCover(
                             track = track,
                             hideCover = hideCover,
@@ -237,138 +316,110 @@ fun SharedTransitionScope.MiniPlayer(
                             size = 48.dp,
                             contentScale = ContentScale.Crop,
                         )
-                    },
-                    info = {
-                        MiniTrackInfo(
-                            track = track,
-                            isPlaying = state.isPlaying,
-                            lyricText = secondLineText,
-                            titleStyle = MaterialTheme.typography.titleSmall,
-                            secondLineStyle = MaterialTheme.typography.bodySmall,
-                            animatedVisibilityScope = animatedVisibilityScope,
-                            // 桌面底栏过长歌词允许跑马灯（与手机端一致响应用户诉求）
-                            secondLineEmphasized = true,
-                        )
-                    },
-                    onTogglePlay = onTogglePlay,
-                    onSkipPrev = onSkipPrev,
-                    onSkipNext = onSkipNext,
-                    // 以下动作直接走 AppModel：它们与播放页里同名按钮是**同一个动作**，
-                    // 再经宿主转发一遍只会多两处可能漂移的接线。
-                    onShuffle = { AppModel.playback.toggleShuffle() },
-                    onRepeat = { AppModel.playback.setRepeatMode(state.repeatMode.next()) },
-                    onLike = { AppModel.toggleFavoriteOf(track.id) },
-                    onVolumeChange = { AppModel.playback.setVolume(it) },
-                    onQualityChange = AppModel::setPlaybackQuality,
-                    onQueue = { showQueueSheet = true },
-                    onMore = { moreSheets.showMoreMenu = true },
-                )
-            } else {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = animatedInnerHorizontalPadding.coerceAtLeast(0.dp), vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    MiniCover(
-                        track = track,
-                        hideCover = hideCover,
-                        coverCorner = coverCorner,
-                        coverShape = coverShape,
-                        isPlaying = state.isPlaying,
-                        animatedVisibilityScope = animatedVisibilityScope,
-                        size = 48.dp,
-                        contentScale = ContentScale.Crop,
-                    )
-                    BoxWithConstraints(
-                        Modifier.weight(1f).padding(horizontal = 8.dp),
-                    ) {
-                        val stableWidth = rememberStableTrackInfoWidth(
-                            track = track,
-                            lyrics = state.lyrics,
-                            maxLimit = maxWidth,
-                            titleStyle = MaterialTheme.typography.titleSmall,
-                            lyricStyle = MaterialTheme.typography.bodySmall,
-                        )
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
+                        BoxWithConstraints(
+                            Modifier.weight(1f).padding(horizontal = 8.dp),
                         ) {
-                            Box(Modifier.widthIn(max = stableWidth)) {
-                                MiniTrackInfo(
-                                    track = track,
-                                    isPlaying = state.isPlaying,
-                                    lyricText = secondLineText,
-                                    titleStyle = MaterialTheme.typography.titleSmall,
-                                    secondLineStyle = MaterialTheme.typography.bodySmall,
-                                    animatedVisibilityScope = animatedVisibilityScope,
-                                    secondLineEmphasized = true,
-                                    lyricHighlight = true,
-                                )
+                            val stableWidth = rememberStableTrackInfoWidth(
+                                track = track,
+                                lyrics = state.lyrics,
+                                maxLimit = maxWidth,
+                                titleStyle = MaterialTheme.typography.titleSmall,
+                                lyricStyle = MaterialTheme.typography.bodySmall,
+                            )
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(Modifier.widthIn(max = stableWidth)) {
+                                    MiniTrackInfo(
+                                        track = track,
+                                        isPlaying = state.isPlaying,
+                                        lyricText = secondLineText,
+                                        titleStyle = MaterialTheme.typography.titleSmall,
+                                        secondLineStyle = MaterialTheme.typography.bodySmall,
+                                        animatedVisibilityScope = animatedVisibilityScope,
+                                        secondLineEmphasized = true,
+                                        lyricHighlight = true,
+                                    )
+                                }
+                                Spacer(Modifier.weight(1f))
                             }
-                            Spacer(Modifier.weight(1f))
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            MiniBarIconButton(
+                                icon = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                contentDescription = if (isFavorite) s.player.unlike else s.player.like,
+                                onClick = { AppModel.toggleFavoriteOf(track.id) },
+                                active = isFavorite,
+                                size = 36.dp,
+                                iconSize = 20.dp,
+                            )
+                            MiniBarIconButton(
+                                icon = Icons.Filled.SkipPrevious,
+                                contentDescription = s.player.previousTrack,
+                                onClick = onSkipPrev,
+                                size = 36.dp,
+                                iconSize = 22.dp,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                            CpPlayPauseButton(
+                                isPlaying = state.isPlaying,
+                                onClick = onTogglePlay,
+                                size = 38.dp,
+                                isLoading = state.isBuffering,
+                            )
+                            MiniBarIconButton(
+                                icon = Icons.Filled.SkipNext,
+                                contentDescription = s.player.nextTrack,
+                                onClick = onSkipNext,
+                                size = 36.dp,
+                                iconSize = 22.dp,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
                         }
                     }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        MiniBarIconButton(
-                            icon = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                            contentDescription = if (isFavorite) s.player.unlike else s.player.like,
-                            onClick = { AppModel.toggleFavoriteOf(track.id) },
-                            active = isFavorite,
-                            size = 36.dp,
-                            iconSize = 20.dp,
-                        )
-                        MiniBarIconButton(
-                            icon = Icons.Filled.SkipPrevious,
-                            contentDescription = s.player.previousTrack,
-                            onClick = onSkipPrev,
-                            size = 36.dp,
-                            iconSize = 22.dp,
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                        CpPlayPauseButton(
-                            isPlaying = state.isPlaying,
-                            onClick = onTogglePlay,
-                            size = 38.dp,
-                            isLoading = state.isBuffering,
-                        )
-                        MiniBarIconButton(
-                            icon = Icons.Filled.SkipNext,
-                            contentDescription = s.player.nextTrack,
-                            onClick = onSkipNext,
-                            size = 36.dp,
-                            iconSize = 22.dp,
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
+                }
+
+                if (desktop) {
+                    CpMinimalSeekBar(
+                        positionMs = wheelSeekTarget ?: state.positionMs,
+                        durationMs = state.durationMs,
+                        onSeek = { AppModel.playback.seekTo(it) },
+                        enabled = state.durationMs > 0L && !state.isLocalizing,
+                        trackKey = track.id,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(20.dp)
+                            .padding(horizontal = 12.dp),
+                    )
+                } else {
+                    CpLinearProgress(
+                        progress = progress,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 8.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isDark) 0.12f else 0.08f),
+                    )
+                }
+                val errorText = state.error
+                if (!errorText.isNullOrBlank()) {
+                    // 底栏主播放器的报错是用户能看到的唯一失败原因，截成一行会丢掉
+                    // 后半段（通常是具体的 HTTP 状态 / 解码器名）。两行仍能贴住底栏高度。
+                    CpText(
+                        errorText,
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 2,
+                    )
                 }
             }
-
-            // 直线进度条：左右留 12dp 与文字对齐，底部留 8dp 让它"浮"在卡片里而不是贴边。
-            CpLinearProgress(
-                progress = progress,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp)
-                    .padding(bottom = 8.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = cpNestedSurface().copy(alpha = 0.5f),
-            )
-            val errorText = state.error
-            if (!errorText.isNullOrBlank()) {
-                // 底栏主播放器的报错是用户能看到的唯一失败原因，截成一行会丢掉
-                // 后半段（通常是具体的 HTTP 状态 / 解码器名）。两行仍能贴住底栏高度。
-                CpText(
-                    errorText,
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
-                    maxLines = 2,
-                )
-            }
         }
-    }
 
     // 弹层挂在卡片**外面**：ModalBottomSheet 自己带一层 scrim 与独立窗口，
     // 塞进带 onClick 的 Surface 里会让它的点击落到底栏的「展开播放页」上。
@@ -576,6 +627,9 @@ internal fun MiniPlayerDesktopBar(
                         onQueue = onQueue,
                         onMore = onMore,
                         onVolumeChange = onVolumeChange,
+                        onVolumeWheel = { deltaY ->
+                            onVolumeChange(miniPlayerWheelVolume(state.volume, deltaY))
+                        },
                         onQualityChange = onQualityChange,
                     )
                 }
@@ -587,6 +641,9 @@ internal fun MiniPlayerDesktopBar(
                     onQueue = onQueue,
                     onMore = onMore,
                     onVolumeChange = onVolumeChange,
+                        onVolumeWheel = { deltaY ->
+                            onVolumeChange(miniPlayerWheelVolume(state.volume, deltaY))
+                        },
                     onQualityChange = onQualityChange,
                 )
             }
@@ -603,6 +660,7 @@ private fun MiniRightCluster(
     onQueue: () -> Unit,
     onMore: () -> Unit,
     onVolumeChange: (Float) -> Unit,
+    onVolumeWheel: (Float) -> Unit,
     onQualityChange: (String) -> Unit,
 ) {
     val s = cpStrings()
@@ -618,6 +676,7 @@ private fun MiniRightCluster(
         MiniVolumeControl(
             volume = state.volume,
             onVolumeChange = onVolumeChange,
+            onVolumeWheel = onVolumeWheel,
         )
         if (showQualityChip) {
             QualityMenuChip(level = qualityLevel, onSelect = onQualityChange)
@@ -631,12 +690,11 @@ private fun MiniRightCluster(
 }
 
 /**
- * 底栏的小图标按钮：**静止时没有任何底色**，只有悬停时浮出一层极淡的容器色。
+ * 底栏的小图标按钮：**静止时没有任何底色**，hover / press 反馈统一用 M3 自带 ripple。
  *
- * 它与 `IconButton` 的区别就在这里 —— `IconButton` 只有按压涟漪，桌面上鼠标扫过去
- * 完全没有反馈；而给每颗都套一层 `FilledIconButton` 又会让底栏变成一排色块
- * （用户明确要求「小按钮不要有背景」）。激活态（随机 / 循环 / 已收藏）用**主色图标**
- * 表达，仍然不加底。
+ * 以前这里自己给 hover 加一层薄底色，而 `Surface(onClick)` 还会叠一层 ripple 状态层，
+ * 同一控件出现两种悬停样式；自定义底色动画又用弹簧，先深后浅地闪一下。现在只保留
+ * 激活态（随机 / 循环 / 已收藏）的主色图标，不给按钮常驻底色。
  */
 @Composable
 private fun MiniBarIconButton(
@@ -649,23 +707,11 @@ private fun MiniBarIconButton(
     active: Boolean = false,
     tint: Color? = null,
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    val container by animateColorAsState(
-        targetValue = if (hovered) {
-            cpNestedSurface().copy(alpha = 0.7f)
-        } else {
-            Color.Transparent
-        },
-        animationSpec = CpMotion.effectsFast(),
-        label = "miniBarIconContainer",
-    )
     Surface(
         onClick = onClick,
-        modifier = modifier.size(size).hoverable(interaction),
+        modifier = modifier.size(size),
         shape = CircleShape,
-        color = container,
-        interactionSource = interaction,
+        color = Color.Transparent,
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -699,6 +745,7 @@ private fun MiniBarIconButton(
 private fun MiniVolumeControl(
     volume: Float,
     onVolumeChange: (Float) -> Unit,
+    onVolumeWheel: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val s = cpStrings()
@@ -709,7 +756,7 @@ private fun MiniVolumeControl(
         volume < 0.5f -> Icons.AutoMirrored.Filled.VolumeDown
         else -> Icons.AutoMirrored.Filled.VolumeUp
     }
-    Box(modifier) {
+    Box(modifier.miniPlayerMouseWheel(handleConsumed = true, onScroll = onVolumeWheel)) {
         MiniBarIconButton(
             icon = icon,
             contentDescription = s.player.volume,

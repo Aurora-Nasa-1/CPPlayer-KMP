@@ -198,7 +198,7 @@ private fun LibrarySearchContent(
                     end = CpSpacing.pageHorizontal,
                     bottom = 96.dp,
                 ),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
             ) {
                 when {
                     keyword.isEmpty() -> item {
@@ -276,6 +276,7 @@ private fun LibrarySearchContent(
                                     onClick = { navigator.push(AppRoute.PlaylistDetail(playlist)) },
                                     onOptionsClick = { selectedPlaylist = playlist },
                                     menuActions = menuActions,
+                                    modifier = Modifier.padding(bottom = CpSpacing.playlistRowGap - CpSpacing.listRowGap),
                                 )
                             }
                         }

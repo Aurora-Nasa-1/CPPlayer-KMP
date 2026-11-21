@@ -44,6 +44,65 @@ import cp.player.app.ui.component.desktopScrollbarGutter
 
 private val MobileBannerHeight = 168.dp
 
+@Composable
+fun TabletHomeSkeleton(modifier: Modifier = Modifier) {
+    ScrollColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = CpSpacing.pageHorizontal,
+            end = CpSpacing.pageHorizontal,
+            top = CpSpacing.pageTop,
+            bottom = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding() + CpSpacing.formBottomInset,
+        ),
+        verticalArrangement = Arrangement.spacedBy(CpSpacing.section),
+    ) {
+        HomeSkeletonSectionHeader(titleWidth = 150.dp, subtitleWidth = 220.dp)
+        Row(
+            Modifier.fillMaxWidth().height(CpSpacing.desktopFocusHeight),
+            horizontalArrangement = Arrangement.spacedBy(CpSpacing.musicGap),
+        ) {
+            CpShimmerBox(Modifier.weight(1.2f).fillMaxHeight(), shape = MaterialTheme.shapes.large)
+            CpShimmerBox(Modifier.weight(1f).fillMaxHeight(), shape = MaterialTheme.shapes.large)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            repeat(3) {
+                CpShimmerBox(
+                    Modifier.weight(1f).height(CpSpacing.musicShortcutHeight),
+                    shape = MaterialTheme.shapes.medium,
+                )
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(CpSpacing.section)) {
+            Column(Modifier.weight(1.2f), verticalArrangement = Arrangement.spacedBy(CpSpacing.section)) {
+                repeat(2) {
+                    HomeSkeletonSectionHeader(titleWidth = 130.dp, subtitleWidth = 190.dp)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        repeat(2) {
+                            CpShimmerBox(
+                                Modifier.weight(1f).height(180.dp),
+                                shape = MaterialTheme.shapes.medium,
+                            )
+                        }
+                    }
+                }
+            }
+            Column(Modifier.weight(0.8f), verticalArrangement = Arrangement.spacedBy(CpSpacing.section)) {
+                repeat(2) {
+                    HomeSkeletonSectionHeader(titleWidth = 110.dp, subtitleWidth = 150.dp)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        repeat(2) {
+                            CpShimmerBox(
+                                Modifier.weight(1f).height(145.dp),
+                                shape = MaterialTheme.shapes.medium,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /**
  * 桌面端首页骨架屏。
  */

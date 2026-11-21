@@ -182,7 +182,7 @@ fun AddToPlaylistSheet(
                 )
                 else -> LazyScrollColumn(
                     Modifier.fillMaxWidth().heightIn(max = 360.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
                     contentPadding = PaddingValues(vertical = 4.dp),
                 ) {
                     itemsIndexed(playlists!!, key = { _, p -> p.resourceId }) { _, playlist ->

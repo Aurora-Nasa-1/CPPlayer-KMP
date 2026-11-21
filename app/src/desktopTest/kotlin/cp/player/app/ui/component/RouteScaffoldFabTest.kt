@@ -21,7 +21,7 @@ import kotlin.test.assertTrue
  *
  * 这一处坏掉的方式没有任何编译期/运行时信号：页面照常渲染、能滚能点，只是右下角那个
  * 「+」**根本没画**。用户报的「音源管理没有导入入口」就是这么来的 ——
- * 桌面宽屏（默认 1320×860）下设置页用 `CpTwoPane` 把该页渲染进右栏并注入
+ * 桌面宽屏（默认 1320×860）下设置页用 adaptive 详情 pane 把该页渲染进右栏并注入
  * `LocalEmbeddedInPane=true`，而 embedded 分支当时只 `content(...)` 就 return，
  * `floatingActionButton` 被整段丢掉；列表为空时列表项也没有，整页零入口。
  *

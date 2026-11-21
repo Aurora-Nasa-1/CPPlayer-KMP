@@ -399,6 +399,9 @@ fun App(
                                             ) {
                                                 val isDesktopExpanded = cp.player.app.ui.component.LocalIsExpanded.current
                                                 val isDesktop = isDesktopExpanded || titleBar != null
+                                                // 转场规格只在组合期取一次：`transition` 是普通 lambda，
+                                                // 里面不能调用 @Composable 的 CpMotion 取值函数。
+                                                val pageTransitions = cp.player.app.ui.theme.rememberCpPageTransitions()
                                                 ScreenTransition(
                                                     navigator = navigator,
                                                     transition = {
@@ -456,16 +459,16 @@ fun App(
                                                             // 统一遵循 M3 Expressive Shared Axis (X 轴) 动效体系规范
                                                             if (!isDesktop && initialState is MainScreen && targetState !is MainScreen) {
                                                                 // 手机端从主页进入无底栏子页面：Shared Axis X 推进并维持层级
-                                                                cp.player.app.ui.theme.CpMotion.sharedAxisX(isPop = false).apply {
+                                                                pageTransitions.sharedAxisX(isPop = false).apply {
                                                                     targetContentZIndex = 1f
                                                                 }
                                                             } else if (!isDesktop && targetState is MainScreen && initialState !is MainScreen) {
                                                                 // 手机端从无底栏子页面返回主页：Shared Axis X 回退并维持层级
-                                                                cp.player.app.ui.theme.CpMotion.sharedAxisX(isPop = true).apply {
+                                                                pageTransitions.sharedAxisX(isPop = true).apply {
                                                                     targetContentZIndex = -1f
                                                                 }
                                                             } else {
-                                                                cp.player.app.ui.theme.CpMotion.sharedAxisX(isPop = navigator.lastEvent == StackEvent.Pop)
+                                                                pageTransitions.sharedAxisX(isPop = navigator.lastEvent == StackEvent.Pop)
                                                             }
                                                         }
                                                     },
@@ -594,11 +597,12 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
     val density = LocalDensity.current
     var barHeightPx by remember { mutableIntStateOf(0) }
     val expanded = cp.player.app.ui.component.LocalIsExpanded.current
+    val isTablet = cp.player.app.ui.component.isTabletLayout()
     val bottomBarVisiblePx = cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx
     val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding().coerceAtLeast(0.dp)
-    val isBottomBarShowing = mainScreenVisible && (if (bottomBarVisiblePx >= 0f) with(density) { bottomBarVisiblePx.toDp() } > 36.dp else true)
+    val isBottomBarShowing = mainScreenVisible && !isTablet && (if (bottomBarVisiblePx >= 0f) with(density) { bottomBarVisiblePx.toDp() } > 36.dp else true)
     val targetBottomGap = when {
-        mainScreenVisible && expanded -> 24.dp
+        mainScreenVisible && (expanded || isTablet) -> 24.dp
         mainScreenVisible -> {
             val barDp = if (bottomBarVisiblePx >= 0f) {
                 with(density) { bottomBarVisiblePx.toDp() }
@@ -618,7 +622,7 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
     val tailSpace by animateDpAsState(
         targetValue = if (show && hasTrack && barHeightPx > 0) {
             with(density) { barHeightPx.toDp() } + 12.dp +
-                if (mainScreenVisible && expanded) safeBottomGap else 0.dp
+                if (mainScreenVisible && (expanded || isTablet)) safeBottomGap else 0.dp
         } else 0.dp,
         animationSpec = cp.player.app.ui.theme.CpMotion.spatial(),
         label = "globalMiniPlayerTail",

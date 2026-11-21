@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SmartDisplay
+import androidx.compose.material.icons.filled.ThumbDown
 import cp.player.core.music.TrackSummary
 
 /**
@@ -58,6 +59,7 @@ data class SongMenuActions(
     /** 删除操作（云盘删除 / 彻底删除本地文件 / 删除下载记录等）。 */
     val onDelete: (() -> Unit)? = null,
     val deleteLabel: String? = null,
+    val onDislike: (() -> Unit)? = null,
 )
 
 /**
@@ -79,9 +81,6 @@ fun songContextMenuItems(actions: SongMenuActions): List<CpContextMenuItem> {
         }
         actions.onRemoveFromQueue?.let {
             add(CpContextMenuItem(s.player.removeFromQueue, Icons.Filled.Close, it, danger = true))
-        }
-        actions.onRemoveFromPlaylist?.let {
-            add(CpContextMenuItem(s.library.removeFromPlaylist, Icons.Filled.Close, it, danger = true))
         }
         if (actions.onToggleFavorite != null) {
             val label = actions.favoriteLabel ?: if (actions.isFavorite) s.library.unfavoritePlaylist else s.library.favoritePlaylist
@@ -123,6 +122,12 @@ fun songContextMenuItems(actions: SongMenuActions): List<CpContextMenuItem> {
         }
         actions.onShowInfo?.let {
             add(CpContextMenuItem(s.player.songInfo, Icons.Filled.Info, it))
+        }
+        actions.onDislike?.let {
+            add(CpContextMenuItem(s.player.dislike, Icons.Filled.ThumbDown, it))
+        }
+        actions.onRemoveFromPlaylist?.let {
+            add(CpContextMenuItem(s.library.removeFromPlaylist, Icons.Filled.Delete, it, danger = true))
         }
         actions.onRemoveFromLibrary?.let {
             add(CpContextMenuItem(s.downloads.removeFromLibrary, Icons.Filled.Close, it, danger = true))

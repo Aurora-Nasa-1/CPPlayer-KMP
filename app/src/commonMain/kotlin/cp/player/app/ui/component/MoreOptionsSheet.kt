@@ -39,10 +39,12 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SmartDisplay
 import androidx.compose.material.icons.filled.SortByAlpha
+import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -50,6 +52,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -58,7 +61,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
-import cp.player.app.ui.theme.cpSheetInnerSurface
 import cp.player.app.ui.util.resized
 
 /** Playlist sort order shared by the playlist options sheet and screen models. */
@@ -127,17 +129,70 @@ fun SongOptionsSheet(
     onRemoveFromLibrary: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     deleteLabel: String? = null,
+    onDislike: (() -> Unit)? = null,
+) {
+    LegacyModalBottomSheet(onDismissRequest = onDismiss) {
+        SongOptionsSheetContent(
+            songName = songName,
+            artistName = artistName,
+            isFavorite = isFavorite,
+            isDownloaded = isDownloaded,
+            onDismiss = onDismiss,
+            onPlay = onPlay,
+            onToggleFavorite = onToggleFavorite,
+            onAddToQueue = onAddToQueue,
+            onPlayNext = onPlayNext,
+            onAddToPlaylist = onAddToPlaylist,
+            onDownload = onDownload,
+            onShowInfo = onShowInfo,
+            onShare = onShare,
+            onPlayMv = onPlayMv,
+            coverUrl = coverUrl,
+            onAddToLocalPlaylist = onAddToLocalPlaylist,
+            onOpenInFileManager = onOpenInFileManager,
+            onRemoveFromPlaylist = onRemoveFromPlaylist,
+            onRemoveFromLibrary = onRemoveFromLibrary,
+            onDelete = onDelete,
+            deleteLabel = deleteLabel,
+            onDislike = onDislike,
+        )
+    }
+}
+
+@Composable
+internal fun SongOptionsSheetContent(
+    songName: String,
+    artistName: String,
+    isFavorite: Boolean,
+    isDownloaded: Boolean,
+    onDismiss: () -> Unit,
+    onPlay: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    onDownload: () -> Unit,
+    onShowInfo: () -> Unit = {},
+    onShare: () -> Unit = {},
+    onPlayMv: (() -> Unit)? = null,
+    coverUrl: String? = null,
+    onAddToLocalPlaylist: (() -> Unit)? = null,
+    onOpenInFileManager: (() -> Unit)? = null,
+    onRemoveFromPlaylist: (() -> Unit)? = null,
+    onRemoveFromLibrary: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
+    deleteLabel: String? = null,
+    onDislike: (() -> Unit)? = null,
 ) {
     val s = cpStrings()
-    LegacyModalBottomSheet(onDismissRequest = onDismiss) {
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Column(
-                Modifier.widthIn(max = 640.dp).fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = SheetHorizontalPadding)
-                    .padding(top = 4.dp, bottom = 28.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.widthIn(max = 640.dp).fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = SheetHorizontalPadding)
+                .padding(top = 4.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
                 SheetHeader(
                     title = songName,
                     subtitle = artistName,
@@ -161,20 +216,22 @@ fun SongOptionsSheet(
                         label = if (isFavorite) s.contextMenu.unfavorite else s.contextMenu.favorite,
                         onClick = { onToggleFavorite(); onDismiss() },
                         containerColor = if (isFavorite) {
-                            MaterialTheme.colorScheme.primary
+                            MaterialTheme.colorScheme.primaryContainer
                         } else {
-                            MaterialTheme.colorScheme.secondaryContainer
+                            MaterialTheme.colorScheme.surfaceContainerHigh
                         },
                         contentColor = if (isFavorite) {
-                            MaterialTheme.colorScheme.onPrimary
+                            MaterialTheme.colorScheme.onPrimaryContainer
                         } else {
-                            MaterialTheme.colorScheme.onSecondaryContainer
+                            MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     )
                     SheetIconButton(
                         icon = Icons.Filled.Share,
                         label = s.player.share,
                         onClick = { onShare(); onDismiss() },
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         shape = CircleShape,
                     )
                 }
@@ -249,6 +306,15 @@ fun SongOptionsSheet(
                 }
 
                 val dangerRows = buildList {
+                    if (onDislike != null) {
+                        add(
+                            SheetAction(
+                                label = s.player.dislike,
+                                icon = Icons.Filled.ThumbDown,
+                                onClick = { onDislike(); onDismiss() },
+                            )
+                        )
+                    }
                     val removeAction = onRemoveFromPlaylist ?: onRemoveFromLibrary
                     if (removeAction != null) {
                         add(
@@ -258,7 +324,7 @@ fun SongOptionsSheet(
                                 } else {
                                     s.contextMenu.removeFromLibrary
                                 },
-                                icon = Icons.Filled.Close,
+                                icon = if (onRemoveFromPlaylist != null) Icons.Filled.Delete else Icons.Filled.Close,
                                 danger = true,
                                 onClick = { removeAction(); onDismiss() },
                             )
@@ -281,8 +347,6 @@ fun SongOptionsSheet(
             }
         }
     }
-}
-
 /**
  * 歌单「更多」弹层 —— 手机 / 触屏形态。
  *
@@ -311,6 +375,7 @@ fun PlaylistOptionsSheet(
     onConvertToPlaylist: (() -> Unit)? = null,
     /** 覆盖头部状态文案（云盘这类借用歌单弹层的场景）。 */
     statusOverride: String? = null,
+    dailyFeedAction: CpContextMenuItem? = null,
 ) {
     val s = cpStrings()
     val statusText = statusOverride ?: when {
@@ -351,20 +416,32 @@ fun PlaylistOptionsSheet(
                         icon = Icons.AutoMirrored.Filled.QueueMusic,
                         label = s.library.addToQueue,
                         onClick = { onAddToQueue(); onDismiss() },
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     if (onShare != null) {
                         SheetIconButton(
                             icon = Icons.Filled.Share,
                             label = s.contextMenu.sharePlaylist,
                             onClick = { onShare(); onDismiss() },
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             shape = CircleShape,
                         )
                     }
                 }
 
                 val actionRows = buildList {
+                    if (dailyFeedAction != null) {
+                        add(
+                            SheetAction(
+                                label = dailyFeedAction.label,
+                                icon = Icons.Filled.SwapHoriz,
+                                onClick = { onDismiss(); dailyFeedAction.onClick() },
+                                enabled = dailyFeedAction.enabled,
+                            )
+                        )
+                    }
                     if (onRefresh != null) {
                         add(
                             SheetAction(
@@ -486,7 +563,7 @@ private fun SheetHeader(
         Surface(
             modifier = Modifier.size(SheetHeroSize),
             shape = if (circleCover) CircleShape else RoundedCornerShape(18.dp),
-            color = cpSheetInnerSurface(),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
         ) {
             if (!coverUrl.isNullOrBlank()) {
                 AsyncImage(
@@ -534,8 +611,8 @@ private fun SheetHeroButton(
         onClick = onClick,
         modifier = modifier.height(SheetHeroSize),
         shape = RoundedCornerShape(percent = 50),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
     ) {
         Row(
             Modifier.fillMaxSize().padding(horizontal = 20.dp),
@@ -547,7 +624,7 @@ private fun SheetHeroButton(
             CpText(
                 label,
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = FontWeight.Bold,
                 maxLines = 1,
             )
         }
@@ -559,9 +636,9 @@ private fun SheetIconButton(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
-    containerColor: Color = cpSheetInnerSurface(),
-    contentColor: Color = MaterialTheme.colorScheme.onSurface,
-    shape: Shape = RoundedCornerShape(24.dp),
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    shape: Shape = CircleShape,
 ) {
     Surface(
         onClick = onClick,
@@ -587,13 +664,11 @@ private fun SheetSectionLabel(text: String) {
 }
 
 /**
- * 一组 M3E segmented list：外圈 20dp 圆角、组内相邻角 4dp、缝宽 2dp。
- * 直接把 `Arrangement.spacedBy(2.dp)` 交给列容器，行的圆角由 [legacySegmentShape]
- * 按 index/total 计算 —— 与设置页的分组列表同一套读数。
+ * 官方 M3 动作列表：透明底色行、无多余内嵌背景，统一由 Compose 标准 Ripple / 状态层反馈。
  */
 @Composable
 private fun SheetActionGroup(actions: List<SheetAction>) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
         actions.forEachIndexed { index, action ->
             SheetActionRow(action, index, actions.size)
         }
@@ -608,35 +683,30 @@ private fun SheetActionRow(action: SheetAction, index: Int, total: Int) {
         action.selected -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurface
     }
+    val iconTint = when {
+        !action.enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        action.danger -> MaterialTheme.colorScheme.error
+        action.selected -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Surface(
         onClick = action.onClick,
         enabled = action.enabled,
         modifier = Modifier.fillMaxWidth().heightIn(min = SheetRowMinHeight),
-        shape = legacySegmentShape(index, total),
-        color = cpSheetInnerSurface(),
+        shape = RoundedCornerShape(12.dp),
+        color = Color.Transparent,
     ) {
         Row(
-            Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 8.dp),
+            Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier.size(36.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        if (action.danger) MaterialTheme.colorScheme.errorContainer
-                        else MaterialTheme.colorScheme.secondaryContainer
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    action.icon,
-                    null,
-                    tint = if (action.danger) MaterialTheme.colorScheme.onErrorContainer
-                    else MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            Spacer(Modifier.width(14.dp))
+            Icon(
+                action.icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(24.dp),
+            )
+            Spacer(Modifier.width(16.dp))
             CpText(
                 action.label,
                 style = MaterialTheme.typography.bodyLarge,
@@ -648,7 +718,7 @@ private fun SheetActionRow(action: SheetAction, index: Int, total: Int) {
             if (action.selected) {
                 Icon(
                     Icons.Filled.Check,
-                    null,
+                    contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp),
                 )

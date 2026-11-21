@@ -56,7 +56,6 @@ import cp.player.app.ui.component.CpConnectedChoice
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
-import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LocalIsExpanded
 import cp.player.app.ui.component.ListeningCalendar
@@ -157,7 +156,8 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
     }
     // 与独立整页同一套口径（HomeScreen 里是 maxWidth >= 900.dp）。
     // 列数在 `recentTab` 里没法自己算（LazyListScope 扩展不是 @Composable），从外面传。
-    val recentColumns = if (LocalIsExpanded.current) 2 else 1
+    val showYearCalendar = LocalIsExpanded.current
+    val recentColumns = if (showYearCalendar) 2 else 1
     val recentToMediaId: (String) -> String = { id ->
         cp.player.core.music.CPMediaId.toCanonicalMediaId(id, providerId = recentProvider)
     }
@@ -216,6 +216,7 @@ private fun InsightsContent(initialTab: Int, onBack: () -> Unit) {
                         strings = s,
                         summary = summary,
                         daily = daily,
+                        showYearCalendar = showYearCalendar,
                         scale = scale,
                         todayKey = todayKey,
                         green = green,
@@ -499,6 +500,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
     strings: CpStrings,
     summary: cp.player.core.insights.InsightsSummary,
     daily: List<cp.player.core.insights.DailyAgg>,
+    showYearCalendar: Boolean,
     scale: cp.player.core.insights.HeatScale,
     todayKey: String,
     green: Boolean,
@@ -602,10 +604,11 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTab(
     } else {
         item {
             InsightCard {
-                // 年视图 53 列 ≈ 690dp，放不进手机屏宽 ⇒ 窄屏换月历视图。
+                // 窗口是否使用年视图由 Material 3 Adaptive 的窗口尺寸类别决定；
+                // 格子尺寸仍按当前卡片真实宽度计算，避免被页面留白或侧栏影响。
                 // 两者共用同一份 daily 与同一套分档，绝不允许各算一套（否则同一天在两端颜色不同）。
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
-                    if (maxWidth >= CpBreakpoints.medium) {
+                    if (showYearCalendar) {
                         val gap = 3.dp
                         // 单元格宽度按可用宽度反算，但**封顶 16dp**：不封顶时 1400dp 页面上
                         // 单格会到 22dp 以上，整面墙变成一坨方块、失去「密度感」。

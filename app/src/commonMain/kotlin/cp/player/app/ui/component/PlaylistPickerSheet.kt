@@ -188,7 +188,7 @@ fun PlaylistPickerSheet(
                 else -> LazyScrollColumn(
                     Modifier.fillMaxWidth().heightIn(max = 420.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
                 ) {
                     itemsIndexed(
                         playlists!!.filter { it.resourceId != excludePlaylistId },
@@ -363,7 +363,7 @@ fun SourceSongsSelectionSheet(
                 else -> LazyScrollColumn(
                     Modifier.fillMaxWidth().heightIn(max = 420.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
                 ) {
                     itemsIndexed(songs!!, key = { _, s -> s.id }) { index, track ->
                         val isSelected = track.id in selectedIds

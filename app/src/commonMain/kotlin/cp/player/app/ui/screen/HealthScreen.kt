@@ -226,7 +226,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTabContent(
     records: List<ApiCallRecord>,
     overall: HealthLevel,
     s: HealthStrings,
-    confirm: cp.player.app.ui.component.ConfirmHostState,
+    confirm: cp.player.app.ui.component.CpConfirmState,
 ) {
     // 1. 系统主动诊断与全面体检卡片
     item(key = "overview_diagnostics") {
@@ -556,7 +556,7 @@ private fun DiagnosticItemCard(item: DiagnosticItem, s: HealthStrings) {
                     item.details?.let { detail ->
                         Surface(
                             shape = MaterialTheme.shapes.extraSmall,
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.4f),
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Column(Modifier.padding(8.dp)) {
@@ -609,7 +609,7 @@ private fun DiagnosticItemCard(item: DiagnosticItem, s: HealthStrings) {
 @Composable
 private fun TroubleshootingToolkitCard(
     s: HealthStrings,
-    confirm: cp.player.app.ui.component.ConfirmHostState,
+    confirm: cp.player.app.ui.component.CpConfirmState,
 ) {
     val clipboardManager = LocalClipboardManager.current
     val report by AppDiagnostics.report.collectAsState()
@@ -1343,7 +1343,7 @@ private fun ProbeWorkbenchCard(s: HealthStrings) {
                                 res.songs.take(4).forEach { song ->
                                     Surface(
                                         shape = MaterialTheme.shapes.extraSmall,
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
                                         Row(
