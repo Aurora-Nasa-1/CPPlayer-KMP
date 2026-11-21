@@ -149,7 +149,7 @@ internal class ColorOsLyricPublisher {
  * Android 侧的 [LyricPusher]：把一帧歌词分发给所有已启用的渠道。
  *
  * ### 为什么去重逻辑集中在这里
- * 每个渠道关心的事件粒度不同（词幕要整首 + 进度；SuperLyric 只要当前句；
+ * 每个渠道关心的事件粒度不同（词幕要整首 + 进度；SuperLyric 4.0 要整首文档一次；
  * 超级岛 1.5s 一次；锁屏岛只在换歌时写一次）。如果让每个渠道自己从
  * [LyricPushFrame] 里判断「这次该不该动」，那么「歌词换行了」「同一句但进度走了」
  * 「换歌了」这三种变化的判定会被复制 8 份。这里统一算好三个布尔值再分发。
@@ -162,7 +162,7 @@ internal class AndroidLyricPusher(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val lyricon = LyriconBridge(context)
-    private val superLyric = SuperLyricBridge()
+    private val superLyric = SuperLyricBridge(scope)
     private val lyricGetter = LyricGetterBridge(context)
     private val statusBar = StatusBarLyricBridge(context)
     private val liveUpdate = LiveUpdateLyricBridge(context)
@@ -230,9 +230,10 @@ internal class AndroidLyricPusher(
         if (trackChanged || linesChanged) {
             if (track != null) {
                 lyricon.sendSong(track, frame.lines, force = trackChanged)
-                superLyric.sendSong(track)
+                superLyric.sendSong(track, frame.lines, force = trackChanged)
             } else {
                 lyricon.clearSong()
+                superLyric.sendStop()
             }
             colorOs.updateSong(track, frame.lines)
             if (config.colorOsEnabled) scheduleColorOsReapply()
@@ -256,7 +257,6 @@ internal class AndroidLyricPusher(
 
         val line = frame.lines.getOrNull(frame.lineIndex)
         if (lineChanged || trackChanged || playChanged) {
-            superLyric.sendLine(line, frame.lines, frame.lineIndex, force = trackChanged)
             lyricGetter.sendLine(line, frame.lines, frame.lineIndex, force = trackChanged)
             statusBar.sendLine(line, force = trackChanged || playChanged)
             publishMediaNotificationLyric(line, track)
