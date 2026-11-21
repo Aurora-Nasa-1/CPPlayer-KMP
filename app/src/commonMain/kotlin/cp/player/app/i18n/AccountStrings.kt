@@ -190,6 +190,7 @@ interface AccountStrings {
     val cookieHowTo: String
     val cookieHintEmpty: String
     val cookieHintUnparsed: String
+    val cookieTokenAccepted: String
 
     /** @param count 解析出的字段数。 */
     fun cookieNoSessionKey(count: Int): String
@@ -408,12 +409,13 @@ object AccountStringsZh : AccountStrings {
     override val sendCaptcha = "发送验证码"
 
     override val cookieLabel = "Cookie"
-    override val cookiePlaceholder = "MUSIC_U=…; __csrf=…"
+    override val cookiePlaceholder = "Cookie: name=value; … 或直接粘贴 token"
     override val cookieHowTo = "获取方式：浏览器登录后按 F12 → 网络（Network）→ 任选一个请求 → " +
         "复制请求头里的 Cookie 整行。登录态等同于密码，只存在本机、" +
         "并按音源隔离，不会发给当前音源以外的任何一方。"
-    override val cookieHintEmpty = "整行粘贴即可：会自动去掉「Cookie:」前缀、换行与多余空格。"
-    override val cookieHintUnparsed = "没解析出任何 name=value —— 请确认复制的是 Cookie，而不是网址或整段请求。"
+    override val cookieHintEmpty = "粘贴 Cookie 整行，或粘贴音源提供的单段 token。"
+    override val cookieHintUnparsed = "请粘贴 Cookie 或单段 token，不要粘贴网址或整段请求。"
+    override val cookieTokenAccepted = "已接收单段凭据："
     override fun cookieNoSessionKey(count: Int) = "已识别 $count 个字段，但其中没有常见的会话字段，多半是复制错了。"
     override fun cookieRecognized(count: Int) = "已识别 $count 个字段："
 
@@ -583,12 +585,13 @@ object AccountStringsEn : AccountStrings {
     override val sendCaptcha = "Send code"
 
     override val cookieLabel = "Cookie"
-    override val cookiePlaceholder = "MUSIC_U=…; __csrf=…"
+    override val cookiePlaceholder = "Cookie: name=value; … or paste a token"
     override val cookieHowTo = "How to get it: sign in in a browser, press F12 → Network → pick any request → " +
         "copy the whole Cookie line from its request headers. It is as sensitive as a password: " +
         "it stays on this device, is isolated per provider, and is never sent to anyone but the current provider."
-    override val cookieHintEmpty = "Just paste the whole line — the \"Cookie:\" prefix, line breaks and extra spaces are stripped automatically."
-    override val cookieHintUnparsed = "No name=value was found — make sure you copied a Cookie, not a URL or a whole request."
+    override val cookieHintEmpty = "Paste a Cookie line or a single token provided by the provider."
+    override val cookieHintUnparsed = "Paste a Cookie or a single token, not a URL or an entire request."
+    override val cookieTokenAccepted = "Single credential received: "
     override fun cookieNoSessionKey(count: Int) =
         "Recognized $count fields, but none of them looks like a session field — you probably copied the wrong thing."
     override fun cookieRecognized(count: Int) = "Recognized $count fields: "

@@ -44,6 +44,13 @@ object CookieLogin {
         val trimmed = raw.trim()
         if (trimmed.isEmpty() || trimmed.length > MAX_LENGTH) return null
 
+        // Some providers use an opaque token rather than an HTTP cookie. Preserve
+        // a single token verbatim so the existing credential slot can carry it.
+        if (!trimmed.contains(';') && trimmed.none(Char::isWhitespace) &&
+            !trimmed.startsWith("http://", true) &&
+            !trimmed.startsWith("https://", true)
+        ) return trimmed
+
         val text = trimmed
             .replace(HEADER_PREFIX, " ")
             .replace(LINE_BREAKS, "; ")
@@ -78,7 +85,9 @@ object CookieLogin {
      * 登录态等同于密码，明文回显在界面上（尤其截图 / 录屏时）没有必要。
      */
     fun mask(normalized: String): String =
-        normalized.split(';').joinToString("; ") { segment ->
+        if (!normalized.contains(';') && !normalized.contains(' ')) {
+            "${normalized.take(4)}…(${normalized.length})"
+        } else normalized.split(';').joinToString("; ") { segment ->
             val name = segment.substringBefore('=').trim()
             val value = segment.substringAfter('=', "").trim()
             if (name.isEmpty() || value.isEmpty()) segment
