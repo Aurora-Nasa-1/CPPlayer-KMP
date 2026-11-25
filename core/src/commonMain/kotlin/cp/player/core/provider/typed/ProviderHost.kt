@@ -393,7 +393,7 @@ class ProviderHost(
 
     suspend fun getRecommendedSongs(request: RecommendationsRequest): TrackPage {
         require(request.limit in 1..MAX_ITEMS)
-        return cachedRead("recSongs", "${request.limit}|${request.scene.orEmpty()}", MEDIUM_TTL_MS) {
+        return cachedRead("recSongs", "${request.limit}|${request.mode}", MEDIUM_TTL_MS) {
             requireCapability(Capability.RECOMMENDED_SONGS)
             adapter.getRecommendedSongs(request).also {
                 validatePage(it.items, request.limit, it.total, ::validateTrack)
@@ -404,7 +404,7 @@ class ProviderHost(
 
     suspend fun getRecommendedPlaylists(request: RecommendationsRequest): PlaylistPage {
         require(request.limit in 1..MAX_ITEMS)
-        return cachedRead("recPlaylists", "${request.limit}|${request.scene.orEmpty()}", MEDIUM_TTL_MS) {
+        return cachedRead("recPlaylists", "${request.limit}|${request.mode}", MEDIUM_TTL_MS) {
             requireCapability(Capability.RECOMMENDED_PLAYLISTS)
             adapter.getRecommendedPlaylists(request).also {
                 validatePage(it.items, request.limit, it.total, ::validatePlaylist)
@@ -415,7 +415,7 @@ class ProviderHost(
 
     suspend fun getPersonalizedPlaylists(request: RecommendationsRequest): PlaylistPage {
         require(request.limit in 1..MAX_ITEMS)
-        return cachedRead("persPlaylists", "${request.limit}|${request.scene.orEmpty()}", MEDIUM_TTL_MS) {
+        return cachedRead("persPlaylists", "${request.limit}|${request.mode}", MEDIUM_TTL_MS) {
             requireCapability(Capability.PERSONALIZED_PLAYLISTS)
             adapter.getPersonalizedPlaylists(request).also {
                 validatePage(it.items, request.limit, it.total, ::validatePlaylist)
@@ -448,7 +448,7 @@ class ProviderHost(
 
     suspend fun getPersonalizedNewSongs(request: RecommendationsRequest): TrackPage {
         require(request.limit in 1..MAX_ITEMS)
-        return cachedRead("persNewSongs", "${request.limit}|${request.scene.orEmpty()}", MEDIUM_TTL_MS) {
+        return cachedRead("persNewSongs", "${request.limit}|${request.mode}", MEDIUM_TTL_MS) {
             requireCapability(Capability.RECOMMENDATION_NEW_SONGS)
             adapter.getPersonalizedNewSongs(request).also {
                 validatePage(it.items, request.limit, it.total, ::validateTrack)
@@ -532,7 +532,7 @@ class ProviderHost(
 
     suspend fun getHotArtists(request: RecommendationsRequest): ArtistPage {
         require(request.limit in 1..MAX_ITEMS)
-        return cachedRead("hotArtists", "${request.limit}|${request.scene.orEmpty()}", MEDIUM_TTL_MS) {
+        return cachedRead("hotArtists", "${request.limit}|${request.mode}", MEDIUM_TTL_MS) {
             requireCapability(Capability.DISCOVERY_HOT_ARTISTS)
             adapter.getHotArtists(request).also {
                 validatePage(it.items, request.limit, it.total, ::validateCatalogArtist)
