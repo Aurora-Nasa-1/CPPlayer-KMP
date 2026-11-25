@@ -1,7 +1,6 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -15,13 +14,11 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import cafe.adriel.voyager.core.screen.Screen
 import cp.player.app.AppModel
-import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpRefreshablePage
-import cp.player.app.ui.component.CpBreakpoints
 import cp.player.app.ui.component.SongDetailInfoDialog
 import cp.player.app.ui.component.SongItem
 import cp.player.app.ui.component.SongOptionsSheet
@@ -35,10 +32,7 @@ import cp.player.app.ui.component.songContextMenuItems
 import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.navigation.LocalAppNavigator
-import cp.player.core.music.PlaylistKind
-import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.TrackSummary
-import cp.player.app.ui.model.PlaylistDetailScreenModel
 import kotlinx.coroutines.launch
 
 /**
@@ -77,38 +71,12 @@ class CloudDriveScreen(private val embedded: Boolean = false) : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            val expanded = CpBreakpoints.isExpanded(maxWidth)
-            if (expanded) {
-                // 桌面宽屏保留云盘自己的紧凑列表壳；手机端直接套歌单详情界面。
-                // rememberScreenModel 是 Screen 上的扩展函数，只能在 Content() 里调（见 AGENTS.md）。
-                val model = rememberScreenModel { CloudDriveScreenModel() }
-                CloudDriveContent(
-                    model = model,
-                    embedded = embedded,
-                    onBack = { navigator.pop() },
-                )
-            } else {
-                val s = cpStrings()
-                val cloudPlaylist = remember(s.library.cloudDrive) {
-                    PlaylistSummary(
-                        id = PlaylistSummary.CLOUD_DRIVE_ID,
-                        name = s.library.cloudDrive,
-                        coverUrl = null,
-                        trackCount = 0,
-                        creatorName = null,
-                        resourceId = PlaylistSummary.CLOUD_DRIVE_RESOURCE_ID,
-                        kind = PlaylistKind.CLOUD_DRIVE,
-                    )
-                }
-                PlaylistDetailContent(
-                    playlist = cloudPlaylist,
-                    model = rememberScreenModel { PlaylistDetailScreenModel() },
-                    embedded = embedded,
-                    onEmbeddedBack = { navigator.pop() },
-                )
-            }
-        }
+        val model = rememberScreenModel { CloudDriveScreenModel() }
+        CloudDriveContent(
+            model = model,
+            embedded = embedded,
+            onBack = { navigator.pop() },
+        )
     }
 }
 

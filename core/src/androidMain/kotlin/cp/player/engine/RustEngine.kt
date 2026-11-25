@@ -318,12 +318,14 @@ object RustEngine {
         }
     }
 
+    @Synchronized
     fun stopEngine() {
         pollJob?.cancel()
         pollJob = null
         progressJob?.cancel()
         progressJob = null
         if (isInitialized) {
+            isInitialized = false
             try {
                 nativeStop()
             } catch (e: Throwable) {
@@ -502,6 +504,10 @@ object RustEngine {
     }
 
     // Native JNI Declarations
+    internal fun setVipLicense(token: String): Boolean =
+        isAvailable && runCatching { nativeSetVipLicenseV2(token) }.getOrDefault(false)
+
+    private external fun nativeSetVipLicenseV2(token: String): Boolean
     private external fun nativeInit(): Boolean
     private external fun nativeInitRustAndroidContext(context: Context): Boolean
     private external fun nativePlay(path: String): Boolean

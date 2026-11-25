@@ -6,9 +6,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -143,24 +140,15 @@ fun DesktopMiniPlayer(
     Surface(
         modifier = modifier.fillMaxSize(),
         shape = RectangleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = MaterialTheme.colorScheme.surfaceContainer,
         border = BorderStroke(
             width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.35f else 0.5f),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.12f else 0.25f),
         ),
     ) {
-        // 动态取色微光背景：引入封面主色的微弱氛围渐变，深浅色自适应
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.08f else 0.05f),
-                            Color.Transparent,
-                        )
-                    )
-                )
                 .graphicsLayer {
                     // 进场轻微微缩淡入动效在内层执行，保证外层 Surface 底色始终 100% 铺满窗口无缝隙
                     scaleX = enterScale
@@ -402,7 +390,7 @@ fun DesktopMiniPlayer(
                         .fillMaxWidth()
                         .height(4.dp),
                     color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isDark) 0.12f else 0.08f),
                 )
             }
         }
@@ -410,7 +398,7 @@ fun DesktopMiniPlayer(
 }
 
 /**
- * 迷你窗口自绘操作按钮，支持 M3 Expressive 按压缩放与悬停色彩反馈。
+ * 迷你窗口自绘操作按钮，支持 M3 Expressive 按压缩放；悬停反馈统一交给 M3 ripple。
  */
 @Composable
 private fun MiniWindowActionButton(
@@ -420,34 +408,16 @@ private fun MiniWindowActionButton(
     modifier: Modifier = Modifier,
     isDanger: Boolean = false,
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val isHovered by interaction.collectIsHoveredAsState()
-    val isPressed by interaction.collectIsPressedAsState()
-
-    val normalBg = Color.Transparent
-    val hoverBg = if (isDanger) {
-        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.85f)
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerHighest
-    }
-    val targetBg = if (isHovered || isPressed) hoverBg else normalBg
-
-    val normalFg = MaterialTheme.colorScheme.onSurfaceVariant
-    val hoverFg = if (isDanger) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
-    val targetFg = if (isHovered || isPressed) hoverFg else normalFg
-
-    val bg by animateColorAsState(targetBg, animationSpec = CpMotion.effects(), label = "miniBtnBg")
-    val fg by animateColorAsState(targetFg, animationSpec = CpMotion.effects(), label = "miniBtnFg")
-
+    val colors = MaterialTheme.colorScheme
     Surface(
         onClick = onClick,
         modifier = modifier
             .size(24.dp)
             .cpPressScale(),
         shape = MaterialTheme.shapes.small,
-        color = bg,
-        contentColor = fg,
-        interactionSource = interaction,
+        color = Color.Transparent,
+        // 危险键用 error 内容色，M3 ripple 会跟着染成危险色；不再另画 hover 底色。
+        contentColor = if (isDanger) colors.error else colors.onSurfaceVariant,
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(

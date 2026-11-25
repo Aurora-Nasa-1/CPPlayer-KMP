@@ -3,7 +3,7 @@ package cp.player.app.ui.screen
 import cp.player.core.model.Message
 
 /**
- * Build saveable, stable keys for the chat LazyColumn.
+ * Build saveable, stable keys for the chat LazyScrollColumn.
  *
  * Provider message IDs are opaque and may be duplicated by an upstream page. Compose keys therefore
  * combine the raw ID with immutable message identity fields, then add an occurrence ordinal only

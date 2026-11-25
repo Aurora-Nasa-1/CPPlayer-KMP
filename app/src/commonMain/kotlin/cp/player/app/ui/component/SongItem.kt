@@ -42,6 +42,7 @@ import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.anim.coverFlightSource
 import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.resized
 import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -123,21 +124,25 @@ fun SongItem(
     // 同样走具备自适应底部抽屉能力（CpContextMenuBottomSheet）的 CpAnchoredMenu。
     val useAnchoredMenu = hasContextMenu && (LocalWindowChromeActive.current || onOptionsClick == null)
 
+    // 「勾中」与「当前播放」是**两个不同的语义**，用两个角色，不能共用一支颜色：
+    // - 勾中 = 主色强调块（primaryContainer），是用户正在施加的操作；
+    // - 当前播放 = 选中态（secondaryContainer），与导航栏指示器、设置页选中行同义。
+    // 旧版两处都用 primaryContainer，只靠 α=0.5 区分 —— 同一行上根本看不出差别。
     val targetContainerColor = when {
-        selectionMode && isSelected -> MaterialTheme.colorScheme.secondaryContainer
-        isCurrent -> MaterialTheme.colorScheme.primaryContainer
+        selectionMode && isSelected -> MaterialTheme.colorScheme.primaryContainer
+        isCurrent -> MaterialTheme.colorScheme.secondaryContainer
         // 行是「页面上的卡片」，统一走卡片层 —— 深浅两套层级是反的，
         // 分散写角色名会在「用户显式选深色、系统是浅色」时取错色板（见 cpCardSurface）。
         else -> cp.player.app.ui.theme.cpCardSurface()
     }
     val rowPrimaryTextColor = when {
-        selectionMode && isSelected -> MaterialTheme.colorScheme.onSecondaryContainer
-        isCurrent -> MaterialTheme.colorScheme.onPrimaryContainer
+        selectionMode && isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+        isCurrent -> MaterialTheme.colorScheme.onSecondaryContainer
         else -> MaterialTheme.colorScheme.onSurface
     }
     val rowSecondaryTextColor = when {
-        selectionMode && isSelected -> MaterialTheme.colorScheme.onSecondaryContainer
-        isCurrent -> MaterialTheme.colorScheme.onPrimaryContainer
+        selectionMode && isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+        isCurrent -> MaterialTheme.colorScheme.onSecondaryContainer
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val animatedContainerColor by animateColorAsState(

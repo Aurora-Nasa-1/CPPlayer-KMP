@@ -55,7 +55,7 @@ quickjs = "1.0.18"
 # ⚠️ 词幕 provider 与 HyperOS focus-api 都在 Maven Central；SuperLyricApi 与
 # Lyric-Getter-Api **只在 JitPack**（settings.gradle.kts 的 jitpack 仓库就是为它们加的）。
 lyriconProvider = "0.1.70"
-superLyricApi = "3.4"
+superLyricApi = "4.0"
 lyricGetterApi = "7.0.0"
 hyperFocusApi = "1.4"
 # Shizuku：把「系统服务 binder」包成以 shell/root 身份执行事务的代理。
@@ -156,13 +156,12 @@ androidx-media3-datasource = { group = "androidx.media3", name = "media3-datasou
 androidx-media3-datasource-okhttp = { group = "androidx.media3", name = "media3-datasource-okhttp", version.ref = "media3" }
 androidx-media3-database = { group = "androidx.media3", name = "media3-database", version.ref = "media3" }
 androidx-media-compat = { module = "androidx.media:media", version = "1.7.0" }
-composemediaplayer-audio = { module = "io.github.kdroidfilter:composemediaplayer-audio", version = "0.11.4" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 quickjs = { module = "io.github.dokar3:quickjs-kt", version.ref = "quickjs" }
 # 词幕（Lyricon）：Provider API —— 词幕侧靠 manifest 的 lyricon_module 元数据发现本应用。
 lyricon-provider = { module = "io.github.proify.lyricon:provider", version.ref = "lyriconProvider" }
-# SuperLyric：HChenX 的广播 IPC 生态，逐字歌词发布者协议。
+# SuperLyric：HChenX 的 Binder API；4.0 发布整首歌词文档并保留 3.x 兼容传输。
 superlyric-api = { module = "com.github.HChenX:SuperLyricApi", version.ref = "superLyricApi" }
 # Lyric Getter：cn.lyric.getter.api 生态（状态栏歌词老牌方案）。
 lyric-getter-api = { module = "com.github.HChenX:Lyric-Getter-Api", version.ref = "lyricGetterApi" }
@@ -189,6 +188,7 @@ composenativetray = { module = "dev.nucleusframework:composenativetray", version
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

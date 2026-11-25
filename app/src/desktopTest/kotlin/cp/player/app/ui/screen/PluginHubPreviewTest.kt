@@ -52,7 +52,7 @@ class PluginHubPreviewTest {
         val scene = ImageComposeScene(width = width, height = height, density = Density(1f)) {
             CpTheme(themeMode = themeMode) {
                 val content: @Composable () -> Unit = {
-                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
                         CompositionLocalProvider(
                             LocalEmbeddedInPane provides false,
                             LocalWindowChromeActive provides false,

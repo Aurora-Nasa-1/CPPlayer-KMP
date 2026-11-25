@@ -79,6 +79,7 @@ class ModernPlayerBackgroundTest {
                         enabled = true,
                         fallback = SolidColor(fallback),
                         pauseShaderAnimation = true,
+                        playing = false,
                     ),
                 )
             }

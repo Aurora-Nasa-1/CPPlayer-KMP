@@ -26,6 +26,8 @@ interface ContextMenuStrings {
     val ownedPlaylist: String
     val convertedPlaylist: String
     val dailyRecommendation: String
+    val showDailyRecommendations: String
+    val showDailyStyleRecommendations: String
     val favoritedPlaylist: String
     val publicPlaylist: String
     val unknownCreator: String
@@ -55,6 +57,8 @@ object ContextMenuStringsZh : ContextMenuStrings {
     override val ownedPlaylist = "我创建的歌单"
     override val convertedPlaylist = "已转为歌单"
     override val dailyRecommendation = "每日推荐"
+    override val showDailyRecommendations = "切换到每日推荐"
+    override val showDailyStyleRecommendations = "切换到风格推荐"
     override val favoritedPlaylist = "已收藏歌单"
     override val publicPlaylist = "公开歌单"
     override val unknownCreator = "未知"
@@ -84,6 +88,8 @@ object ContextMenuStringsEn : ContextMenuStrings {
     override val ownedPlaylist = "Your playlist"
     override val convertedPlaylist = "Converted to a playlist"
     override val dailyRecommendation = "Daily recommendation"
+    override val showDailyRecommendations = "Switch to daily picks"
+    override val showDailyStyleRecommendations = "Switch to style picks"
     override val favoritedPlaylist = "Favorite playlist"
     override val publicPlaylist = "Public playlist"
     override val unknownCreator = "Unknown"

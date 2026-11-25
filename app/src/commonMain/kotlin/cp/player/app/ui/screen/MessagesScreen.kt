@@ -19,6 +19,10 @@ import androidx.compose.material3.MaterialTheme
 import cp.player.app.ui.theme.cpCardSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import cp.player.app.presentation.SocialAvailability
+import cp.player.app.presentation.SocialFeature
+import cp.player.app.ui.navigation.statusText
+import cp.player.app.ui.navigation.socialFeatureAvailability
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -132,6 +136,7 @@ private fun MessagesContent(
     val profile by AppModel.userProfileFlow.collectAsState()
     val loggedIn = profile != null
     val activeProvider by AppModel.activeProviderFlow.collectAsState()
+    val availability = socialFeatureAvailability(activeProvider, SocialFeature.Inbox)
     val providerId = activeProvider?.id ?: AppModel.activeProviderId()
     val sourceGeneration by AppModel.sourceGeneration.collectAsState()
     val sessionKey = MessagesSessionKey(providerId, sourceGeneration, profile?.uid)
@@ -140,8 +145,8 @@ private fun MessagesContent(
     val s = cpStrings()
     val messages = s.social.messages
 
-    LaunchedEffect(sessionKey) {
-        if (loggedIn) {
+    LaunchedEffect(sessionKey, availability) {
+        if (loggedIn && availability == SocialAvailability.Available) {
             model.load(strings = s, sessionKey = sessionKey)
             AppModel.refreshUnreadMessages()
         } else {
@@ -151,6 +156,12 @@ private fun MessagesContent(
 
     CpRouteScaffold(title = messages.title, onBack = onBack) { pageModifier ->
         when {
+            availability != SocialAvailability.Available || state.unsupported -> ContentState(
+                title = (if (state.unsupported && availability == SocialAvailability.Available)
+                    SocialAvailability.Unsupported else availability).statusText("会话列表"),
+                loading = availability == SocialAvailability.Loading,
+                modifier = pageModifier.padding(top = 32.dp),
+            )
             !loggedIn -> ContentState(
                 title = messages.loginRequired,
                 message = messages.loginRequiredNote,
@@ -172,7 +183,7 @@ private fun MessagesContent(
                 item { CpContactListSkeleton(rows = 8) }
             }
             state.contacts.isEmpty() -> ContentState(
-                title = messages.empty,
+                title = if (state.error != null) messages.loadFailed else messages.empty,
                 message = state.error ?: messages.emptyHint,
                 error = state.error != null,
                 actionLabel = if (state.error != null) s.player.retry else null,

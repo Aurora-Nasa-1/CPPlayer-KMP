@@ -1,6 +1,22 @@
 package cp.player.app.ui.screen
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import cp.player.app.i18n.AppLanguage
+import cp.player.app.i18n.ProvideCpStrings
+import cp.player.app.ui.component.CpSpacing
+import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.theme.CpTheme
+import cp.player.app.ui.theme.ThemeMode
 import cp.player.core.model.Message
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -69,5 +85,48 @@ class ChatMessageKeysTest {
         assertFalse(isStrictlyAppendedChatList(original, original))
         assertFalse(isStrictlyAppendedChatList(original, listOf("x", "a", "b")))
         assertFalse(isStrictlyAppendedChatList(original, listOf("a")))
+    }
+
+    @Test
+    fun `chat message list with lazy scroll column renders offscreen with desktop scrollbar`() {
+        val messages = (1..20).map { index ->
+            message(
+                id = "msg-$index",
+                text = "这是第 $index 条消息内容，测试桌面端滚动条正常渲染与展示",
+                time = 1700000000L + index * 60L,
+                fromUserId = if (index % 2 == 0) 0L else 42L,
+            )
+        }
+        val scene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
+            CpTheme(themeMode = ThemeMode.DARK) {
+                ProvideCpStrings(AppLanguage.ZH_HANS) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.surface,
+                    ) {
+                        val keys = stableChatMessageKeys(messages)
+                        LazyScrollColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = CpSpacing.pageHorizontal, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            items(messages.size, key = { index -> keys[index] }) { index ->
+                                MessageBubble(messages[index], emptyText = "空消息")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        val bytes = try {
+            scene.render().encodeToData()?.bytes ?: error("PNG encoding failed")
+        } finally {
+            scene.close()
+        }
+        File("build/chat-messages-desktop.png").apply {
+            parentFile?.mkdirs()
+            writeBytes(bytes)
+        }
+        assertTrue(bytes.size > 5000, "离屏渲染图片大小异常: ${bytes.size}")
     }
 }

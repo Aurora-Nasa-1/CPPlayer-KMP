@@ -80,6 +80,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ripple
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import cp.player.app.ui.theme.cpCardSurface
@@ -122,7 +123,7 @@ import cp.player.app.AppModel
 import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope
 import cp.player.app.ui.anim.LocalSharedTransitionScope
-import cp.player.app.ui.component.CpBreakpoints
+import cp.player.app.ui.component.isWindowAdaptiveExpanded
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LegacyModalBottomSheet
 import cp.player.app.ui.component.cpFluidBackground
@@ -147,7 +148,14 @@ import cp.player.core.playback.LyricsState
 import cp.player.core.playback.RepeatMode
 import cp.player.core.provider.ProviderCapability
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlin.math.roundToInt
+
+/** Projection used by the page root; position ticks are rendered by leaf progress nodes. */
+private fun cp.player.core.playback.PlaybackUiState.withoutProgress(): cp.player.core.playback.PlaybackUiState =
+    copy(positionMs = 0L, activeLyricIndex = -1)
 
 /**
  * 全屏播放页（KMP 版 — 1:1 视觉移植自原项目 `app/.../ui/screen/PlayerScreen.kt`）。
@@ -155,7 +163,7 @@ import kotlin.math.roundToInt
  * 用 KMP 等效写法替换原版仅 Android 才有的 API：
  * - 无 `SharedTransitionScope` / `WindowCompat` / `LocalOnBackPressedDispatcherOwner` → 用普通 fade/offset、systemBars inset、Voyager `pop()`。
  * - 无 `SyncedLyrics` 第三方库 → 用 KMP `cp.player.core.playback.SyncedLyricLine`。
- * - 无 `WindowWidthSizeClass` → 自己用 `BoxWithConstraints` + [CpBreakpoints] 判宽屏：
+ * - 无 `WindowWidthSizeClass` → 用 Material 3 Adaptive 的 `WindowAdaptiveInfo` 判宽屏：
  *   宽屏走 `DesktopPlayerScreen`，窄屏走移动布局。**不能**读 `LocalIsExpanded` ——
  *   它只在 `MainScreen` 内部被 provide，本页作为路由页与之是兄弟节点，永远拿到默认 false。
  *
@@ -168,7 +176,21 @@ class PlayerScreen : Screen {
     @Composable
     override fun Content() {
         val controller = AppModel.playback
-        val state by controller.state.collectAsState()
+        // PlaybackController folds the 200ms position tick into PlaybackUiState. Keep that
+        // high-frequency field out of the page root: otherwise every tick re-enters the
+        // navigator, background and all player controls. Only progress-aware leaf nodes
+        // collect the position flow below.
+        val stateFlow = remember(controller) { controller.state }
+        val initialState = remember(controller) { stateFlow.value }
+        val state by remember(stateFlow) {
+            stateFlow
+                .map { it.withoutProgress() }
+                .distinctUntilChanged()
+        }.collectAsState(initial = initialState.withoutProgress())
+        val positionFlow = remember(stateFlow) {
+            stateFlow.map { it.positionMs }.distinctUntilChanged()
+        }
+        val initialPositionMs = initialState.positionMs
         val navigator = LocalAppNavigator.current
         val scope = rememberCoroutineScope()
         val onRepeat = { controller.setRepeatMode(state.repeatMode.next()) }
@@ -180,8 +202,8 @@ class PlayerScreen : Screen {
         // 本页的「收起」是折叠语义（↓ / ✕），与「返回上一页」不是一回事，所以不参与返回键统一。
         state.currentTrack?.let { cp.player.app.ui.util.DesktopRouteTitle(it.name) }
 
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            if (CpBreakpoints.isExpanded(maxWidth) && state.currentTrack != null) {
+        Box(Modifier.fillMaxSize()) {
+            if (isWindowAdaptiveExpanded() && state.currentTrack != null) {
                 val navAnimScope = LocalNavAnimatedVisibilityScope.current
                 DesktopPlayerScreen(
                     state = effectiveState,
@@ -193,6 +215,8 @@ class PlayerScreen : Screen {
                     onRepeat = onRepeat,
                     onShuffle = controller::toggleShuffle,
                     onLike = { AppModel.toggleFavoriteOf(state.currentTrack?.id) },
+                    positionFlow = positionFlow,
+                    initialPositionMs = initialPositionMs,
                     onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
                     onMove = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
                     onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
@@ -209,6 +233,8 @@ class PlayerScreen : Screen {
                         if (modernPlayerEnabled) {
                             ModernPlayerScreenContent(
                                 state = effectiveState,
+                                positionFlow = positionFlow,
+                                initialPositionMs = initialPositionMs,
                                 animatedVisibilityScope = navAnimScope,
                                 onBack = { navigator.pop() },
                                 onTogglePlay = controller::togglePlayPause,
@@ -225,6 +251,8 @@ class PlayerScreen : Screen {
                         } else {
                             PlayerScreenContent(
                                 state = effectiveState,
+                                positionFlow = positionFlow,
+                                initialPositionMs = initialPositionMs,
                                 animatedVisibilityScope = navAnimScope,
                                 onBack = { navigator.pop() },
                                 onTogglePlay = controller::togglePlayPause,
@@ -246,6 +274,8 @@ class PlayerScreen : Screen {
                             if (modernPlayerEnabled) {
                                 ModernPlayerScreenContent(
                                     state = effectiveState,
+                                    positionFlow = positionFlow,
+                                    initialPositionMs = initialPositionMs,
                                     animatedVisibilityScope = this,
                                     onBack = { navigator.pop() },
                                     onTogglePlay = controller::togglePlayPause,
@@ -262,6 +292,8 @@ class PlayerScreen : Screen {
                             } else {
                                 PlayerScreenContent(
                                     state = effectiveState,
+                                    positionFlow = positionFlow,
+                                    initialPositionMs = initialPositionMs,
                                     animatedVisibilityScope = this,
                                     onBack = { navigator.pop() },
                                     onTogglePlay = controller::togglePlayPause,
@@ -290,6 +322,8 @@ class PlayerScreen : Screen {
 @Composable
 fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     state: cp.player.core.playback.PlaybackUiState,
+    positionFlow: Flow<Long>? = null,
+    initialPositionMs: Long = state.positionMs,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onBack: () -> Unit,
     onTogglePlay: () -> Unit,
@@ -380,9 +414,12 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     // ⚠️ 这支渐变是 `enabled = false`（用户在「外观」里关了流体背景）时的**唯一背景**。
     // 它不是可以随便糊弄的兜底，观感必须能单独站住。
     val isDark = LocalIsDarkTheme.current
+    // 不再按明暗分支：`surfaceContainerHigh → surface` 这一对在两种模式下方向都是对的
+    // ——浅色是被压暗的顶、深色是被提亮的顶，都满足「上端更近、下端更远」。
+    // 旧版浅色分支读的是已弃用的 `surfaceVariant`，它在深色 / 纯黑下与
+    // `surfaceContainerHighest` 不等值，换主题时会闪一档。
     val surfaceTop = MaterialTheme.colorScheme.surfaceContainerHigh
-    val surfaceBottom = if (isDark) MaterialTheme.colorScheme.surfaceContainerLowest
-    else MaterialTheme.colorScheme.surface
+    val surfaceBottom = MaterialTheme.colorScheme.surface
     val bgBrush = remember(surfaceTop, surfaceBottom) {
         Brush.verticalGradient(listOf(surfaceTop, surfaceBottom))
     }
@@ -652,7 +689,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                             .clip(RoundedCornerShape(8.dp))
                                             .clickable(
                                                 interactionSource = remember { MutableInteractionSource() },
-                                                indication = null,
+                                                indication = ripple(),
                                                 onClickLabel = s.player.backToPlayer,
                                             ) {
                                                 scope.launch { pagerState.animateScrollToPage(1) }
@@ -778,6 +815,8 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                         when (page) {
                             0 -> LyricsPage(
                                 state = state,
+                                positionFlow = positionFlow,
+                                initialPositionMs = initialPositionMs,
                                 showTranslation = showTranslation,
                                 onSeek = onSeek,
                                 onRepeat = onRepeat,
@@ -787,6 +826,8 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                             )
                             1 -> PlayerPage(
                                 state = state,
+                                positionFlow = positionFlow,
+                                initialPositionMs = initialPositionMs,
                                 animatedVisibilityScope = animatedVisibilityScope,
                                 onTogglePlay = onTogglePlay,
                                 onSkipNext = onSkipNext,
@@ -839,6 +880,8 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
 @Composable
 private fun LyricsPage(
     state: cp.player.core.playback.PlaybackUiState,
+    positionFlow: Flow<Long>? = null,
+    initialPositionMs: Long = state.positionMs,
     showTranslation: Boolean,
     onSeek: (Long) -> Unit,
     onRepeat: () -> Unit,
@@ -857,6 +900,8 @@ private fun LyricsPage(
         Box(Modifier.weight(1f).fillMaxWidth()) {
             cp.player.app.ui.component.LyricContent(
                 state = state,
+                positionFlow = positionFlow,
+                initialPositionMs = initialPositionMs,
                 showTranslation = showTranslation,
                 onSeek = onSeek,
                 onChangeSource = onChangeSource,
@@ -904,6 +949,8 @@ private fun LyricsPage(
 @Composable
 private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
     state: cp.player.core.playback.PlaybackUiState,
+    positionFlow: Flow<Long>? = null,
+    initialPositionMs: Long = state.positionMs,
     animatedVisibilityScope: androidx.compose.animation.AnimatedVisibilityScope,
     onTogglePlay: () -> Unit,
     onSkipNext: () -> Unit,
@@ -1103,7 +1150,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
             Spacer(Modifier.height(infoToProgressGap))
 
             // 进度条（含中央音质 chip）
-            ProgressRow(state, onSeek)
+            ProgressRow(state, positionFlow, initialPositionMs, onSeek)
 
             Spacer(Modifier.height(progressToControlsGap))
 
@@ -1242,7 +1289,7 @@ private fun MobilePlayerTabSelector(
                         .clip(CircleShape)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
+                            indication = ripple(),
                             onClickLabel = s.player.switchToTab(title),
                         ) { onSelect(index) }
                         .padding(vertical = 3.dp),
@@ -1264,8 +1311,13 @@ private fun MobilePlayerTabSelector(
 @Composable
 private fun ProgressRow(
     state: cp.player.core.playback.PlaybackUiState,
+    positionFlow: Flow<Long>? = null,
+    initialPositionMs: Long = state.positionMs,
     onSeek: (Long) -> Unit,
 ) {
+    val positionMs = positionFlow?.let { flow ->
+        flow.collectAsState(initial = initialPositionMs).value
+    } ?: state.positionMs
     val s = cpStrings()
     val duration = state.durationMs.coerceAtLeast(0L)
     // 时长未知（流媒体元信息还没到、直播流）时滑条位置无法换算成绝对时间，
@@ -1279,7 +1331,7 @@ private fun ProgressRow(
         // （移动端不用波形；波形留给桌面播放页的 CpSeekBar）。视觉就是 M3 Slider 的
         // 默认 Expressive 观感。拖动期间由 CpPlainSeekBar 自己接管视觉，松手才回调 onSeek。
         cp.player.app.ui.component.CpPlainSeekBar(
-            positionMs = state.positionMs,
+            positionMs = positionMs,
             durationMs = duration,
             onSeek = onSeek,
             enabled = seekable,
@@ -1296,7 +1348,7 @@ private fun ProgressRow(
             // 次级文字就掉到可读性下限以下；② 同一层级的文字在不同页面深浅不一
             // （这里 0.6、顶栏 0.6、歌词页 0.6、评论区 0.7、迷你播放器 0.8），
             // 这正是「浅色主题看着不精致」最主要的来源。
-            val formattedPosition = remember(state.positionMs / 1000) { formatTimeMs(state.positionMs) }
+            val formattedPosition = remember(positionMs / 1000) { formatTimeMs(positionMs) }
             CpText(
                 formattedPosition,
                 style = MaterialTheme.typography.labelMedium,
@@ -1378,6 +1430,8 @@ private fun CommentPage(id: String, type: String) {
 @Composable
 fun DesktopLyricsContent(
     state: cp.player.core.playback.PlaybackUiState,
+    positionFlow: Flow<Long>? = null,
+    initialPositionMs: Long = state.positionMs,
     onSeek: (Long) -> Unit,
     showTranslation: Boolean = true,
     onRepeat: () -> Unit = {},
@@ -1391,6 +1445,8 @@ fun DesktopLyricsContent(
     ) {
         cp.player.app.ui.component.LyricContent(
             state = state,
+            positionFlow = positionFlow,
+            initialPositionMs = initialPositionMs,
             showTranslation = showTranslation,
             onSeek = onSeek,
             onChangeSource = onChangeSource,

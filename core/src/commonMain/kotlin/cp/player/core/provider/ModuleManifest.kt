@@ -164,6 +164,8 @@ data class ModuleManifest(
      * 并提示「请升级应用」—— 否则会以旧代码执行新契约，失败点难以定位。
      */
     val minHostApiVersion: Int? = null,
+    /** Minimum CPPlayer version required by this provider, independent of its host API version. */
+    val minAppVersion: String? = null,
     /**
      * Optional display label. It never selects a transport or response parser.
      */

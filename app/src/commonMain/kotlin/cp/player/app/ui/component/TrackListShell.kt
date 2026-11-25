@@ -257,7 +257,7 @@ fun <T> TrackListShell(
     /** 返回动作。非空时：有顶栏 ⇒ 画在顶栏左端；无顶栏 ⇒ 壳补一条返回条。 */
     onBack: (() -> Unit)? = null,
     /**
-     * 没有顶栏时是否仍补一条**返回条**（宽屏独立页：`CpTwoPane` 右栏里既没有
+     * 没有顶栏时是否仍补一条**返回条**（宽屏独立页：adaptive 详情 pane 里既没有
      * `AppScaffold` 也没有窗口 chrome，返回入口只能由壳补）。
      */
     showChromeRow: Boolean = false,

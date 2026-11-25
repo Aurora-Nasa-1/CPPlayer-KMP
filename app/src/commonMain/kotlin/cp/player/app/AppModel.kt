@@ -48,6 +48,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
+import cp.player.app.presentation.SocialAvailability
+import cp.player.app.presentation.SocialCapabilities
+import cp.player.app.presentation.SocialFeature
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -99,6 +103,36 @@ object AppModel {
     val activeProviderFlow: StateFlow<BackendProvider?>
         get() = runCatching { backend.activeProviderFlow }.getOrDefault(fallbackActiveProviderFlow)
 
+    private val _socialCapabilities = MutableStateFlow(SocialCapabilities())
+    internal val socialCapabilities: StateFlow<SocialCapabilities> by lazy {
+        modelScope.launch {
+            combine(activeProviderFlow, sourceGeneration, accountGeneration) { provider, source, account ->
+                SocialCapabilities(provider, source, account)
+            }.collectLatest { session ->
+                _socialCapabilities.value = session
+                if (session.provider == null) return@collectLatest
+                val operations = try {
+                    backend.activeSdkCapabilities()
+                } catch (cancel: kotlinx.coroutines.CancellationException) {
+                    throw cancel
+                } catch (error: Exception) {
+                    println("SDK capability lookup failed: ${session.provider.id}@${session.provider.version}: ${error::class.simpleName}")
+                    null
+                }
+                currentCoroutineContext().ensureActive()
+                _socialCapabilities.value = session.copy(operations = operations, failed = operations == null)
+                refreshUnreadMessages()
+            }
+        }
+        _socialCapabilities.asStateFlow()
+    }
+
+    internal fun socialAvailability(feature: SocialFeature): SocialAvailability =
+        feature.availability(
+            activeProviderFlow.value, backendState.value, socialCapabilities.value,
+            sourceGeneration.value, accountGeneration.value,
+        )
+
     /**
      * 判断当前活跃音源是否支持某项能力（[cp.player.core.provider.ProviderCapability]）。
      * 若未加载音源或音源未显式声明能力，保守返回 true；若音源声明了能力，以声明为准。
@@ -118,7 +152,10 @@ object AppModel {
     private val _sourceGeneration = MutableStateFlow(0)
     val sourceGeneration: StateFlow<Int> = _sourceGeneration.asStateFlow()
 
-    private fun bumpSourceGeneration() { _sourceGeneration.value += 1 }
+    private fun bumpSourceGeneration() {
+        _sourceGeneration.value += 1
+        clearUnreadMessages()
+    }
 
     /**
      * 「账号代际」：当前登录账号（uid）**实际发生变化**时 +1 —— 覆盖登录 / 登出 / 多账号切换。
@@ -256,7 +293,16 @@ object AppModel {
      * 每次访问新建 —— 它只是统一音源之上的一层**无状态**映射包装；
      * 像歌单读缓存这样的有状态职责由 [musicRepository] 持有。
      */
-    val socialRepository: SocialRepository get() = SocialRepository(backend.unifiedSource)
+    val socialRepository: SocialRepository
+        get() {
+            val capabilities = _socialCapabilities.value
+            return SocialRepository(backend.unifiedSource) { operation ->
+                val provider = capabilities.provider
+                if (provider != null && operation in capabilities.operations.orEmpty()) {
+                    println("SDK operation declared but unsupported: ${provider.id}@${provider.version} $operation")
+                }
+            }
+        }
 
     val authRepository: AuthRepository
         get() = AuthRepository(backend.unifiedSource, activeProvider()?.defaultCountryCode)
@@ -1024,6 +1070,7 @@ object AppModel {
     fun setHideMessagesEntry(enabled: Boolean) {
         settings.putString(KEY_HIDE_MESSAGES_ENTRY, enabled.toString())
         _hideMessagesEntry.value = enabled
+        if (enabled) clearUnreadMessages() else refreshUnreadMessages()
     }
 
     // ============ 封面飞行动画（持久化） ============
@@ -2086,7 +2133,7 @@ object AppModel {
         if (finalProfile != null) {
             if (!isNetworkError) refreshUnreadMessages()
         } else {
-            _unreadMessages.value = 0
+            clearUnreadMessages()
         }
         // 私信轮询同样绑定账号（未登录时必须停）。
         syncMessageWatch()
@@ -2106,12 +2153,25 @@ object AppModel {
         // 取消在途的旧请求：切号/登出瞬间，上一个账号的慢响应不能覆盖新状态
         // （与 refreshUserProfile 的 profileRefreshJob 同一模式）。
         unreadRefreshJob?.cancel()
-        unreadRefreshJob = modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            _unreadMessages.value = runCatching { socialRepository.getUnreadCount() }.getOrDefault(0)
+        val provider = activeProvider() ?: return
+        val generation = sourceGeneration.value
+        val uid = userProfileFlow.value?.uid ?: return
+        if (hideMessagesEntry() ||
+            socialAvailability(SocialFeature.Unread) != SocialAvailability.Available ||
+            socialAvailability(SocialFeature.Inbox) != SocialAvailability.Available
+        ) return
+        unreadRefreshJob = modelScope.launch {
+            val count = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { socialRepository.getUnreadCount() }.getOrDefault(0)
+            }
+            if (activeProvider() === provider && sourceGeneration.value == generation &&
+                userProfileFlow.value?.uid == uid && !hideMessagesEntry()
+            ) _unreadMessages.value = count
         }
     }
 
     fun clearUnreadMessages() {
+        unreadRefreshJob?.cancel()
         _unreadMessages.value = 0
     }
 
@@ -2340,33 +2400,44 @@ object AppModel {
     }
 
     private var fmLoaderStarted = false
-    private var fmLoading = false
+
+    internal fun personalFmSource(mode: String, subMode: String): String =
+        "personal_fm:$mode:$subMode:${cp.player.core.util.currentTimeMillis()}"
 
     /** 启动私人 FM 队列自动补充机制：当队列来自私人 FM 且剩余曲目数不足时，自动预取追加。 */
     fun startFmAutoLoader() {
         if (fmLoaderStarted) return
         fmLoaderStarted = true
         modelScope.launch {
+            var lastAttempt: Pair<String, String>? = null
             playback.state.collect { st ->
-                if (st.sourceId == "personal_fm" && !fmLoading) {
-                    val remaining = st.queue.size - st.currentIndex - 1
-                    if (remaining <= 3 && st.queue.isNotEmpty()) {
-                        fmLoading = true
-                        launch(kotlinx.coroutines.Dispatchers.IO) {
-                            try {
-                                val result = runCatching { musicRepository.getPersonalFmBatch(targetSize = 10) }.getOrNull()
-                                val songs = (result as? cp.player.core.BackendResult.Success<List<cp.player.core.music.TrackSummary>>)?.data.orEmpty()
-                                val provider = activeProviderId()
-                                val existingIds = playback.state.value.queue.map { it.mediaId }.toSet()
-                                val newIds = songs.map { toMediaId(it.id, provider) }.filter { it !in existingIds }
-                                for (mediaId in newIds) {
-                                    playback.addToQueue(mediaId)
-                                }
-                            } finally {
-                                fmLoading = false
-                            }
-                        }
-                    }
+                val sourceId = st.sourceId
+                if (sourceId == null || (sourceId != "personal_fm" && !sourceId.startsWith("personal_fm:"))) {
+                    lastAttempt = null
+                    return@collect
+                }
+                val currentId = st.queue.getOrNull(st.currentIndex)?.mediaId ?: return@collect
+                if (st.queue.size - st.currentIndex - 1 > 3) return@collect
+                val attempt = sourceId to currentId
+                if (lastAttempt == attempt) return@collect
+                lastAttempt = attempt
+                val parts = sourceId.split(':')
+                val provider = activeProviderId()
+                if (cp.player.core.music.CPMediaId.parseOrNull(currentId)?.providerId != provider) return@collect
+                val uid = cp.player.app.auth.AccountStore.activeUid(provider)
+                val result = musicRepository.getPersonalFmBatch(
+                    targetSize = 6,
+                    maxRequests = 4,
+                    mode = parts.getOrElse(1) { "DEFAULT" },
+                    subMode = parts.getOrElse(2) { "" },
+                    excludedIds = st.queue.map { it.mediaId }.toSet(),
+                )
+                if (result !is cp.player.core.BackendResult.Success) return@collect
+                for (song in result.data) {
+                    if (playback.state.value.sourceId != sourceId || activeProviderId() != provider ||
+                        cp.player.app.auth.AccountStore.activeUid(provider) != uid
+                    ) break
+                    playback.addToQueue(toMediaId(song.id, provider))
                 }
             }
         }

@@ -33,7 +33,7 @@ class InsightsReportPreviewTest {
     private fun render(width: Int, height: Int, content: @Composable () -> Unit): ByteArray {
         val scene = ImageComposeScene(width = width, height = height, density = Density(1f)) {
             CpTheme(themeMode = ThemeMode.DARK) {
-                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
                     content()
                 }
             }

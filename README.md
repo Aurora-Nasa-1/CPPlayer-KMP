@@ -1,102 +1,116 @@
+<div align="center">
+
+<img src="docs/public/logo.png" alt="CPPlayer" width="112" />
+
 # CPPlayer
 
-> 跨平台音乐播放器（Kotlin Multiplatform）。Android 与 Desktop（Windows / macOS / Linux）共用一套播放内核、音源插件系统与 Compose Multiplatform 界面。
+### 基于 Kotlin Multiplatform 的跨平台音乐播放器
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-purple.svg)](https://kotlinlang.org)
 [![Compose Multiplatform](https://img.shields.io/badge/Compose%20Multiplatform-1.13.0--rc01-blue.svg)](https://www.jetbrains.com/lp/compose-multiplatform/)
-[![Nucleus](https://img.shields.io/badge/Nucleus-3.0.0--dev--202611161221-blue.svg)](https://github.com/NucleusFramework/Nucleus)
-[![Sponsor](https://img.shields.io/badge/Sponsor-%E8%B5%9E%E5%8A%A9%E6%94%AF%E6%8C%81-ff69b4.svg)](#赞助与支持)
+[![平台](https://img.shields.io/badge/平台-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux-4a90d9.svg)](#开始使用)
 
-## 为什么存在
+</div>
 
-在线曲库的接口一直在变，播放器内核却应该稳定。CPPlayer 把两者切开：播放、缓存、歌词、局域网同步属于内核；内容接入属于插件。
+---
 
-| 结果 | 做法 |
+<div align="center">
+
+<img src="docs/assets/screenshots/desktop-home.png" alt="CPPlayer 桌面端主界面" width="94%" />
+
+<sub>桌面端主界面。当前文件为界面示意图。</sub>
+
+</div>
+
+CPPlayer 是一款支持 Android、Windows、macOS 和 Linux 的音乐播放器。应用通过音源插件提供在线内容，包含播放控制、歌词、音效、下载缓存及设备间播放接力等功能。
+
+---
+
+## 界面示例
+
+<div align="center">
+
+<table>
+  <tr>
+    <td align="center" width="34%">
+      <img src="docs/assets/screenshots/desktop-player.png" alt="桌面端全屏播放与逐字歌词" width="100%" />
+      <br /><sub>桌面端播放界面与逐字歌词</sub>
+    </td>
+    <td align="center" width="30%">
+      <img src="docs/assets/screenshots/mobile-player.png" alt="移动端播放界面" width="82%" />
+      <br /><sub>移动端播放界面</sub>
+    </td>
+  </tr>
+</table>
+
+</div>
+
+## 功能
+
+| 功能 | 说明 |
 |---|---|
-| 换音源不改播放器 | 音源实现强类型业务契约，宿主负责会话与调度 |
-| 换音源不丢数据 | 会话按音源 / 账号 / 凭证版本 / 设置隔离 |
-| 三端一致 | Compose Multiplatform 共享 UI，播放内核共用 |
+| **平台** | Android、Windows、macOS 和 Linux。桌面端支持原生窗口操作与全局快捷键。 |
+| **音频播放** | 桌面端支持 WASAPI Exclusive 独占输出与 DSD 解码；播放过的无损音频可缓存到本地。 |
+| **音效** | 10 频段参数均衡器、预设、声道平衡、响度归一化和削顶保护。 |
+| **歌词** | 支持逐字歌词、本地 `.lrc` / `.ttml` 文件、AMLL 词库及 Lyrico 歌词插件，可设置来源优先级。 |
+| **音源插件** | 在线内容由插件提供。登录会话按音源和账号隔离。 |
+| **设备间播放** | 同一 Wi-Fi 网络内可发现设备并转移播放进度、同步听歌记录；也可向支持的外部接收端推送音频流。 |
 
-播放器本身不含受版权保护的在线音源，内容全部由插件提供。
+---
 
-## 特性
+## 开始使用
 
-| 能力 | 说明 |
+| 步骤 | 做什么 |
 |---|---|
-| 跨平台一致体验 | Compose Multiplatform；桌面原生窗口手势吸附，移动端沉浸式布局 |
-| KMP Provider SDK | 实现 `search`、`get`、`resolve` 即可接入；DRM 由 `resolveDrm` + `exchangeLicense` 可选扩展 |
-| 三类宿主共用契约 | Kotlin、JavaScript、JNI / C ABI 适配器使用同一组类型化业务操作 |
-| 声明式设置 | 音源在 `manifest.json` 声明字段，客户端渲染 Material 3 设置面板 |
-| 账号隔离 | 切换账号取消旧请求；媒体流只转发显式声明的请求头 |
-| 契约规模 | 164 个 typed 业务操作，覆盖登录、目录读写、多类型搜索、评论 / 私信 / 通知、一起听、MV / 视频、DJ、日历 / 动态、账号绑定、排序 / 导入、分块上传、DRM 播放 |
-| 社交动态 | 关注流 / 用户动态 / 图文 / 资源分享 / 转发 / 点赞 / 评论；按 `socialFeed` 能力显示，可替代搜索 tab |
-| 可配置导航 | **设置 → 导航入口**：动态替代搜索、隐藏动态 / 消息；音源不支持时入口物理隐藏 |
-| 歌词 | 内置 AMLL 与本地边车（`.lrc` / `.ttml`）；独立 Lyrico 歌词插件 |
-| 音频解码 | WASAPI Exclusive 硬件独占、DSD 解码、无损流落盘缓存 |
-| 音效 | 10 频段参数均衡器（PEQ）、声道平衡、响度归一化、防爆音削顶 |
-| 本地流输出 | Ktor CIO HTTP 流媒体服务，支持字节范围与断点续传；可推送到车载或游戏电台 |
-| 局域网同步 | 自动发现对等设备，转移播放进度并双向同步听歌记录 |
+| 1 · 安装 | 从 Release 页下载对应平台的安装包：Windows 安装版或免安装版、macOS `.dmg`、Linux `.deb` 或 `.tar.gz`、Android APK。应用会检查更新并提示可用版本。 |
+| 2 · 导入音源 | 首次启动时在引导页选择「导入音源模块」，或进入「设置 → 音源管理」并点击右上角「+」导入 `.zip` / `.cpm` 音源包。首个导入的音源会自动激活。 |
+| 3 · 搜索与播放 | 搜索歌曲后可直接播放或加入队列。点击底部播放条打开全屏播放器。 |
 
-契约存在不等于某个音源已实现；具体音源按声明能力接入，未实现仍返回 `Unsupported`。
+完整说明见 [用户指南](docs/USER_GUIDE.md)。
 
-## 架构
+## 音源说明
 
-```text
-app-android ──▶ app ──▶ core ──▶ provider-sdk-kmp
-```
+CPPlayer 不包含受版权保护的在线音源，在线内容由插件提供。可搜索的内容、可登录的账号及扩展功能取决于已导入的音源。界面显示「不支持」时，表示当前音源未声明或未实现对应能力。
 
-| 模块 | 职责 | 边界 |
-|---|---|---|
-| `provider-sdk-kmp` | Provider 强类型契约、数据类型、受控 runtime | 不依赖 core、Compose、宿主数据库或具体音源 |
-| `core` | 会话、统一数据层、播放内核、本地库、下载、流输出 | 无 UI 代码 |
-| `app` | Compose UI、Voyager 导航、ScreenModel、主题、桌面入口 | 经 `MusicBackend` 访问后端 |
-| `app-android` | `MainActivity`、`Application`、Media3 `MediaSessionService` | 平台入口 |
+---
 
-前后端唯一交互入口是 `cp.player.core.MusicBackend`。依赖规则与源集划分见 [ARCHITECTURE](docs/dev/ARCHITECTURE.md)。
+<details>
+<summary><b>面向开发者</b></summary>
 
-## 快速开始
+<br />
 
-前置：JDK 21+（推荐 JetBrains Runtime 21）、Android SDK（API 35+）。
+CPPlayer 使用 Kotlin Multiplatform 与 Compose Multiplatform。`provider-sdk-kmp` 定义 Provider 契约，包含 164 个业务操作。宿主通过 `MusicBackend` 访问后端；Kotlin、JavaScript、JNI 和 C ABI 适配器使用同一组类型化操作。音源需实现 `search`、`get` 和 `resolve` 等基础操作；DRM 可通过 `resolveDrm` 与 `exchangeLicense` 接入。
 
-```bash
-./gradlew :app:run                    # 桌面端运行
-./gradlew :core:compileKotlinDesktop  # 编译后端
-./gradlew :app-android:assembleDebug  # Android 包
-```
-
-| 目标 | 命令 / 文档 |
+| 模块 | 职责 |
 |---|---|
-| 完整构建、测试与验证 | [BUILD](docs/dev/BUILD.md) |
-| 打包与发布 | [RELEASE](docs/dev/RELEASE.md) |
-| 写一个音源 | [QUICKSTART](docs/dev/providers/QUICKSTART.md) |
-| 使用与设置 | [USER_GUIDE](docs/USER_GUIDE.md) |
+| `provider-sdk-kmp` | Provider 契约、数据类型与受控 runtime；不依赖 UI 或具体音源 |
+| `core` | 会话、统一数据层、播放内核、本地库、下载与流输出；无 UI 代码 |
+| `app` | Compose UI、导航、主题与桌面入口 |
+| `app-android` | 平台入口与 Media3 `MediaSessionService` |
 
-`scripts/verify-provider-chain.ps1` 仅 Windows 可用（内部调用 `gradlew.bat`），判据是 JUnit XML 的失败 / 错误 / 跳过全为 0。
-
-## 文档
-
-在线阅读：<https://aurora-nasa-1.github.io/CPPlayer-KMP/>
-
-| 入口 | 内容 |
+| 想做的事 | 从这里开始 |
 |---|---|
-| [docs/index.md](docs/index.md) | 全部文档索引与名词表 |
-| [用户指南](docs/USER_GUIDE.md) | 安装、导入音源、登录、播放、外部访问、FAQ |
-| [Provider 开发](docs/dev/providers/index.md) | 契约、清单、原生库、分域实现、生成参考 |
-| [架构](docs/dev/ARCHITECTURE.md) | 模块边界、数据链、源集 |
-| [对外集成 API](docs/dev/INTEGRATION_API.md) | 第三方控制播放器的 HTTP 契约 |
-| [贡献指南](CONTRIBUTING.md) | 构建、测试、提交与文档改动流程 |
+| 跑起来 | `./gradlew :app:run`（桌面端）· `./gradlew :app-android:assembleDebug`（Android） |
+| 写一个音源 | [Provider 快速上手](docs/dev/providers/QUICKSTART.md) |
+| 看架构与边界 | [ARCHITECTURE](docs/dev/ARCHITECTURE.md) |
+| 构建、测试与发布 | [BUILD](docs/dev/BUILD.md) · [RELEASE](docs/dev/RELEASE.md) |
+| 把播放器接进游戏 / 车载 | [对外集成 API](docs/dev/INTEGRATION_API.md) |
+| 全部文档 | [文档索引](docs/index.md) · [在线文档站](https://aurora-nasa-1.github.io/CPPlayer-KMP/) |
+| 参与贡献 | [贡献指南](CONTRIBUTING.md) |
+
+</details>
+
+---
 
 ## 赞助与支持
 
-如果 CPPlayer 对你有帮助，欢迎请作者喝杯咖啡。
+如需赞助，可使用下方收款码。备注 GitHub 账号或昵称便于识别。
 
 | 微信支付 | 支付宝 |
 | :---: | :---: |
-| <img src="docs/assets/sponsor_wechat.png" width="260" alt="微信支付收款码" /> | <img src="docs/assets/sponsor_alipay.jpg" width="260" alt="支付宝收款码" /> |
+| <img src="docs/assets/sponsor_wechat.png" width="240" alt="微信支付收款码" /> | <img src="docs/assets/sponsor_alipay.jpg" width="240" alt="支付宝收款码" /> |
 | 收款人：Aurora星空 (\*\*森) | 收款人：Aurora星空 (\*\*森) |
-
-扫码时欢迎备注 GitHub 账号或昵称。
 
 ## 致谢
 
@@ -109,7 +123,7 @@ Hi-Res 音频内核（FlickEngine / WASAPI 独占直通 / DSD 解码）的设计
 | [Symphonia](https://github.com/pdeljanov/Symphonia) | 解码 |
 | [cpal](https://github.com/RustAudio/cpal) | 设备与独占模式 |
 | [Lyrico](https://github.com/Replica0110/Lyrico) | 歌词插件 API |
-| [Nucleus](https://github.com/NucleusFramework/Nucleus) | 桌面端无 AWT 窗口、原生系统托盘与 GraalVM Native Image 运行时（3.0.0-dev-202611161221） |
+| [Nucleus](https://github.com/NucleusFramework/Nucleus) | 桌面端无 AWT 窗口、原生系统托盘与 GraalVM Native Image 运行时 |
 
 完整清单见 [NOTICE](NOTICE) 与 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
 

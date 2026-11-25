@@ -2,7 +2,6 @@ package cp.player.app.ui.component
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -15,9 +14,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,10 +39,14 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.ripple.RippleAlpha
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -54,7 +55,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -535,53 +535,56 @@ private fun ChromeSeparator(modifier: Modifier = Modifier) {
 }
 
 /**
- * 标题栏里一个可点区块的通用外壳：方形 hover 高亮 + 无涟漪点击。
+ * 标题栏里一个可点区块的通用外壳：hover / press 反馈用 M3 自带 ripple。
  *
  * 刻意不用 `IconButton`：它带 48dp 最小触控目标与圆形涟漪，在标题栏里既撑高又不像窗口按钮。
- * 关闭键 hover 时整块变 `error`，同时把内容色切到 `onError`，所以内容只需要读
- * `LocalContentColor`（`Icon` / `Text` 默认就吃它），不必层层传 tint。
+ * 这里只把 ripple 染成内容色（关闭键用 `error`），不再自己画一层 hover 底色 ——
+ * 以前同一 source 上同时挂了 `.hoverable()` 和 `clickable()`，Enter/Exit 各发两遍，
+ * 加上自定义底色与 ripple 两层叠加，就是「两种悬停样式 + 先深后浅闪一下」。
+ *
+ * ⚠️ M3 ripple 默认 hoveredAlpha 只有 0.08，压在窄条窗口栏上几乎看不出来（用户报「没悬停」）。
+ * 这里仍走 M3 ripple，只把状态层 alpha 提到能看清的档位，不引入第二套自定义底色。
  *
  * ⚠️ [content] 必须留在参数表**最后** —— 调用点用的是尾随 lambda，一旦后面再挂一个
  * `Boolean` 之类的参数，lambda 会被静默改绑到那个参数上，而报错指向调用点、看不出真因。
  */
 @Composable
+@Suppress("DEPRECATION") // RippleConfiguration(rippleAlpha=) 是 M3 1.5 里唯一能抬 hover alpha 的入口
 private fun ChromeSlot(
     modifier: Modifier = Modifier,
     danger: Boolean = false,
     onClick: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
     val colors = MaterialTheme.colorScheme
-
-    val background by animateColorAsState(
-        targetValue = when {
-            hovered && danger -> colors.error
-            hovered -> colors.surfaceContainerHighest
-            else -> Color.Transparent
-        },
-        // hover 是高频反馈，走 effects（颜色类）而不是 spatial —— spatial 带回弹，
-        // 用在颜色上会看到底色来回抖。
-        animationSpec = CpMotion.effectsFast(),
-        label = "chromeSlotBackground",
+    // 静态内容色不变；danger 只影响 ripple 的色调，不再自己改图标色和底色。
+    val contentColor = colors.onSurfaceVariant
+    val rippleAlpha = RippleAlpha(
+        draggedAlpha = 0.16f,
+        focusedAlpha = 0.12f,
+        hoveredAlpha = 0.20f,
+        pressedAlpha = 0.24f,
     )
-    val contentColor = when {
-        hovered && danger -> colors.onError
-        hovered -> colors.onSurface
-        else -> colors.onSurfaceVariant
-    }
 
-    Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .width(ChromeSlotWidth)
-            .background(background)
-            .hoverable(interaction)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
-        contentAlignment = Alignment.Center,
+    CompositionLocalProvider(
+        LocalRippleConfiguration provides RippleConfiguration(
+            color = if (danger) colors.error else colors.onSurface,
+            rippleAlpha = rippleAlpha,
+        ),
     ) {
-        CompositionLocalProvider(LocalContentColor provides contentColor) { content() }
+        Box(
+            modifier = modifier
+                .fillMaxHeight()
+                .width(ChromeSlotWidth)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = ripple(),
+                    onClick = onClick,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            CompositionLocalProvider(LocalContentColor provides contentColor) { content() }
+        }
     }
 }
 

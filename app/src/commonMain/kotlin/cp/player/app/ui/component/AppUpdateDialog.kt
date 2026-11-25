@@ -63,6 +63,7 @@ import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.desktopPlatform
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.openUrl
+import cp.player.app.ui.theme.cpSheetInnerSurface
 import cp.player.app.ui.util.formatBytes
 import cp.player.app.update.AppUpdateChecker
 import cp.player.app.version.AppVersion

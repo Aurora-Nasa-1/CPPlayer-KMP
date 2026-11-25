@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720" font-family="system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#241B45"/>
+      <stop offset="0.5" stop-color="#16162B"/>
+      <stop offset="1" stop-color="#0E1424"/>
+    </linearGradient>
+    <linearGradient id="brand2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8A7BF5"/>
+      <stop offset="1" stop-color="#4A90E2"/>
+    </linearGradient>
+    <linearGradient id="cover2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F76B8A"/>
+      <stop offset="0.5" stop-color="#A24FD1"/>
+      <stop offset="1" stop-color="#4A6FDE"/>
+    </linearGradient>
+    <radialGradient id="glow2" cx="0.5" cy="0.4" r="0.6">
+      <stop offset="0" stop-color="#6C5CE7" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#6C5CE7" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="1"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="lyricMask"><rect x="640" y="150" width="480" height="380" fill="url(#fade)"/></mask>
+  </defs>
+
+  <rect width="1200" height="720" rx="16" fill="url(#bg2)"/>
+  <ellipse cx="330" cy="360" rx="360" ry="360" fill="url(#glow2)"/>
+
+  <!-- top bar -->
+  <path d="M28 40 l10 -10 l10 10 M28 40 l-10 -10 l10 -10" fill="none" stroke="#B9B2D8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="600" y="42" fill="#8E88AD" font-size="13" text-anchor="middle">正在播放 · 来自「深夜电台」</text>
+  <circle cx="1150" cy="34" r="15" fill="#FFFFFF" fill-opacity="0.08"/>
+  <path d="M1144 34 l12 -7 v14 Z" fill="#C9C2E8"/>
+
+  <!-- cover -->
+  <rect x="120" y="120" width="400" height="400" rx="20" fill="url(#cover2)"/>
+  <circle cx="320" cy="320" r="96" fill="#fff" fill-opacity="0.10"/>
+  <circle cx="320" cy="320" r="66" fill="#fff" fill-opacity="0.10"/>
+  <circle cx="320" cy="320" r="16" fill="#fff" fill-opacity="0.35"/>
+  <path d="M312 300 L344 320 L312 340 Z" fill="#fff" fill-opacity="0.85"/>
+
+  <!-- track info -->
+  <text x="120" y="566" fill="#FFFFFF" font-size="34" font-weight="800">夜航星</text>
+  <text x="120" y="598" fill="#B9B2D8" font-size="16">Aurora · 深空漫游</text>
+
+  <!-- progress -->
+  <rect x="120" y="628" width="880" height="5" rx="2.5" fill="#FFFFFF" fill-opacity="0.14"/>
+  <rect x="120" y="628" width="352" height="5" rx="2.5" fill="url(#brand2)"/>
+  <circle cx="472" cy="630.5" r="8" fill="#C9B8FF"/>
+  <text x="120" y="656" fill="#8E88AD" font-size="12">01:24</text>
+  <text x="1000" y="656" fill="#8E88AD" font-size="12">04:16</text>
+
+  <!-- controls -->
+  <g fill="#EDEAFB">
+    <path d="M556 686 l14 -10 v20 Z"/><path d="M584 686 l14 -10 v20 Z"/>
+  </g>
+  <circle cx="640" cy="686" r="26" fill="url(#brand2)"/>
+  <path d="M632 674 L656 686 L632 698 Z" fill="#fff"/>
+  <g fill="#EDEAFB">
+    <path d="M696 686 l14 -10 v20 Z"/><path d="M724 686 l14 -10 v20 Z"/>
+  </g>
+  <text x="500" y="692" fill="#9A94B8" font-size="16" font-weight="700">循环</text>
+  <text x="780" y="692" fill="#9A94B8" font-size="16" font-weight="700">1.0x</text>
+
+  <!-- lyrics -->
+  <text x="640" y="150" fill="#6E6890" font-size="16" font-weight="600" letter-spacing="1">逐字歌词</text>
+  <g mask="url(#lyricMask)" font-size="26" font-weight="700">
+    <text x="640" y="220" fill="#5E5980">穿过城市的霓虹</text>
+    <text x="640" y="274" fill="#7E78A4">把喧嚣都留在身后</text>
+    <text x="640" y="334" fill="#FFFFFF">我在夜色里航行</text>
+    <text x="640" y="388" fill="#7E78A4">向着星光的方向</text>
+    <text x="640" y="442" fill="#5E5980">直到黎明</text>
+  </g>
+  <rect x="636" y="312" width="4" height="30" rx="2" fill="url(#brand2)"/>
+
+  <!-- placeholder tag -->
+  <rect x="1010" y="14" width="166" height="30" rx="15" fill="#0E0E17" fill-opacity="0.55" stroke="#45405F"/>
+  <circle cx="1028" cy="29" r="4" fill="url(#brand2)"/>
+  <text x="1040" y="33" fill="#D6D0EC" font-size="12">界面示意 · 待替换</text>
+</svg>

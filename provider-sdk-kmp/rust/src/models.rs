@@ -707,17 +707,21 @@ impl PagedIdRequest {
 pub struct RecommendationsRequest {
     /// Requested item bound, 1..500; a response must not exceed it.
     pub limit: i32,
+    /// Provider-specific recommendation mode.
+    pub mode: String,
 }
 
 impl RecommendationsRequest {
     pub fn write(&self, w: &mut WireWriter) -> Result<(), WireError> {
         w.int(*&self.limit)?;
+        w.string(&self.mode)?;
         Ok(())
     }
 
     pub fn read(r: &mut WireReader<'_>) -> Result<Self, WireError> {
         Ok(Self {
             limit: r.int()?,
+            mode: r.string()?,
         })
     }
 }

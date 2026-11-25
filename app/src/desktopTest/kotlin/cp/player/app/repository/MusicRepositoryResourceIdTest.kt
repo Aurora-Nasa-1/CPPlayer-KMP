@@ -16,6 +16,55 @@ import kotlin.test.assertTrue
 class MusicRepositoryResourceIdTest {
 
     @Test
+    fun `explore refill requests three at a time and excludes queued songs`() {
+        runBlocking {
+            val calls = mutableListOf<List<Any?>>()
+            val batches = listOf(listOf("1", "2", "3"), listOf("3", "4", "5"))
+            val source = java.lang.reflect.Proxy.newProxyInstance(
+                UnifiedMusicSource::class.java.classLoader,
+                arrayOf(UnifiedMusicSource::class.java),
+            ) { _, method, args ->
+                check(method.name == "getPersonalFmMode")
+                val batch = batches[calls.size]
+                calls += args.take(3)
+                BackendResult.Success(batch.map { TrackSummary(it, "Track $it", "Artist", null, null, 180_000L) })
+            } as UnifiedMusicSource
+            val result = MusicRepository(source).getPersonalFmBatch(
+                targetSize = 5,
+                maxRequests = 2,
+                mode = "EXPLORE",
+                excludedIds = setOf("netease://song/1"),
+            )
+            assertEquals(listOf("2", "3", "4", "5"), result.getOrNull()?.map { it.id })
+            assertEquals<List<List<Any?>>>(List(2) { listOf("EXPLORE", "", 3) }, calls)
+        }
+    }
+
+    @Test
+    fun `legacy personal FM fallback is bounded and only used for unsupported default mode`() {
+        runBlocking {
+            val tracks = (1..3).map { TrackSummary("test://song/$it", "Track", "Artist", null, null, 180_000L) }
+            val offline = BackendResult.Error("Offline")
+            var legacyCalls = 0
+            val source = java.lang.reflect.Proxy.newProxyInstance(
+                UnifiedMusicSource::class.java.classLoader,
+                arrayOf(UnifiedMusicSource::class.java),
+            ) { _, method, args ->
+                when (method.name) {
+                    "getPersonalFmMode" -> if (args[2] == 3) offline else BackendResult.Unsupported("Mode unavailable")
+                    "getPersonalFm" -> BackendResult.Success(tracks).also { legacyCalls++ }
+                    else -> error("Unexpected source call: ${method.name}")
+                }
+            } as UnifiedMusicSource
+            val repository = MusicRepository(source)
+            assertEquals(tracks.take(2), repository.getPersonalFmMode(limit = 2).getOrNull())
+            assertTrue(repository.getPersonalFmMode(mode = "EXPLORE", limit = 2) is BackendResult.Unsupported)
+            assertEquals(offline, repository.getPersonalFmMode(limit = 3))
+            assertEquals(1, legacyCalls)
+        }
+    }
+
+    @Test
     fun `comment repository preserves opaque cursors and effective server sorting`() {
         runBlocking {
             val calls = mutableListOf<List<Any?>>()

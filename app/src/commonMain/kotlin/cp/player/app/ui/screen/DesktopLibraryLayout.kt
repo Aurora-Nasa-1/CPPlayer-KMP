@@ -48,6 +48,7 @@ import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
+import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.material3.TooltipAnchorPosition
@@ -370,11 +371,17 @@ private fun DesktopLibraryShortcut(
     prominent: Boolean = false,
     shape: Shape = MaterialTheme.shapes.large,
 ) {
+    val isDark = LocalIsDarkTheme.current
+    val containerColor = if (prominent) {
+        MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.16f else 0.10f)
+    } else {
+        cp.player.app.ui.theme.cpCardSurface()
+    }
     Surface(
         onClick = onClick,
         modifier = modifier.cpPressScale(),
         shape = shape,
-        color = if (prominent) MaterialTheme.colorScheme.secondaryContainer else cp.player.app.ui.theme.cpCardSurface(),
+        color = containerColor,
     ) {
         Column(
             Modifier.height(CpSpacing.musicShortcutHeight).padding(8.dp),
@@ -385,7 +392,7 @@ private fun DesktopLibraryShortcut(
                 icon,
                 contentDescription = null,
                 modifier = Modifier.size(26.dp),
-                tint = if (prominent) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.primary,
+                tint = MaterialTheme.colorScheme.primary,
             )
             CpText(
                 label,
@@ -393,7 +400,7 @@ private fun DesktopLibraryShortcut(
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 2,
                 textAlign = TextAlign.Center,
-                color = if (prominent) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+                color = if (prominent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             )
         }
     }

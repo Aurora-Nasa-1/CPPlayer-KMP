@@ -9,7 +9,7 @@
 
 | 结论 | 内容 |
 |---|---|
-| rodio 链路 | `AudioPlayerImpl` 在桌面已是死代码；不能再拿「rodio 能做」当兜底 |
+| rodio 链路 | 旧 `AudioPlayerImpl` 已移除；不能再拿「rodio 能做」当兜底 |
 | 原生库 | 硬依赖：DLL 缺失时返回 `NoopDesktopPlatformPlayer`，桌面任何音频都放不出来（state = Error） |
 
 ### 1.1 DLL 版本握手
@@ -255,7 +255,7 @@ Rust 侧 `HttpMediaSource` 实现 Symphonia 的 `MediaSource`（`Read + Seek + S
 
 ### 7.1 源码不在 git 里
 
-`.gitignore` 把 `native/flick-player-engine/` 整个排除了（私有引擎）。Rust 侧改动只随本地磁盘存在，提交里只有 `app/native/*.dll` 与 Kotlin 侧。换机器或 CI 复现能力必须单独同步这份源码目录。
+`native/flick-player-engine/` 由闭源引擎仓库维护。主仓库保留 Kotlin 集成代码与 `app/native/` 下用于本地开发的正式版 DLL。Windows 发布任务从私有 Release 下载指定版本的 DLL，校验后用于打包。测试构建的 DLL 请留在本地，提交正式版 DLL 前请核对版本。
 
 ### 7.2 本机构建 Rust
 

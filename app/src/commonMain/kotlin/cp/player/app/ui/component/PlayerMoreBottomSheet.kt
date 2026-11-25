@@ -744,10 +744,12 @@ fun PlayerMoreSheets(
             onHandoff = { sheets.showDevicePicker = true },
             onDislike = {
                 scope.launch {
-                    val rawId = runCatching { CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)
-                    runCatching { AppModel.musicRepository.dislikeSong(rawId) }
-                    UiEvents.notify(s.player.disliked)
-                    controller.skipNext()
+                    if (AppModel.musicRepository.dislikeSong(track.id)) {
+                        UiEvents.notify(s.player.disliked)
+                        if (controller.state.value.currentTrack?.id == track.id) controller.skipNext()
+                    } else {
+                        UiEvents.notify(s.library.operationFailed)
+                    }
                 }
             },
             onLyricOffset = { sheets.showLyricOffset = true },

@@ -59,7 +59,12 @@ object DesktopEngineManager {
     fun createPlayer(
         preferredEngine: DesktopPlayerEngineType? = null,
         storage: SettingsStorage = defaultSettingsStorage(),
-        isVipUser: Boolean = false,
+    ): PlatformPlayer = createPlayer(preferredEngine, storage, false)
+
+    internal fun createPlayer(
+        preferredEngine: DesktopPlayerEngineType? = null,
+        storage: SettingsStorage,
+        isVipUser: Boolean,
     ): PlatformPlayer {
         val player = DynamicDesktopPlatformPlayer(storage, preferredEngine, isVipUser)
         activeDynamicPlayer = player
@@ -75,7 +80,7 @@ object DesktopEngineManager {
 /**
  * 动态切换代理播放器：使桌面端无论何时在设置中切换标准/独占引擎模式、或者卡密激活时，都能即时无缝切换底层模式。
  */
-class DynamicDesktopPlatformPlayer(
+internal class DynamicDesktopPlatformPlayer(
     private val storage: SettingsStorage,
     private val preferredEngine: DesktopPlayerEngineType?,
     private val isVipUser: Boolean,
@@ -132,6 +137,7 @@ class DynamicDesktopPlatformPlayer(
     private var activePlayer: PlatformPlayer = createUnderlyingPlayer(currentEngineType)
     private var forwardJob: Job? = null
     private var webViewForwardJob: Job? = null
+    private var licenseJob: Job? = null
 
     /** 惰性创建的 WebView EME 播放器；null = 尚未创建（首次 DRM 装载时建）。 */
     private var webViewDrmPlayer: WebViewDrmPlatformPlayer? = null
@@ -152,6 +158,19 @@ class DynamicDesktopPlatformPlayer(
 
     init {
         bindUnderlyingPlayer(activePlayer)
+        licenseJob = scope.launch(Dispatchers.Main) {
+            VipLicenseManager.licenseState.collect { info ->
+                if (currentEngineType == DesktopPlayerEngineType.FLICK_EXCLUSIVE) {
+                    if (!info.isActivated) {
+                        if (!isVipUser) switchEngine(DesktopPlayerEngineType.FLICK_STANDARD)
+                    } else if (info.expiresAtEpochSeconds != null) {
+                        DesktopHiResEngine.setExclusiveMode(true)
+                    }
+                } else if (info.isActivated) {
+                    checkAndSwitchEngine()
+                }
+            }
+        }
     }
 
     /**
@@ -166,9 +185,9 @@ class DynamicDesktopPlatformPlayer(
      *    就是这么来的。**用户没点过那个开关，就不该听到独占。**
      */
     private fun resolveDesiredEngine(): DesktopPlayerEngineType {
-        if (preferredEngine != null) return preferredEngine
         val isVip = isVipUser || VipLicenseManager.isVipActive
-        val wantsExclusive = PlaybackSessionSettings.wasapiExclusive(storage)
+        val wantsExclusive = preferredEngine?.let { it == DesktopPlayerEngineType.FLICK_EXCLUSIVE }
+            ?: PlaybackSessionSettings.wasapiExclusive(storage)
         return if (isVip && wantsExclusive) {
             DesktopPlayerEngineType.FLICK_EXCLUSIVE
         } else {
@@ -351,6 +370,7 @@ class DynamicDesktopPlatformPlayer(
         if (drmActive) webViewDrmPlayer?.getVolume() ?: lastVolume else activePlayer.getVolume()
 
     override fun release() {
+        licenseJob?.cancel()
         forwardJob?.cancel()
         webViewForwardJob?.cancel()
         activePlayer.release()

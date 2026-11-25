@@ -47,6 +47,7 @@ export const providerMethods = Object.freeze({
   "comments.post": "postComment",
   "comments.like": "likeComment",
   "recommendations.personalFm": "getPersonalFm",
+  "recommendations.personalFmMode": "getPersonalFmMode",
   "recommendations.similarSongs": "getSimilarSongs",
   "recommendations.intelligenceSongs": "getIntelligenceSongs",
   "albums.subscribe": "subscribeAlbum",

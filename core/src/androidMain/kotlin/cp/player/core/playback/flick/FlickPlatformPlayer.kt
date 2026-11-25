@@ -2,6 +2,7 @@ package cp.player.core.playback.flick
 
 import android.content.Context
 import android.util.Log
+import cp.player.core.license.VipLicenseManager
 import cp.player.core.playback.AudioEffectCapabilities
 import cp.player.core.playback.AudioEffectConfig
 import cp.player.core.playback.AudioFormatInfo
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
 
 /**
@@ -43,7 +45,7 @@ import kotlinx.coroutines.withContext
  *
  * 作为「VIP / 发烧友 Hi-Res 模式」的高级扩展播放引擎。
  */
-class FlickPlatformPlayer(
+internal class FlickPlatformPlayer(
     private val context: Context,
     private val localizer: StreamLocalizer = DesktopStreamLocalizer(
         cacheDir = File(context.cacheDir, "flick-stream-cache").apply { mkdirs() }
@@ -117,6 +119,7 @@ class FlickPlatformPlayer(
     private var currentVolume = 1.0f
     private var currentUrl: String? = null
     private var lastReportedEnginePositionMs = 0L
+    private var usbDirectActive = false
 
     private val lifecycleManager = AndroidAudioLifecycleManager(
         context = context,
@@ -133,13 +136,24 @@ class FlickPlatformPlayer(
     )
 
     init {
-        lifecycleManager.startListening()
-        val ready = RustEngine.initEngine(context)
+        val token = VipLicenseManager.signedToken()
+        val ready = token != null && RustEngine.setVipLicense(token) && RustEngine.initEngine(context)
         if (!ready) {
             Log.w(TAG, "RustEngine native backend not initialized (possibly missing .so library)")
             _state.value = PlatformPlaybackState.Error("Hi-Res Engine native library not available")
         } else {
+            lifecycleManager.startListening()
             observeRustEvents()
+            scope.launch {
+                var installedToken = token
+                VipLicenseManager.licenseState.collect {
+                    val updated = VipLicenseManager.signedToken()
+                    if (updated != installedToken) {
+                        RustEngine.setVipLicense(updated.orEmpty())
+                        installedToken = updated
+                    }
+                }
+            }
             scope.launch(RustEngine.engineDispatcher) {
                 lifecycleManager.scanForUsbAudioDevices()
             }
@@ -188,6 +202,11 @@ class FlickPlatformPlayer(
     }
 
     private fun handleProgress(event: AudioEvent.Progress) {
+        val direct = RustEngine.isRustDirectUsbSessionActive()
+        if (direct != usbDirectActive) {
+            usbDirectActive = direct
+            Log.i(TAG, "USB direct session active: $direct")
+        }
         val actualPosMs = (event.positionSecs * 1000.0).toLong()
         val durMs = (event.durationSecs * 1000.0).toLong()
 
@@ -328,14 +347,12 @@ class FlickPlatformPlayer(
     }
 
     override fun release() {
-        eventJob?.cancel()
+        scope.cancel()
         eventJob = null
         seekTracker.cancel()
         lifecycleManager.stopListening()
-        scope.launch(RustEngine.engineDispatcher) {
-            RustEngine.stop()
-            RustEngine.stopEngine()
-        }
+        RustEngine.stopEngine()
+        RustEngine.setVipLicense("")
         _state.value = PlatformPlaybackState.Idle
     }
 

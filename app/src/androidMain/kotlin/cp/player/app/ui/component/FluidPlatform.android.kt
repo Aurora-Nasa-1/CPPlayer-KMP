@@ -7,6 +7,7 @@ import android.view.Display
 import android.view.WindowManager
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -25,17 +26,12 @@ actual fun resolveFluidRenderTier(): FluidRenderTier = when {
 @Composable
 internal actual fun Modifier.renderPlatformFluid(
     tier: FluidRenderTier,
-    sceneModel: FluidSceneModel,
-    scale: Float,
+    sceneModel: State<FluidSceneModel>,
     fallback: Brush,
 ): Modifier = when (tier) {
     FluidRenderTier.MESH_GRADIENT -> {
         // Android 14+ (API 34+) 走硬件加速 Canvas.drawMesh
-        this.cpMeshGradientBackground(
-            sceneModel = sceneModel,
-            scale = scale,
-            fallback = fallback,
-        )
+        this.cpMeshGradientBackground(sceneModel)
     }
     FluidRenderTier.RUNTIME_SHADER -> {
         // Android 13 (API 33) 走系统原生 AGSL RuntimeShader
@@ -54,7 +50,7 @@ internal actual fun Modifier.renderPlatformFluid(
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 @Composable
 private fun Modifier.cpAgslFluidBackground(
-    sceneModel: FluidSceneModel,
+    sceneModel: State<FluidSceneModel>,
 ): Modifier {
     val shader = remember { RuntimeShader(AGSL_FLUID_SRC) }
     val brush = remember(shader) { ShaderBrush(shader) }
@@ -64,13 +60,14 @@ private fun Modifier.cpAgslFluidBackground(
         val h = size.height
         if (w <= 0f || h <= 0f) return@drawBehind
 
+        val model = sceneModel.value
         shader.setFloatUniform("uResolution", w, h)
-        shader.setFloatUniform("uTime", sceneModel.time)
-        shader.setColorUniform("uBaseColor", sceneModel.baseColor.toArgb())
+        shader.setFloatUniform("uTime", model.time)
+        shader.setColorUniform("uBaseColor", model.baseColor.toArgb())
 
-        val b1 = sceneModel.blobs.getOrNull(0)
-        val b2 = sceneModel.blobs.getOrNull(1)
-        val b3 = sceneModel.blobs.getOrNull(2)
+        val b1 = model.blobs.getOrNull(0)
+        val b2 = model.blobs.getOrNull(1)
+        val b3 = model.blobs.getOrNull(2)
 
         if (b1 != null) {
             shader.setFloatUniform("uBlob1Center", b1.center.x, b1.center.y)

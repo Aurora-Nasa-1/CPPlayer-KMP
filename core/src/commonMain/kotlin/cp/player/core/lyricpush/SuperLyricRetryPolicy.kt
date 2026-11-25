@@ -19,12 +19,12 @@ internal const val SUPER_LYRIC_MAX_RETRY_MS = 5 * 60_000L
 private const val SUPER_LYRIC_MAX_EXPONENT = 4
 
 /**
- * 第 [failureCount] 次失败后应等待多久再重试注册 SuperLyric 发布者。
+ * 第 [failureCount] 次失败后应等待多久再重试发布 SuperLyric 整首文档。
  *
  * 指数退避 + 封顶：`30s → 30s → 60s → 120s → 240s → 300s → 300s …`
  *
- * 为什么要退避：注册失败通常意味着**系统里没有 SuperLyric 接收方**（未安装 / 未激活），
- * 而注册调用本身是一次跨进程广播。每帧重试会把「没有接收方」变成持续的广播风暴。
+ * 为什么要退避：发布失败通常意味着**Binder 服务暂不可用**（未安装 / 未激活），
+ * 重复探测与跨进程调用没有收益；退避避免播放帧驱动无效的 IPC 重试。
  */
 internal fun superLyricRetryDelayMs(failureCount: Int): Long {
     val exponent = (failureCount.coerceAtLeast(1) - 1).coerceAtMost(SUPER_LYRIC_MAX_EXPONENT)

@@ -3,6 +3,7 @@ package cp.player.app.ui.component
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.ImageComposeScene
@@ -131,9 +132,8 @@ class TrackListShellLayoutTest {
     /** 宽屏双栏：左栏信息 + 右栏列表，两栏都由壳给内边距。 */
     @Composable
     private fun WideShellPage() {
-        CpTwoPane(
-            railWidth = 340.dp,
-            rail = { railModifier ->
+        Row(Modifier.fillMaxSize()) {
+            androidx.compose.foundation.layout.Box(Modifier.width(340.dp).fillMaxSize()) {
                 PlaylistInfoRail(
                     summary = playlist,
                     isFavorite = true,
@@ -153,18 +153,18 @@ class TrackListShellLayoutTest {
                     selectedCount = 0,
                     onToggleSelectAll = {},
                     onExitSelection = {},
-                    modifier = railModifier,
+                    modifier = Modifier.fillMaxSize(),
                 )
-            },
-            detail = { ShellPage(paneOnly = true) },
-        )
+            }
+            ShellPage(paneOnly = true)
+        }
     }
 
     private fun render(name: String, dark: Boolean, width: Int, height: Int, content: @Composable () -> Unit) {
         val scene = ImageComposeScene(width = width, height = height, density = Density(1f)) {
             CpTheme(themeMode = if (dark) ThemeMode.DARK else ThemeMode.LIGHT) {
                 ProvideCpStrings(AppLanguage.ZH_HANS) {
-                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
                         content()
                     }
                 }

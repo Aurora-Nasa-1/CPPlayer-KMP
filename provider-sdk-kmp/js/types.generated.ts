@@ -236,8 +236,20 @@ export interface PagedIdRequest {
   readonly offset: number;
 }
 
-/** A bounded recommendation/discovery selection, not offset pagination. */
+/** A bounded recommendation/discovery selection, not offset pagination. mode selects daily or dailyStyle when the provider supports both. */
 export interface RecommendationsRequest {
+  /** Requested item bound, 1..500; a response must not exceed it. */
+  readonly limit: number;
+  /** Provider-specific recommendation mode; daily is the compatibility default and dailyStyle selects the newer style-based daily feed. */
+  readonly mode: string;
+}
+
+/** A bounded personal-radio request. mode and subMode are provider-defined selectors; limit is the maximum number of tracks. */
+export interface FmModeRequest {
+  /** Provider-specific recommendation mode; daily is the compatibility default and dailyStyle selects the newer style-based daily feed. */
+  readonly mode: string;
+  /** Optional provider-specific sub-mode for recommendation or personal-radio requests. */
+  readonly subMode: string;
   /** Requested item bound, 1..500; a response must not exceed it. */
   readonly limit: number;
 }
@@ -1823,6 +1835,7 @@ export type KnownCapability =
   | "comments.post"
   | "comments.like"
   | "recommendations.personalFm"
+  | "recommendations.personalFmMode"
   | "recommendations.similarSongs"
   | "recommendations.intelligenceSongs"
   | "albums.subscribe"
@@ -2005,6 +2018,8 @@ export interface Recommendations {
   getPersonalizedNewSongs(request: RecommendationsRequest, context: Context): Promise<TrackPage>;
   /** Get a personal-radio selection for the current account. Capability: recommendations.personalFm. Tag: 52. Undeclared or unimplemented capabilities fail with Unsupported. */
   getPersonalFm(request: Bytes, context: Context): Promise<TrackPage>;
+  /** Get a personal-radio selection using a provider-supported mode and sub-mode. Capability: recommendations.personalFmMode. Tag: 170. Undeclared or unimplemented capabilities fail with Unsupported. */
+  getPersonalFmMode(request: FmModeRequest, context: Context): Promise<TrackPage>;
   /** Get tracks related to request.id, bounded by request.limit. Capability: recommendations.similarSongs. Tag: 53. Undeclared or unimplemented capabilities fail with Unsupported. */
   getSimilarSongs(request: SimilarSongsRequest, context: Context): Promise<TrackPage>;
   /** Get an intelligent continuation from a seed track and playlist. Capability: recommendations.intelligenceSongs. Tag: 54. Undeclared or unimplemented capabilities fail with Unsupported. */
@@ -2374,8 +2389,17 @@ export interface Context {
   readonly credential: string | null;
   /** Allowed-origin HTTP, no automatic redirects/credentials, at most 4 MiB per body. */
   http(request: HttpRequest): Promise<HttpResponse>;
-  /** SHA-256 bytes only; not the retired host crypto API. */
+  /** SHA-256 digest as raw bytes. */
   sha256(bytes: Binary): Promise<Binary>;
+  /** Host cryptographic primitives for signing and upstream protocol compatibility. */
+  readonly crypto: {
+    /** Generate 0 to 65,536 bytes using the host's secure random source. */
+    randomBytes(length: number): Promise<Binary>;
+    /** Raw HMAC-SHA256 tag. Key: 1 to 4,096 bytes. Message: at most 4 MiB. */
+    hmacSha256(key: Binary, message: Binary): Promise<Binary>;
+    /** Raw MD5 digest for legacy protocol compatibility. Input: at most 4 MiB. */
+    md5(bytes: Binary): Promise<Binary>;
+  };
   /** Copy of session-local stored bytes, or null. Total storage is bounded to 1 MiB. */
   read(key: string): Promise<Binary | null>;
   /** Write session-local bytes; null deletes the key. Storage is not persistent. */

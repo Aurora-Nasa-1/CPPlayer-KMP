@@ -3,7 +3,6 @@ package cp.player.app.ui.screen
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,6 +25,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.DynamicFeed
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MusicNote
@@ -42,7 +42,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.ui.text.font.FontWeight
+import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TopAppBar
@@ -72,6 +77,7 @@ import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -128,7 +134,7 @@ import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.observeBottomBarDrag
 import cp.player.app.ui.component.playlistShareText
 import cp.player.app.ui.util.resized
-import cp.player.core.provider.ProviderCapability
+import cp.player.app.ui.navigation.socialNavigationState
 import cp.player.core.music.PlaylistSummary
 
 /**
@@ -186,16 +192,12 @@ class MainScreen : Screen {
         // 导航策略与音源能力。搜索 / 动态共用第 2 个位置，但选中态存的是**稳定 key**
         // 而不是索引：设置一切换，索引 1 的含义就从搜索变成动态，用索引会把选中页、
         // 滚动快照和 ScreenModel 全部错配到另一页上。
-        val dynamicReplacesSearch by AppModel.dynamicReplacesSearchFlow.collectAsState()
-        val hideDynamicEntry by AppModel.hideDynamicEntryFlow.collectAsState()
-        val hideMessagesEntry by AppModel.hideMessagesEntryFlow.collectAsState()
         val activeProvider by AppModel.activeProviderFlow.collectAsState()
-        val supportsDynamic = activeProvider?.isFeatureAvailable(ProviderCapability.SOCIAL_FEED) == true
-        val supportsMessages = activeProvider?.isFeatureAvailable(ProviderCapability.MESSAGES) == true
-        val dynamicAvailable = supportsDynamic && !hideDynamicEntry
-        val dynamicAsTab = dynamicAvailable && dynamicReplacesSearch
+        val socialNavigation = socialNavigationState(activeProvider)
+        val dynamicAvailable = socialNavigation.dynamicAvailable
+        val dynamicAsTab = socialNavigation.dynamicAsTab
         val searchAsTab = !dynamicAsTab
-        val showMessages = supportsMessages && !hideMessagesEntry
+        val showMessages = socialNavigation.showMessages
         val tabs = remember(dynamicAsTab) {
             if (dynamicAsTab) {
                 listOf(HOME_TAB, DYNAMIC_TAB, LIBRARY_TAB)
@@ -241,6 +243,12 @@ class MainScreen : Screen {
                 visitedTabs.addAll(pruned)
             }
         }
+        // CompositionLocal 的 value 必须在内容不变时保持同一个引用，否则
+        // startProviders 每帧都把 compositionLocalMap 当新 Map 做全量 equals
+        // （JFR 实测：这里每帧 toList() 贡献了 82% 的 TrieNode 分配 + 20% 的
+        // areEqual CPU，把整棵子树拖进重组）。derivedStateOf 只在 visitedTabs
+        // 真正变化时才产生新 List，其余帧复用同一引用让 equals 短路。
+        val visitedTabsSnapshot = remember { derivedStateOf { visitedTabs.toList() } }
         val selectedIndex = tabs.indexOfFirst { it.key == selectedTabKey }
             .takeIf { it >= 0 } ?: 0
         // 内容区的**内嵌 Navigator**（宽屏才有，见展开态分支）：详情页（专辑 / 歌手 / 歌单 /
@@ -530,8 +538,16 @@ class MainScreen : Screen {
             cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx = bottomBarHide.visibleHeightPx
         }
 
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            val expanded = cp.player.app.ui.component.CpBreakpoints.isExpanded(maxWidth)
+        Box(Modifier.fillMaxSize()) {
+            val expanded = cp.player.app.ui.component.isWindowAdaptiveExpanded()
+            val medium = !expanded &&
+                cp.player.app.ui.component.LocalWindowAdaptiveInfo.current
+                    ?.windowSizeClass
+                    ?.isWidthAtLeastBreakpoint(
+                        androidx.window.core.layout.WindowSizeClass.WIDTH_DP_MEDIUM_LOWER_BOUND,
+                    ) == true
+            val tabletExpanded = expanded &&
+                (cp.player.app.platform.isAndroidPlatform() || cp.player.app.ui.util.DesktopShell.isMobileMode)
 
             CompositionLocalProvider(
                 cp.player.app.ui.component.LocalIsExpanded provides expanded,
@@ -540,7 +556,7 @@ class MainScreen : Screen {
             Box(Modifier.fillMaxSize()) {
                 val scrollBehavior = androidx.compose.material3.TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
                 
-                if (expanded) {
+                if (expanded && !tabletExpanded) {
                     Row(Modifier.fillMaxSize()) {
                         DesktopSidebar(
                             tabs = tabs,
@@ -627,7 +643,7 @@ class MainScreen : Screen {
                                 CompositionLocalProvider(
                                     LocalDesktopTabs provides tabs,
                                     LocalDesktopTabKey provides selectedTabKey,
-                                    LocalDesktopVisitedTabs provides visitedTabs.toList(),
+                                    LocalDesktopVisitedTabs provides visitedTabsSnapshot.value,
                                 ) {
                                     Navigator(DesktopContentRootScreen) { nav ->
                                         // 捕获内嵌 Navigator 引用（见上）—— 供返回链 / 指令消费 /
@@ -647,6 +663,9 @@ class MainScreen : Screen {
                                             navigator = nav,
                                             rootNavigator = cp.player.app.ui.util.LocalRootNavigator.current ?: nav,
                                         ) {
+                                        // 转场规格只在组合期取一次：`transition` 是普通 lambda，
+                                        // 里面不能调用 @Composable 的 CpMotion 取值函数。
+                                        val pageTransitions = cp.player.app.ui.theme.rememberCpPageTransitions()
                                         ScreenTransition(
                                             navigator = nav,
                                             transition = {
@@ -657,7 +676,7 @@ class MainScreen : Screen {
                                                 ) {
                                                     fadeIn(tween(300)) togetherWith fadeOut(tween(220))
                                                 } else {
-                                                    cp.player.app.ui.theme.CpMotion.sharedAxisX(isPop = nav.lastEvent == StackEvent.Pop)
+                                                    pageTransitions.sharedAxisX(isPop = nav.lastEvent == StackEvent.Pop)
                                                 }
                                             },
                                         )
@@ -725,6 +744,48 @@ class MainScreen : Screen {
                                     }
                                 }
                             }
+                        }
+                    }
+                } else if (medium || tabletExpanded) {
+                    Row(Modifier.fillMaxSize()) {
+                        AppNavigationRail(
+                            tabs = tabs,
+                            selectedTabKey = selectedTabKey,
+                            onSelect = selectTab,
+                        )
+                        androidx.compose.material3.Scaffold(
+                            modifier = Modifier
+                                .weight(1f)
+                                .nestedScroll(scrollBehavior.nestedScrollConnection),
+                            topBar = {
+                                AppTopBar(
+                                    title = tabs.firstOrNull { it.key == selectedTabKey }
+                                        ?.labelOf(s.navigation).orEmpty(),
+                                    navigator = navigator,
+                                    scrollBehavior = scrollBehavior,
+                                    onOpenSettings = { rootAppNavigator.push(AppRoute.Settings) },
+                                    onOpenAccount = { rootAppNavigator.push(AppRoute.Account) },
+                                    onOpenMessages = {
+                                        if (showMessages) {
+                                            rootAppNavigator.push(AppRoute.Messages)
+                                            AppModel.refreshUnreadMessages()
+                                        }
+                                    },
+                                    showMessagesAction = showMessages,
+                                    showSearchAction = !searchAsTab,
+                                    onOpenSearch = openSearch,
+                                    showDynamicAction = dynamicAvailable && !dynamicAsTab,
+                                    onOpenDynamic = openDynamic,
+                                )
+                            },
+                            containerColor = Color.Transparent,
+                        ) { padding ->
+                            TabContent(
+                                tabs,
+                                visitedTabs,
+                                selectedTabKey,
+                                Modifier.fillMaxSize().padding(padding),
+                            )
                         }
                     }
                 } else {
@@ -839,7 +900,7 @@ class MainScreen : Screen {
                 }
             }
         } // End of CompositionLocalProvider
-        } // End of BoxWithConstraints
+        } // End of Box
     }
 }
 
@@ -1211,12 +1272,66 @@ private fun AppNavigationBar(
                         },
                     )
                 },
-                label = { CpText(label) },
+                label = {
+                    CpText(
+                        label,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                },
                 colors = NavigationBarItemDefaults.colors(
-                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ),
             )
         }
+        }
+    }
+}
+
+@Composable
+internal fun AppNavigationRail(
+    tabs: List<TabItem>,
+    selectedTabKey: String,
+    onSelect: (String) -> Unit,
+) {
+    val s = cpStrings()
+    NavigationRail(
+        containerColor = cp.player.app.ui.theme.cpPageSurface(),
+    ) {
+        val haptics = cp.player.app.ui.feedback.LocalCpHaptics.current
+        tabs.forEach { tab ->
+            val selected = selectedTabKey == tab.key
+            val label = tab.labelOf(s.navigation)
+            NavigationRailItem(
+                selected = selected,
+                onClick = {
+                    if (!selected) haptics.perform(cp.player.app.ui.feedback.CpHaptic.Tick)
+                    onSelect(tab.key)
+                },
+                icon = {
+                    Icon(
+                        if (selected) tab.selectedIcon else tab.unselectedIcon,
+                        contentDescription = label,
+                    )
+                },
+                label = {
+                    CpText(
+                        label,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                },
+                alwaysShowLabel = true,
+                colors = NavigationRailItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+            )
         }
     }
 }
@@ -1569,16 +1684,22 @@ private fun SidebarAction(
     onClick: () -> Unit,
     badge: Int = 0,
 ) {
+    val isDark = LocalIsDarkTheme.current
     val contentColor = if (selected) {
-        MaterialTheme.colorScheme.onSecondaryContainer
+        MaterialTheme.colorScheme.primary
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val containerColor = if (selected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.16f else 0.10f)
+    } else {
+        Color.Transparent
     }
     Row(
         Modifier.fillMaxWidth()
             .padding(vertical = 1.dp)
             .clip(cp.player.app.ui.theme.CpShapes.full)
-            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+            .background(containerColor)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
@@ -1586,15 +1707,13 @@ private fun SidebarAction(
         Surface(
             modifier = Modifier.size(36.dp),
             shape = MaterialTheme.shapes.small,
-            color = if (selected) MaterialTheme.colorScheme.primaryContainer
-            else cpNestedSurface(),
+            color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else cpNestedSurface(),
         ) {
             Box(contentAlignment = androidx.compose.ui.Alignment.Center, modifier = Modifier.fillMaxSize()) {
                 Icon(
                     icon,
                     contentDescription = null,
-                    tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = contentColor,
                     modifier = Modifier.size(20.dp),
                 )
             }
@@ -1603,6 +1722,7 @@ private fun SidebarAction(
         CpText(
             label,
             style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = contentColor,
             maxLines = 1,
             modifier = Modifier.weight(1f),
@@ -1635,11 +1755,17 @@ private fun SidebarPlaylistRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    val isDark = LocalIsDarkTheme.current
+    val containerColor = if (selected) {
+        MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.16f else 0.10f)
+    } else {
+        Color.Transparent
+    }
     Row(
         Modifier.fillMaxWidth()
             .padding(vertical = 1.dp)
             .clip(cp.player.app.ui.theme.CpShapes.full)
-            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+            .background(containerColor)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
@@ -1670,14 +1796,16 @@ private fun SidebarPlaylistRow(
             CpText(
                 playlist.name,
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
             )
             CpText(
                 "${playlist.trackCount} 首",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.72f)
+                else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
             )
         }
@@ -1718,7 +1846,7 @@ internal fun SidebarRowsPreview() {
     }
 }
 
-private data class TabItem(
+internal data class TabItem(
     /** 稳定身份：搜索与动态会互换位置，不能用列表索引代替。 */
     val key: String,
     val screen: Screen,

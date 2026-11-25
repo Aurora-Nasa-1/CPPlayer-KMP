@@ -10,8 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import cp.player.app.ui.component.LazyScrollColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -279,7 +279,7 @@ internal fun ChatContent(
                             }
                             ) else null,
                     )
-                    else -> LazyColumn(
+                    else -> LazyScrollColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(
@@ -339,7 +339,7 @@ internal fun ChatContent(
 
 /** 单条消息气泡。自己发的靠右、用 `primaryContainer`。 */
 @Composable
-private fun MessageBubble(message: Message, emptyText: String) {
+internal fun MessageBubble(message: Message, emptyText: String) {
     val isMe = message.isMe
     // 朝向对方那一侧留直角：右上的「尾巴」指向输入框，左上的指向头像。
     val bubbleShape = if (isMe) {

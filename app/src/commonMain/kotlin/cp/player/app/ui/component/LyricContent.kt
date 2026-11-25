@@ -55,6 +55,7 @@ import cp.player.core.playback.LyricsState
 import cp.player.core.playback.PlaybackUiState
 import cp.player.core.playback.SyncedLyricLine
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import androidx.compose.ui.graphics.BlendMode
 
 /**
@@ -82,6 +83,8 @@ internal fun TextStyle.lyricLineStyle(fontSize: TextUnit = 28.sp): TextStyle = c
 @Composable
 fun LyricContent(
     state: PlaybackUiState,
+    positionFlow: Flow<Long>? = null,
+    initialPositionMs: Long = state.positionMs,
     showTranslation: Boolean = true,
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
@@ -91,6 +94,11 @@ fun LyricContent(
     immersiveEnabled: Boolean = false,
     onImmersiveChange: ((Boolean) -> Unit)? = null,
 ) {
+    // Position ticks are intentionally observed only by the lyric renderer. The parent
+    // player page keeps a stable state projection, so karaoke animation does not force
+    // artwork, controls or navigation to recompose.
+    val positionMs = positionFlow?.collectAsState(initial = initialPositionMs)?.value
+        ?: state.positionMs
     val lyricState = state.lyrics
     val lines = (lyricState as? LyricsState.Success)?.lines.orEmpty()
     val s = cpStrings()
@@ -190,9 +198,9 @@ fun LyricContent(
     //
     // 以 currentTrackId 为 key，曲目切换时立即建立全新时钟源，彻底重置旧曲外推状态。
     val positionSource = remember(currentTrackId) { SmoothPositionSource() }
-    positionSource.update(state.positionMs, state.isPlaying)
+    positionSource.update(positionMs, state.isPlaying)
 
-    val smoothPosition = remember(currentTrackId) { mutableLongStateOf(state.positionMs) }
+    val smoothPosition = remember(currentTrackId) { mutableLongStateOf(positionMs) }
 
     // 播放中逐帧把外推位置写进 [smoothPosition]。
     //
@@ -219,7 +227,7 @@ fun LyricContent(
 
     // 暂停中 / 未起播（如启动时恢复会话、暂停中拖动进度条）：
     // 当位置发生变化时，立即同步至 smoothPosition，避免歌词卡在初始 0ms 的前奏状态。
-    LaunchedEffect(state.positionMs, state.isPlaying) {
+    LaunchedEffect(positionMs, state.isPlaying) {
         if (!state.isPlaying) {
             smoothPosition.longValue = positionSource.currentMs()
         }

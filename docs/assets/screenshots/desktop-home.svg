@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720" font-family="system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7C6BF2"/>
+      <stop offset="1" stop-color="#3E86DE"/>
+    </linearGradient>
+    <linearGradient id="banner" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5B4FD1"/>
+      <stop offset="0.55" stop-color="#6C5CE7"/>
+      <stop offset="1" stop-color="#3E86DE"/>
+    </linearGradient>
+    <linearGradient id="c1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F76B8A"/><stop offset="1" stop-color="#8A4FD1"/></linearGradient>
+    <linearGradient id="c2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3EC1C7"/><stop offset="1" stop-color="#3E6FDE"/></linearGradient>
+    <linearGradient id="c3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F7A44F"/><stop offset="1" stop-color="#D94F7A"/></linearGradient>
+    <linearGradient id="c4" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5FD08A"/><stop offset="1" stop-color="#2E8C8C"/></linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#7C6BF2" stop-opacity="0.35"/><stop offset="1" stop-color="#7C6BF2" stop-opacity="0"/></radialGradient>
+  </defs>
+
+  <rect width="1200" height="720" rx="16" fill="#0E0E17"/>
+  <rect x="0" y="0" width="210" height="720" fill="#14141F"/>
+  <line x1="210" y1="0" x2="210" y2="720" stroke="#232333"/>
+
+  <!-- brand -->
+  <rect x="24" y="24" width="34" height="34" rx="10" fill="url(#brand)"/>
+  <path d="M35 33 L49 41 L35 49 Z" fill="#fff"/>
+  <text x="68" y="46" fill="#F2F2F7" font-size="18" font-weight="700">CPPlayer</text>
+
+  <!-- sidebar -->
+  <g font-size="14" fill="#9A9AAE">
+    <rect x="14" y="86" width="182" height="40" rx="9" fill="#202034"/>
+    <rect x="14" y="86" width="3" height="40" rx="1.5" fill="url(#brand)"/>
+    <circle cx="36" cy="106" r="5" fill="#C9B8FF"/><text x="54" y="111" fill="#F2F2F7" font-weight="600">发现音乐</text>
+    <circle cx="36" cy="152" r="5" fill="#5A5A70"/><text x="54" y="157">搜索</text>
+    <circle cx="36" cy="198" r="5" fill="#5A5A70"/><text x="54" y="203">动态</text>
+    <circle cx="36" cy="244" r="5" fill="#5A5A70"/><text x="54" y="249">我的音乐</text>
+    <circle cx="36" cy="290" r="5" fill="#5A5A70"/><text x="54" y="295">下载与缓存</text>
+    <circle cx="36" cy="336" r="5" fill="#5A5A70"/><text x="54" y="341">局域网设备</text>
+  </g>
+  <line x1="24" y1="372" x2="186" y2="372" stroke="#232333"/>
+  <g font-size="13" fill="#7A7A90">
+    <text x="54" y="408">设置</text>
+    <text x="54" y="446">音源管理</text>
+  </g>
+
+  <!-- topbar -->
+  <rect x="210" y="0" width="990" height="64" fill="#0F0F19"/>
+  <rect x="240" y="16" width="380" height="32" rx="10" fill="#1B1B2A"/>
+  <circle cx="260" cy="32" r="6" fill="none" stroke="#6E6E86" stroke-width="2"/>
+  <line x1="264.5" y1="36.5" x2="269" y2="41" stroke="#6E6E86" stroke-width="2"/>
+  <text x="280" y="37" fill="#6E6E86" font-size="13">搜索歌曲、歌手、专辑</text>
+  <circle cx="1150" cy="32" r="16" fill="url(#brand)"/>
+  <text x="1142" y="38" fill="#fff" font-size="13" font-weight="700">A</text>
+
+  <!-- banner -->
+  <circle cx="1120" cy="150" r="150" fill="url(#glow)"/>
+  <rect x="240" y="92" width="922" height="150" rx="16" fill="url(#banner)"/>
+  <text x="272" y="140" fill="#EDE9FF" font-size="13" font-weight="600" letter-spacing="2">本期精选 · HI-RES 无损专区</text>
+  <text x="272" y="182" fill="#FFFFFF" font-size="30" font-weight="800">让每一处细节，都清晰可闻</text>
+  <text x="272" y="212" fill="#E4DCFF" font-size="14">WASAPI 独占直通 · DSD 解码 · 无损落盘缓存</text>
+  <rect x="1040" y="176" width="96" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.16" stroke="#FFFFFF" stroke-opacity="0.35"/>
+  <text x="1058" y="198" fill="#FFFFFF" font-size="14" font-weight="600">立即聆听</text>
+
+  <!-- recommendations -->
+  <text x="240" y="300" fill="#F2F2F7" font-size="20" font-weight="700">为你推荐</text>
+  <text x="1116" y="300" fill="#8A8AA0" font-size="13">查看全部</text>
+  <g>
+    <rect x="240" y="316" width="205" height="200" rx="12" fill="#171722"/>
+    <rect x="252" y="328" width="181" height="140" rx="9" fill="url(#c1)"/>
+    <circle cx="342" cy="398" r="30" fill="#fff" fill-opacity="0.18"/>
+    <path d="M334 386 L356 398 L334 410 Z" fill="#fff"/>
+    <text x="252" y="492" fill="#E8E8F0" font-size="14" font-weight="600">深夜电台</text>
+    <text x="252" y="508" fill="#7A7A90" font-size="11">沉浸 · 慢节奏</text>
+
+    <rect x="461" y="316" width="205" height="200" rx="12" fill="#171722"/>
+    <rect x="473" y="328" width="181" height="140" rx="9" fill="url(#c2)"/>
+    <circle cx="563" cy="398" r="30" fill="#fff" fill-opacity="0.18"/>
+    <path d="M555 386 L577 398 L555 410 Z" fill="#fff"/>
+    <text x="473" y="492" fill="#E8E8F0" font-size="14" font-weight="600">通勤电子</text>
+    <text x="473" y="508" fill="#7A7A90" font-size="11">律动 · 高能量</text>
+
+    <rect x="682" y="316" width="205" height="200" rx="12" fill="#171722"/>
+    <rect x="694" y="328" width="181" height="140" rx="9" fill="url(#c3)"/>
+    <circle cx="784" cy="398" r="30" fill="#fff" fill-opacity="0.18"/>
+    <path d="M776 386 L798 398 L776 410 Z" fill="#fff"/>
+    <text x="694" y="492" fill="#E8E8F0" font-size="14" font-weight="600">华语经典</text>
+    <text x="694" y="508" fill="#7A7A90" font-size="11">回忆 · 值得细听</text>
+
+    <rect x="903" y="316" width="205" height="200" rx="12" fill="#171722"/>
+    <rect x="915" y="328" width="181" height="140" rx="9" fill="url(#c4)"/>
+    <circle cx="1005" cy="398" r="30" fill="#fff" fill-opacity="0.18"/>
+    <path d="M997 386 L1019 398 L997 410 Z" fill="#fff"/>
+    <text x="915" y="492" fill="#E8E8F0" font-size="14" font-weight="600">专注时刻</text>
+    <text x="915" y="508" fill="#7A7A90" font-size="11">纯净 · 无歌词干扰</text>
+  </g>
+
+  <!-- player bar -->
+  <rect x="0" y="654" width="1200" height="66" fill="#14141F"/>
+  <line x1="0" y1="654" x2="1200" y2="654" stroke="#262638"/>
+  <rect x="20" y="666" width="42" height="42" rx="8" fill="url(#c1)"/>
+  <text x="74" y="685" fill="#F2F2F7" font-size="13" font-weight="600">夜航星</text>
+  <text x="74" y="702" fill="#7A7A90" font-size="11">Aurora · 精选辑</text>
+  <g fill="#C9C9D6">
+    <path d="M470 681 l10 -7 v14 Z"/><path d="M492 681 l10 -7 v14 Z"/>
+  </g>
+  <circle cx="560" cy="687" r="18" fill="url(#brand)"/>
+  <path d="M554 678 L570 687 L554 696 Z" fill="#fff"/>
+  <g fill="#C9C9D6">
+    <path d="M628 681 l10 -7 v14 Z"/><path d="M650 681 l10 -7 v14 Z"/>
+  </g>
+  <text x="700" y="691" fill="#7A7A90" font-size="11">01:24</text>
+  <rect x="734" y="685" width="300" height="4" rx="2" fill="#333344"/>
+  <rect x="734" y="685" width="118" height="4" rx="2" fill="url(#brand)"/>
+  <circle cx="852" cy="687" r="6" fill="#C9B8FF"/>
+  <text x="1046" y="691" fill="#7A7A90" font-size="11">04:16</text>
+  <path d="M1090 683 h16 l8 -6 v18 l-8 -6 h-16 Z" fill="#9A9AAE"/>
+
+  <!-- placeholder tag -->
+  <rect x="1010" y="14" width="166" height="30" rx="15" fill="#0E0E17" fill-opacity="0.9" stroke="#3A3A50"/>
+  <circle cx="1028" cy="29" r="4" fill="url(#brand)"/>
+  <text x="1040" y="33" fill="#C9C9D6" font-size="12">界面示意 · 待替换</text>
+</svg>

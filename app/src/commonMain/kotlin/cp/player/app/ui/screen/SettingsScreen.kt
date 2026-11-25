@@ -1,6 +1,5 @@
 package cp.player.app.ui.screen
 
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -18,11 +17,9 @@ import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import cp.player.app.i18n.cpStrings
 import cp.player.app.presentation.navigation.AppRoute
-import cp.player.app.ui.component.CpBreakpoints
+import cp.player.app.ui.component.CpAdaptiveListDetailScaffold
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
-import cp.player.app.ui.component.CpTwoPane
-import cp.player.app.ui.component.LocalEmbeddedInPane
 import cp.player.app.ui.component.LocalMiniPlayerTailSpace
 import cp.player.app.ui.component.MonetIcon
 import cp.player.app.ui.component.ScrollColumn
@@ -36,6 +33,8 @@ import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.settingsRowContainer
 import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.component.CpText
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 
 /**
  * 设置根页面。
@@ -48,12 +47,16 @@ class SettingsScreen(private val embedded: Boolean = false) : Screen {
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
 private fun SettingsScreenContent(embedded: Boolean = false) {
     val navigator = LocalAppNavigator.current
     val strings = cpStrings()
     val entries = remember { settingsEntries() }
     var searchQuery by remember { mutableStateOf("") }
     var targetRequestKey by remember { mutableStateOf(0L) }
+    var selectedId by remember { mutableStateOf(entries.firstOrNull()?.id) }
+    var selectedTargetId by remember { mutableStateOf<String?>(null) }
+    val adaptiveNavigator = rememberListDetailPaneScaffoldNavigator<Unit>()
 
     val searchResults = remember(searchQuery, entries, strings) {
         val q = searchQuery.trim().lowercase()
@@ -102,17 +105,15 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
         }
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val expanded = CpBreakpoints.isExpanded(maxWidth)
-
-        if (expanded) {
-            var selectedId by remember { mutableStateOf(entries.firstOrNull()?.id) }
-            var selectedTargetId by remember { mutableStateOf<String?>(null) }
-            CpTwoPane(
-                rail = { railModifier ->
+    val scaffoldContent: @Composable (Modifier) -> Unit = { scaffoldModifier ->
+        CpAdaptiveListDetailScaffold(
+            navigator = adaptiveNavigator,
+            modifier = scaffoldModifier,
+            listPane = { detailVisible ->
+                if (detailVisible) {
                     CompositionLocalProvider(LocalMiniPlayerTailSpace provides 0.dp) {
                         ScrollColumn(
-                            modifier = railModifier,
+                            modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(
                                 start = CpSpacing.formHorizontal,
                                 end = CpSpacing.formHorizontal,
@@ -150,55 +151,54 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
                             }
                         }
                     }
-                },
-                detail = {
-                    CompositionLocalProvider(LocalEmbeddedInPane provides true) {
-                        val entry = entries.firstOrNull { it.id == selectedId } ?: entries.firstOrNull()
-                        if (entry != null) {
-                            val screen = remember(entry.id, selectedTargetId, targetRequestKey) {
-                                entry.screen(selectedTargetId)
-                            }
-                            screen.Content()
+                } else {
+                    val list: @Composable () -> Unit = {
+                        SettingsSearchBar(
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            placeholder = "搜索设置项与功能...",
+                        )
+                        if (searchQuery.isNotBlank()) {
+                            SettingsSearchResults(
+                                results = searchResults,
+                                selectedId = null,
+                                onSelectEntry = { entry, targetId ->
+                                    navigator.push(AppRoute.SettingsEntry(entry.id, targetId))
+                                },
+                                query = searchQuery,
+                            )
+                        } else {
+                            SettingsGroupedList(
+                                entries = entries,
+                                selectedId = null,
+                                onSelect = { entry -> navigator.push(AppRoute.SettingsEntry(entry.id)) },
+                            )
                         }
                     }
-                },
-            )
-            return@BoxWithConstraints
-        }
 
-        // 窄屏：push 到子页
-        val list: @Composable () -> Unit = {
-            SettingsSearchBar(
-                query = searchQuery,
-                onQueryChange = { searchQuery = it },
-                placeholder = "搜索设置项与功能...",
-            )
-            if (searchQuery.isNotBlank()) {
-                SettingsSearchResults(
-                    results = searchResults,
-                    selectedId = null,
-                    onSelectEntry = { entry, targetId -> navigator.push(AppRoute.SettingsEntry(entry.id, targetId)) },
-                    query = searchQuery,
-                )
-            } else {
-                SettingsGroupedList(
-                    entries = entries,
-                    selectedId = null,
-                    onSelect = { entry -> navigator.push(AppRoute.SettingsEntry(entry.id)) },
-                )
-            }
-        }
+                    SettingsPage(Modifier.fillMaxSize()) { list() }
+                }
+            },
+            detailPane = {
+                val entry = entries.firstOrNull { it.id == selectedId } ?: entries.firstOrNull()
+                if (entry != null) {
+                    val screen = remember(entry.id, selectedTargetId, targetRequestKey) {
+                        entry.screen(selectedTargetId)
+                    }
+                    screen.Content()
+                }
+            },
+        )
+    }
 
-        if (embedded) {
-            SettingsPage(Modifier.fillMaxSize()) { list() }
-            return@BoxWithConstraints
-        }
-
+    if (embedded) {
+        scaffoldContent(Modifier.fillMaxSize())
+    } else {
         CpRouteScaffold(
             title = strings.settings.screenTitle,
             onBack = { navigator.pop() },
         ) { pageModifier ->
-            SettingsPage(pageModifier) { list() }
+            scaffoldContent(pageModifier)
         }
     }
 }
@@ -281,17 +281,26 @@ private fun SettingsSubItemRow(
         selected = isSelected,
         showChevron = true,
         leadingContent = {
+            // 选中态只留一层容器，图标取鲜艳的 primary 主色单色展示。
             MonetIcon(
                 icon = entry.icon,
-                containerColor = entry.accent.container(),
-                contentColor = entry.accent.content(),
+                containerColor = if (isSelected) {
+                    Color.Transparent
+                } else {
+                    entry.accent.container()
+                },
+                contentColor = if (isSelected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    entry.accent.content()
+                },
             )
         },
         supportingContent = {
             Surface(
                 shape = MaterialTheme.shapes.small,
                 color = if (isSelected) {
-                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f)
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                 } else {
                     cpNestedSurface()
                 },
@@ -301,7 +310,7 @@ private fun SettingsSubItemRow(
                     text = breadcrumb,
                     style = MaterialTheme.typography.labelSmall,
                     color = if (isSelected) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
+                        MaterialTheme.colorScheme.primary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     },
@@ -364,10 +373,19 @@ private fun SettingsRow(
         selected = isSelected,
         showChevron = true,
         leadingContent = {
+            // 选中态与 SettingsSubItemRow 一致：图标块透明化只留鲜艳的主色图标。
             MonetIcon(
                 icon = entry.icon,
-                containerColor = entry.accent.container(),
-                contentColor = entry.accent.content(),
+                containerColor = if (isSelected) {
+                    Color.Transparent
+                } else {
+                    entry.accent.container()
+                },
+                contentColor = if (isSelected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    entry.accent.content()
+                },
             )
         },
     )

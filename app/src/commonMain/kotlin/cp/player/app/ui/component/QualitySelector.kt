@@ -1,9 +1,5 @@
 package cp.player.app.ui.component
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,7 +34,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
-import cp.player.app.ui.theme.CpMotion
 
 /**
  * 音质档位选择器 —— 两处入口共用同一份「档位表 + 文案表」。
@@ -66,25 +61,15 @@ fun QualityMenuChip(
     val displayLabel = activeOption?.customLabel ?: s.quality.labelOf(level)
 
     var expanded by remember { mutableStateOf(false) }
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    val container by animateColorAsState(
-        targetValue = if (hovered || expanded) {
-            cpSheetInnerSurface()
-        } else {
-            Color.Transparent
-        },
-        animationSpec = CpMotion.effectsFast(),
-        label = "qualityChipContainer",
-    )
+    // 菜单展开是状态，保留底色；hover 反馈统一交给 Surface 的 M3 ripple。
+    val container = if (expanded) cpSheetInnerSurface() else Color.Transparent
 
     Box(modifier) {
         Surface(
             onClick = { expanded = true },
-            modifier = Modifier.height(30.dp).hoverable(interaction),
+            modifier = Modifier.height(30.dp),
             shape = CircleShape,
             color = container,
-            interactionSource = interaction,
         ) {
             Row(
                 modifier = Modifier.fillMaxHeight().padding(horizontal = 8.dp),

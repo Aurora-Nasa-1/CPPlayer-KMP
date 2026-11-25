@@ -2,6 +2,7 @@ package cp.player.core.provider
 
 import cp.player.core.util.PlatformContext
 import cp.player.core.util.PlatformSupport
+import cp.player.core.pluginrepo.PluginVersion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -30,6 +31,7 @@ class ModuleManager(
     private val modulesDir: String,
     private val context: PlatformContext,
 ) {
+    private var currentAppVersion: String? = null
     private val json = Json { ignoreUnknownKeys = true }
     private val providers = VersionedProviderRegistry<BackendProvider> { it.id }
     private val _providersFlow = MutableStateFlow<List<BackendProvider>>(emptyList())
@@ -64,6 +66,7 @@ class ModuleManager(
 
     @Synchronized
     fun init(providerManager: ProviderManager, currentVersionName: String? = null) {
+        currentAppVersion = currentVersionName
         recoverRepositoryBackups()
         applyPendingRepositoryUpdates()
         if (currentVersionName != null) applyPendingLegacyProviderCleanup(currentVersionName)
@@ -206,6 +209,13 @@ class ModuleManager(
             PlatformSupport.readTextFile("$directory/manifest.json") ?: error("Missing manifest.json"),
         )
         require(manifest.isLoadable) { manifest.loadabilityError.orEmpty() }
+        manifest.minAppVersion?.let { minimum ->
+            require(PluginVersion.isValid(minimum)) { "Invalid minimum CPPlayer version: $minimum" }
+            val current = currentAppVersion ?: error("Cannot verify minimum CPPlayer version $minimum")
+            require(PluginVersion.compare(current, minimum)?.let { it >= 0 } == true) {
+                "This provider requires CPPlayer $minimum or newer (current $current)"
+            }
+        }
         val implementation = ProviderFactory.create(manifest, directory, context)
             ?: error("SDK entryPoint is missing, outside the package, or exceeds ${manifest.maxEntryPointBytes} bytes")
         try {

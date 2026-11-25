@@ -56,6 +56,7 @@ import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -96,6 +97,7 @@ import cp.player.core.music.TrackSummary
 import cp.player.core.playback.PlaybackUiState
 import cp.player.core.util.currentTimeMillis
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 
 /**
  * One mobile player with two focus states. Only the content above the transport
@@ -109,6 +111,8 @@ import kotlinx.coroutines.delay
 @Composable
 internal fun MobileNowPlayingLayout(
     state: PlaybackUiState,
+    positionFlow: Flow<Long>? = null,
+    initialPositionMs: Long = state.positionMs,
     config: MobilePlayerCustomConfig,
     lyricsExpanded: Boolean,
     supportsComments: Boolean,
@@ -389,7 +393,7 @@ internal fun MobileNowPlayingLayout(
                         .testTag("player-transport"),
                 ) {
                     if (!lyricsExpanded) Spacer(Modifier.weight(0.25f))
-                    PlayerTimeline(state, onSeek)
+                    PlayerTimeline(state, positionFlow, initialPositionMs, onSeek)
                     if (!lyricsExpanded) Spacer(Modifier.weight(0.15f))
                     Row(
                         Modifier.fillMaxWidth().height(if (compact) 72.dp else 84.dp),
@@ -558,7 +562,15 @@ private fun PlayerArtwork(
 }
 
 @Composable
-private fun PlayerTimeline(state: PlaybackUiState, onSeek: (Long) -> Unit) {
+private fun PlayerTimeline(
+    state: PlaybackUiState,
+    positionFlow: Flow<Long>? = null,
+    initialPositionMs: Long = state.positionMs,
+    onSeek: (Long) -> Unit,
+) {
+    val positionMs = positionFlow?.let { flow ->
+        flow.collectAsState(initial = initialPositionMs).value
+    } ?: state.positionMs
     val duration = state.durationMs.coerceAtLeast(0L)
     // 拖动中（AM 的行为）：两端时间跟着手指走，松手回落到引擎位置。
     // 条本身不画气泡 —— AM 的时间就是这两行文字。
@@ -567,13 +579,13 @@ private fun PlayerTimeline(state: PlaybackUiState, onSeek: (Long) -> Unit) {
     val scrub = remember(state.currentTrack?.id) { mutableStateOf<Long?>(null) }
     Column(Modifier.fillMaxWidth()) {
         CpMinimalSeekBar(
-            positionMs = state.positionMs, durationMs = duration, onSeek = onSeek,
+            positionMs = positionMs, durationMs = duration, onSeek = onSeek,
             enabled = SeekAvailability.isSeekable(duration, state.isLocalizing),
             trackKey = state.currentTrack?.id,
             onScrubPreview = remember(scrub) { { ms: Long? -> scrub.value = ms } },
             modifier = Modifier.fillMaxWidth().testTag("player-seek"),
         )
-        TimelineLabels(state = state, durationMs = duration, scrub = scrub)
+        TimelineLabels(state = state, positionMs = positionMs, durationMs = duration, scrub = scrub)
         SeekAvailability.disabledReason(duration, state.isLocalizing)?.let { reason ->
             CpText(
                 reason, style = MaterialTheme.typography.labelSmall,
@@ -591,12 +603,13 @@ private fun PlayerTimeline(state: PlaybackUiState, onSeek: (Long) -> Unit) {
 @Composable
 private fun TimelineLabels(
     state: PlaybackUiState,
+    positionMs: Long,
     durationMs: Long,
     scrub: MutableState<Long?>,
 ) {
     val s = cpStrings()
     val duration = durationMs
-    val shownPositionMs = scrub.value ?: state.positionMs
+    val shownPositionMs = scrub.value ?: positionMs
     Row(
         Modifier.fillMaxWidth().heightIn(min = 24.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -671,12 +684,16 @@ private fun PlayerIconButton(
             if (selected != null) this.selected = selected
         },
         colors = IconButtonDefaults.iconButtonColors(
+            // 选中态用 M3 的「filled tonal icon button」：容器 primaryContainer、
+            // 内容 onPrimaryContainer。旧版是 `onSurface.copy(alpha = 0.09f)` 叠层 ——
+            // 那是**按压态 state layer** 的透明度，不是选中容器，在浅色下几乎看不见，
+            // 而且与队列工具条（primaryContainer 圆形底）不是一套。
             containerColor = if (selected == true && showSelectionContainer) {
-                colors.onSurface.copy(alpha = 0.09f)
+                colors.primaryContainer
             } else {
                 Color.Transparent
             },
-            contentColor = if (selected == true) colors.primary else colors.onSurface,
+            contentColor = if (selected == true) colors.onPrimaryContainer else colors.onSurface,
         ),
     ) {
         Icon(icon, label, Modifier.size(iconSize.dp))

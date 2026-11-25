@@ -3,11 +3,8 @@ package cp.player.app.ui.component
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,7 +37,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
@@ -197,23 +193,15 @@ fun CpSearchSuggestionPanel(
 
 @Composable
 private fun SuggestionRow(suggestion: String, onPick: (String) -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                if (hovered) cpNestedSurface() else Color.Transparent,
+            // 与其它可点区域统一用 M3 ripple；不再自己画 hover 底色。
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = androidx.compose.material3.ripple(),
+                onClick = { onPick(suggestion) },
             )
-            .hoverable(interaction)
-            .pointerInput(suggestion) {
-                detectTapGestures(
-                    onPress = {
-                        onPick(suggestion)
-                        tryAwaitRelease()
-                    },
-                )
-            }
             .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

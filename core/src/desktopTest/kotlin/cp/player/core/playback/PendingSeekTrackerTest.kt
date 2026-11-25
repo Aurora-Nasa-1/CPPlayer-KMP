@@ -86,7 +86,7 @@ class PendingSeekTrackerTest {
     /**
      * 就绪跃迁必须排在落定判定**之前**。
      *
-     * 这是端到端测试（[AudioPlayerImplSeekE2ETest]）才暴露出来的第四个缺陷，单测原本漏了它：
+     * 这是旧播放器端到端回归中暴露出来的第四个缺陷，单测原本漏了它：
      * 真实 rodio 在首包到达的**同一轮**里既把时长变得可知、又把状态从 BUFFERING 转成 PLAYING。
      * 于是这一轮 `engineLoading` 由 true 翻成 false，宽限期从 4s 缩回 800ms，
      * 而 `elapsed` 仍是从**最初那次拖动**起算的 1.8s ⇒ 先做落定判定就会当场判超时放弃，

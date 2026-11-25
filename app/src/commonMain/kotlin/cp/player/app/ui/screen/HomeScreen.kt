@@ -116,6 +116,8 @@ import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LazyScrollRow
 import cp.player.app.ui.component.LocalIsExpanded
+import cp.player.app.ui.component.LocalWindowAdaptiveInfo
+import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.ui.component.PlaylistCoverCard
 import cp.player.app.ui.component.PageHeader
 import cp.player.app.ui.theme.cpCardSurface
@@ -328,7 +330,7 @@ private fun HomeScreenContent(model: HomeScreenModel) {
             playTracks(dailySongs, index)
             navigator.push(AppRoute.HomeGeneratedPlaylist(dailyPlaylist, dailySongs))
         },
-        onPlayPersonalFm = { model.playPersonalFm(strings) },
+        onPlayPersonalFm = { navigator.push(AppRoute.PersonalFm) },
         onOpenIntelligence = {
             if (AppModel.activeProvider() == null) {
                 navigator.push(AppRoute.LocalLibrary())
@@ -378,9 +380,18 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         onTogglePlayPause = { AppModel.playback.togglePlayPause() },
     )
 
+    val isTabletLayout = (isAndroidPlatform() || cp.player.app.ui.util.DesktopShell.isMobileMode) &&
+        LocalWindowAdaptiveInfo.current
+            ?.windowSizeClass
+            ?.isWidthAtLeastBreakpoint(
+                androidx.window.core.layout.WindowSizeClass.WIDTH_DP_MEDIUM_LOWER_BOUND,
+            ) == true
+
     if (loading) {
         // 首页骨架屏：结构与真实布局对齐（轮播、日推、歌单、榜单），避免全屏加载卡突兀闪现
-        if (LocalIsExpanded.current) {
+        if (isTabletLayout) {
+            TabletHomeSkeleton()
+        } else if (LocalIsExpanded.current) {
             DesktopHomeSkeleton()
         } else {
             MobileHomeSkeleton()
@@ -396,7 +407,14 @@ private fun HomeScreenContent(model: HomeScreenModel) {
         isRefreshing = refreshing,
         onRefresh = { model.refresh(force = true) },
     ) {
-        if (LocalIsExpanded.current) {
+        if (isTabletLayout) {
+            TabletHomeLayout(
+                state = state,
+                recentTracks = recentTracks,
+                nowPlaying = nowPlaying,
+                actions = actions,
+            )
+        } else if (LocalIsExpanded.current) {
             DesktopHomeLayout(
                 state = state,
                 recentTracks = recentTracks,
@@ -542,6 +560,231 @@ private const val DESKTOP_DAILY_COLUMNS = 4
 
 /** 与 [DESKTOP_DAILY_COLUMNS] 配套的展示条数：4 列 × 3 行。 */
 private const val DESKTOP_DAILY_COUNT = 12
+
+@Composable
+internal fun TabletHomeLayout(
+    state: HomeUiState,
+    recentTracks: List<TrackSummary>,
+    nowPlaying: NowPlayingSnapshot,
+    actions: HomeActions,
+) {
+    val strings = cpStrings()
+    val home = strings.home
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        val horizontalPadding = CpSpacing.pageHorizontal
+        val contentWidth = maxWidth.coerceAtMost(CpSpacing.pageMaxWidth) - horizontalPadding * 2
+        val playlistColumns = CpSpacing.gridColumns(contentWidth * 0.56f, min = 2, max = 3)
+        val sideColumns = 2
+
+        ScrollColumn(
+            modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = horizontalPadding,
+                end = horizontalPadding,
+                top = CpSpacing.pageTop,
+                bottom = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding() + CpSpacing.formBottomInset,
+            ),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Column(
+                Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(CpSpacing.section),
+            ) {
+                PageHeader(
+                    title = home.title,
+                    subtitle = home.subtitle,
+                    action = {
+                        FilledTonalButton(onClick = actions.onOpenAlbumWall) {
+                            Icon(PosterWallIcon, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            CpText(home.posterWall)
+                        }
+                    },
+                )
+
+                Row(
+                    Modifier.fillMaxWidth().height(CpSpacing.desktopFocusHeight),
+                    horizontalArrangement = Arrangement.spacedBy(CpSpacing.musicGap),
+                ) {
+                    when {
+                        state.dailySongs.isNotEmpty() ->
+                            DailySelectionFocus(state.dailySongs, actions, Modifier.weight(1.2f).fillMaxHeight())
+                        state.banners.isNotEmpty() ->
+                            BannerCarousel(
+                                state.banners,
+                                actions.onBannerClick,
+                                Modifier.weight(1.2f).fillMaxHeight(),
+                                height = CpSpacing.desktopFocusHeight,
+                            )
+                        else -> TabletWelcomeFocus(actions, Modifier.weight(1.2f).fillMaxHeight())
+                    }
+                    if (nowPlaying.track != null) {
+                        LandingNowPlaying(nowPlaying, actions, Modifier.weight(1f).fillMaxHeight())
+                    } else {
+                        TabletWelcomeFocus(actions, Modifier.weight(1f).fillMaxHeight())
+                    }
+                }
+
+                LandingRadioActions(actions, dailyAvailable = state.dailySongs.isNotEmpty())
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(CpSpacing.section),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(Modifier.weight(1.2f), verticalArrangement = Arrangement.spacedBy(CpSpacing.section)) {
+                        if (recentTracks.isNotEmpty()) {
+                            DesktopRecentSelection(recentTracks, nowPlaying, actions, contentWidth * 0.56f)
+                        }
+                        if (state.visiblePlaylists.isNotEmpty() || state.playlistSourceLoading) {
+                            HomeSectionCard(
+                                title = home.discoveryTitle,
+                                subtitle = playlistSourceHint(state.playlistSource, home),
+                                trailing = {
+                                    PlaylistSourceChips(
+                                        selected = state.playlistSource,
+                                        onChange = actions.onPlaylistSourceChange,
+                                    )
+                                },
+                            ) {
+                                if (state.playlistSourceLoading && state.visiblePlaylists.isEmpty()) {
+                                    Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                                        CpLoadingIndicator(Modifier.size(32.dp))
+                                    }
+                                } else {
+                                    PlaylistGrid(
+                                        playlists = state.visiblePlaylists.take(playlistColumns * PLAYLIST_ROWS),
+                                        columns = playlistColumns,
+                                        onOpen = actions.onOpenPlaylist,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Column(Modifier.weight(0.8f), verticalArrangement = Arrangement.spacedBy(CpSpacing.section)) {
+                        if (state.rankings.isNotEmpty()) {
+                            HomeSectionCard(title = home.rankingTitle, subtitle = home.rankingSubtitle) {
+                                RankingGrid(
+                                    rankings = state.rankings.take(sideColumns * 2),
+                                    columns = sideColumns,
+                                    onOpenRanking = actions.onOpenRanking,
+                                )
+                            }
+                        }
+                        if (state.newAlbums.isNotEmpty()) {
+                            HomeSectionCard(title = home.newAlbumsTitle, subtitle = home.newAlbumsSubtitle) {
+                                CoverTileGrid(
+                                    columns = sideColumns,
+                                    rows = 1,
+                                    items = state.newAlbums.take(sideColumns),
+                                    cover = { it.coverUrl },
+                                    title = { it.name },
+                                    subtitle = { it.artistName ?: home.unknownArtist },
+                                    onClick = actions.onOpenAlbum,
+                                    showSearchHint = true,
+                                    flightKeyOf = { CoverFlight.playlistKey(it.resourceId) },
+                                )
+                            }
+                        }
+                        if (state.hotArtists.isNotEmpty()) {
+                            HomeSectionCard(title = home.hotArtistsTitle, subtitle = home.hotArtistsSubtitle) {
+                                ArtistGrid(
+                                    artists = state.hotArtists.take(sideColumns),
+                                    columns = sideColumns,
+                                    onOpen = actions.onOpenArtist,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (state.banners.isNotEmpty() && state.dailySongs.isNotEmpty()) {
+                    BannerCarousel(
+                        state.banners,
+                        actions.onBannerClick,
+                        Modifier.fillMaxWidth(),
+                        height = MobileBannerHeight,
+                    )
+                }
+                if (state.newSongs.isNotEmpty() || state.newSongsLoading) {
+                    HomeSectionCard(
+                        title = home.newSongsTitle,
+                        subtitle = home.newSongsSubtitle,
+                        trailing = {
+                            NewSongRegionChips(
+                                selected = state.newSongRegion,
+                                onChange = actions.onNewSongRegionChange,
+                            )
+                        },
+                    ) {
+                        if (state.newSongsLoading && state.newSongs.isEmpty()) {
+                            Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                                CpLoadingIndicator(Modifier.size(32.dp))
+                            }
+                        } else {
+                            NewSongGrid(
+                                songs = state.newSongs.take(8),
+                                columns = 2,
+                                onPlay = actions.onNewSongPlay,
+                                onOptions = actions.onTrackOptions,
+                            )
+                        }
+                    }
+                }
+
+                state.error?.takeIf { AppModel.activeProvider() != null }?.let { error ->
+                    StateSurface {
+                        ContentState(
+                            title = home.loadIncompleteTitle,
+                            message = error.ifBlank { home.loadFailed },
+                            error = true,
+                            actionLabel = strings.library.retry,
+                            onAction = actions.onRefresh,
+                        )
+                    }
+                }
+                if (state.isEmptyHome) {
+                    StateSurface {
+                        ProvideCpTextFullDisplay(true) {
+                            if (AppModel.activeProvider() == null) {
+                                ContentState(
+                                    title = home.localModeTitle,
+                                    message = home.localModeNoteDesktop,
+                                    actionLabel = home.openLocalLibrary,
+                                    onAction = actions.onOpenIntelligence,
+                                )
+                            } else {
+                                ContentState(title = home.noPersonalizedTitle, message = home.noPersonalizedNote)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TabletWelcomeFocus(actions: HomeActions, modifier: Modifier = Modifier) {
+    val home = cpStrings().home
+    Surface(modifier, shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primaryContainer) {
+        Column(
+            Modifier.fillMaxSize().padding(CpSpacing.pageHorizontal),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                CpText(home.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                CpText(home.subtitle, style = MaterialTheme.typography.bodyLarge)
+            }
+            FilledTonalButton(onClick = actions.onOpenIntelligence) {
+                Icon(Icons.Filled.FolderOpen, null)
+                Spacer(Modifier.width(8.dp))
+                CpText(home.localLibrary)
+            }
+        }
+    }
+}
 
 @Composable
 internal fun DesktopHomeLayout(
@@ -1062,7 +1305,7 @@ internal fun MobileHomeLayout(
                         CpLoadingIndicator(Modifier.size(32.dp))
                     }
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap)) {
                         val songs = state.newSongs.take(8)
                         songs.forEachIndexed { index, track ->
                             SongItem(
@@ -2229,7 +2472,7 @@ private fun NewSongGrid(
         distributed.forEachIndexed { columnIndex, columnTracks ->
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
             ) {
                 columnTracks.forEachIndexed { indexInColumn, track ->
                     val originalIndex = columnIndex + indexInColumn * safeColumns

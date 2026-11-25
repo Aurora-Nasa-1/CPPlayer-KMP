@@ -59,7 +59,7 @@ class LocalLibraryVisualTest {
         val scene = ImageComposeScene(width = width, height = height, density = Density(1f)) {
             CpTheme(themeMode = themeMode) {
                 ProvideCpStrings(AppLanguage.ZH_HANS) {
-                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
                         content()
                     }
                 }

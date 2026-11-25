@@ -784,7 +784,9 @@ internal class Media3PlatformPlayer(context: android.content.Context) : Platform
 }
 
 actual fun createPlatformPlayer(context: PlatformContext): PlatformPlayer =
-    context.androidContext()?.let { cp.player.core.playback.flick.FlickEngineManager.createPlayer(it) } ?: AudioPlayerImpl()
+    cp.player.core.playback.flick.FlickEngineManager.createPlayer(
+        context.androidContext() ?: error("PlatformContext needs Android Context"),
+    )
 
 /**
  * Direct license POST for descriptors that expose a license URL and no

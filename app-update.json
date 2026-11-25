@@ -1,11 +1,5 @@
 {
-  "announcements": [
-    {
-      "id": "netease-cloudmusic-unavailable-2026-11-16",
-      "title": "服务通知",
-      "message": "网易云音源目前暂不可用。给你带来不便，敬请谅解。"
-    }
-  ],
+  "announcements": [],
   "destructiveUpdates": [
     {
       "id": "legacy-provider-v1-v3-1.8.8",

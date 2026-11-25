@@ -417,22 +417,17 @@ object DesktopHiResEngine {
      * 设置是否开启硬件独占模式 (WASAPI Exclusive / Bit-Perfect 源码输出)。
      * 若为 false，则以 WASAPI 共享模式运行，兼容系统混音器。
      *
-     * 环境变量 `CP_WASAPI_EXCLUSIVE` 是 Kotlin 设置与 cpal 打开声卡之间**唯一**的桥
-     * （vendored cpal 在 `build_output_stream_raw_inner` 里读它决定
-     * `AUDCLNT_SHAREMODE_EXCLUSIVE/SHARED`）。两条写入通道都要走：
-     * 1. **JNI（可靠）**：`audio_set_exclusive_mode` 只做 `std::env::set_var` +
-     *    bit-perfect 标志，**不要求引擎已创建** —— 必须无条件调用。
-     *    早期这里写成 `if (isInitialized)`：冷启动时本方法先于 `initEngine()` 执行，
-     *    这条可靠通道被跳过，只剩 FFM 那条路，而那条路当时整条是坏的
-     *    （见 [setProcessEnv]），环境变量从未写成 ⇒ 设置明明是共享、声卡照样独占。
-     * 2. **FFM（兜底）**：为旧 DLL（无 `nativeSetExclusiveMode` 导出）准备，
-     *    失败只打日志，不阻断。
+     * Rust verifies the signed token before WASAPI may open an exclusive stream.
+     * For older DLLs the environment bridge can only request shared mode.
      */
     fun setExclusiveMode(enabled: Boolean): Boolean {
-        _isExclusiveMode = enabled
-        runCatching { nativeSetExclusiveMode(enabled) }
-        setProcessEnv("CP_WASAPI_EXCLUSIVE", if (enabled) "1" else "0")
-        return true
+        val token = if (enabled) cp.player.core.license.VipLicenseManager.signedToken().orEmpty() else ""
+        val authorized = runCatching { nativeSetVipLicenseV2(token) }.getOrDefault(false)
+        val exclusive = enabled && authorized
+        val applied = runCatching { nativeSetExclusiveMode(exclusive) }.getOrDefault(false)
+        if (!exclusive || !applied) setProcessEnv("CP_WASAPI_EXCLUSIVE", "0")
+        _isExclusiveMode = exclusive && applied
+        return !enabled || _isExclusiveMode
     }
 
     /**
@@ -848,6 +843,7 @@ object DesktopHiResEngine {
     ): Boolean
     private external fun nativePollEvent(): String?
     private external fun nativeGetProgress(): String?
+    private external fun nativeSetVipLicenseV2(token: String): Boolean
     private external fun nativeSetExclusiveMode(enabled: Boolean): Boolean
     private external fun nativeSetDsdOutputMode(mode: Int): Boolean
 

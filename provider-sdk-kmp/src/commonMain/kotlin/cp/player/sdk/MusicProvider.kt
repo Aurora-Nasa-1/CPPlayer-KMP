@@ -74,6 +74,7 @@ object Capability {
     const val COMMENTS_POST = "comments.post"
     const val COMMENTS_LIKE = "comments.like"
     const val PERSONAL_FM = "recommendations.personalFm"
+    const val PERSONAL_FM_MODE = "recommendations.personalFmMode"
     const val SIMILAR_SONGS = "recommendations.similarSongs"
     const val INTELLIGENCE_SONGS = "recommendations.intelligenceSongs"
     const val ALBUM_SUBSCRIBE = "albums.subscribe"
@@ -97,6 +98,8 @@ interface Recommendations {
     suspend fun getPersonalizedNewSongs(request: RecommendationsRequest): TrackPage = unsupported()
     /** Get a personal-radio selection for the current account. Capability: recommendations.personalFm. Tag: 52. Undeclared or unimplemented capabilities fail with Unsupported. */
     suspend fun getPersonalFm(request: Bytes): TrackPage = unsupported()
+    /** Get a personal-radio selection using a provider-supported mode and sub-mode. Capability: recommendations.personalFmMode. Tag: 170. Undeclared or unimplemented capabilities fail with Unsupported. */
+    suspend fun getPersonalFmMode(request: FmModeRequest): TrackPage = unsupported()
     /** Get tracks related to request.id, bounded by request.limit. Capability: recommendations.similarSongs. Tag: 53. Undeclared or unimplemented capabilities fail with Unsupported. */
     suspend fun getSimilarSongs(request: SimilarSongsRequest): TrackPage = unsupported()
     /** Get an intelligent continuation from a seed track and playlist. Capability: recommendations.intelligenceSongs. Tag: 54. Undeclared or unimplemented capabilities fail with Unsupported. */

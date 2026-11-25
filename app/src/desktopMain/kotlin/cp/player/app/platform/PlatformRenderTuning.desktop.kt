@@ -16,9 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
-import cafe.adriel.voyager.navigator.LocalNavigator
-import cafe.adriel.voyager.navigator.currentOrThrow
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsFieldGroup
 import cp.player.app.ui.component.SettingsNote
@@ -42,7 +41,7 @@ import cp.player.app.ui.component.CpText
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 actual fun PlatformRenderTuningContent() {
-    val navigator = LocalNavigator.currentOrThrow
+    val navigator = LocalAppNavigator.current
 
     // 本地态只用于即时反馈；真正的持久化交给 DesktopRenderTuning。
     var backend by remember { mutableStateOf(DesktopRenderTuning.storedBackend()) }

@@ -9,9 +9,15 @@ import cp.player.sdk.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.security.MessageDigest
+import java.security.SecureRandom
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
+
+private val providerRandom by lazy { SecureRandom() }
 
 /** One engine/thread per account session. Only constant bridge programs execute. */
 class JsSdkProvider(
@@ -49,6 +55,28 @@ class JsSdkProvider(
                 jsValue(context.runtime.http(HttpRequest.fromValues(valueObject(args.single()))).values()) as JsObject
             }
             js.asyncFunction<ByteArray>("__sdkSha256") { args -> context.runtime.sha256(valueBytes(args.single())) }
+            js.asyncFunction<ByteArray>("__sdkRandomBytes") { args ->
+                val size = valueInt(args.single())
+                require(size in 0..65_536) { "Random byte count out of range" }
+                withContext(Dispatchers.IO) { ByteArray(size).also(providerRandom::nextBytes) }
+            }
+            js.asyncFunction<ByteArray>("__sdkHmacSha256") { args ->
+                require(args.size == 2) { "Expected key and message bytes" }
+                val key = valueBytes(args[0])
+                val message = valueBytes(args[1])
+                require(key.size in 1..4096) { "HMAC key size out of range" }
+                require(message.size <= MAX_BYTES) { "Crypto input limit" }
+                withContext(Dispatchers.Default) {
+                    Mac.getInstance("HmacSHA256").apply {
+                        init(SecretKeySpec(key, "HmacSHA256"))
+                    }.doFinal(message)
+                }
+            }
+            js.asyncFunction<ByteArray>("__sdkMd5") { args ->
+                val bytes = valueBytes(args.single())
+                require(bytes.size <= MAX_BYTES) { "Crypto input limit" }
+                withContext(Dispatchers.Default) { MessageDigest.getInstance("MD5").digest(bytes) }
+            }
             js.function<String>("__sdkText") { args -> valueBytes(args.single()).decodeToString(throwOnInvalidSequence = true) }
             js.function<ByteArray>("__sdkUtf8") { args -> valueString(args.single()).encodeToByteArray() }
             js.asyncFunction<ByteArray?>("__sdkRead") { args -> context.runtime.read(valueString(args.single())) }
@@ -82,9 +110,28 @@ class JsSdkProvider(
                     visit(value, 0);
                     return value;
                 }, writable: false, configurable: false });
+                // QuickJS-kt reads the backing buffer of Int8Array, ignoring the view's range.
+                const crypto = (() => {
+                    const signedBytes = (bytes, max) => {
+                        if (!(bytes instanceof Int8Array || bytes instanceof Uint8Array))
+                            throw new TypeError("Expected typed bytes");
+                        if (bytes.byteLength > max) throw new RangeError("Crypto input limit");
+                        if (bytes.byteOffset !== 0 || bytes.byteLength !== bytes.buffer.byteLength)
+                            return new Int8Array(bytes);
+                        return new Int8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                    };
+                    return Object.freeze({
+                        randomBytes: __sdkRandomBytes,
+                        async hmacSha256(key, message) {
+                            return __sdkHmacSha256(signedBytes(key, 4096), signedBytes(message, $MAX_BYTES));
+                        },
+                        async md5(bytes) { return __sdkMd5(signedBytes(bytes, $MAX_BYTES)); }
+                    });
+                })();
                 globalThis.context = Object.freeze({
                     ...__sdkContext(),
                     http: __sdkHttp, sha256: __sdkSha256, text: __sdkText, utf8: __sdkUtf8,
+                    crypto,
                     read: __sdkRead, write: __sdkWrite
                 });
                 Object.freeze(context.settings);
@@ -224,6 +271,8 @@ class JsSdkProvider(
         business("likeComment", request.values(), MutationResult::fromValues)
     override suspend fun getPersonalFm(request: Bytes): TrackPage =
         business("getPersonalFm", request.values(), TrackPage::fromValues)
+    override suspend fun getPersonalFmMode(request: FmModeRequest): TrackPage =
+        business("getPersonalFmMode", request.values(), TrackPage::fromValues)
     override suspend fun getSimilarSongs(request: SimilarSongsRequest): TrackPage =
         business("getSimilarSongs", request.values(), TrackPage::fromValues)
     override suspend fun getIntelligenceSongs(request: IntelligenceSongsRequest): TrackPage =

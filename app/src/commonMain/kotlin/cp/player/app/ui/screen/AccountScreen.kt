@@ -1387,6 +1387,8 @@ private fun AccountAvatar(
 private fun cookieHint(strings: AccountStrings, raw: String, normalized: String?): String = when {
     raw.isBlank() -> strings.cookieHintEmpty
     normalized == null -> strings.cookieHintUnparsed
+    !normalized.contains(';') && !normalized.contains(' ') ->
+        strings.cookieTokenAccepted + CookieLogin.mask(normalized)
     !CookieLogin.hasSessionKey(normalized) ->
         strings.cookieNoSessionKey(cookieFieldCount(normalized))
     else -> {

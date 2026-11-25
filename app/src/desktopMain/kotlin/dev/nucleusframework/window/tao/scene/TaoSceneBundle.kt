@@ -34,6 +34,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import org.jetbrains.skia.Canvas
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.logging.Level
 import java.util.logging.Logger
 import kotlin.coroutines.CoroutineContext
@@ -182,6 +183,7 @@ internal class TaoSceneBundle(
         beforeDraw: ((Canvas) -> Unit)? = null,
     ) {
         if (closed.get()) return
+        CpRenderProbe.tick()
         var swallowed = true
         exceptionHandler.catchExceptions {
             // Closed by its own recomposition: nothing was drawn, nothing to account for 鈥?the
@@ -283,7 +285,9 @@ internal class TaoSceneRenderingScope(
         isRendering = true
         try {
             outOfFrameExecutor?.onBeforeFrame()
+            val frameStartNs = CpFrameTimingProbe.start()
             frameRecomposer.performFrame(nanoTime)
+            val recompositionDoneNs = CpFrameTimingProbe.now()
             // The frame's own recomposition may close this scene (its window or popup left the
             // composition); laying it out then throws "RootNodeOwner is already disposed".
             if (isClosed()) return false
@@ -299,12 +303,21 @@ internal class TaoSceneRenderingScope(
             // LayerDamageTracker.afterDraw.
             if (beforeDraw != null) Snapshot.sendApplyNotifications()
             scene.measureAndLayoutPastDisposedLayers()
-            if (beforeDraw != null) {
+            // A second layout pass is only needed when the first pass left the
+            // scene invalidated. Static pages otherwise paid for two complete
+            // measure/layout walks on every damage-tracked frame.
+            if (beforeDraw != null && scene.hasInvalidations()) {
                 Snapshot.sendApplyNotifications()
                 scene.measureAndLayoutPastDisposedLayers()
             }
+            val layoutDoneNs = CpFrameTimingProbe.now()
             beforeDraw?.invoke(canvas)
             scene.draw(canvas.asComposeCanvas())
+            CpFrameTimingProbe.record(
+                totalNs = CpFrameTimingProbe.now() - frameStartNs,
+                recompositionNs = recompositionDoneNs - frameStartNs,
+                layoutNs = layoutDoneNs - recompositionDoneNs,
+            )
         } finally {
             isRendering = false
         }
@@ -487,3 +500,90 @@ private fun PlatformContext.withOwnerListeners(
             TaoRootsForTest.wrap(this@withOwnerListeners.rootForTestListener)
     }
 
+
+/**
+ * 本地帧率探针（默认关闭，仅诊断用）。
+ *
+ * 每次 [TaoSceneBundle.render] 调用记一帧，每 2 秒把实测帧率写到
+ * `~/.cpplayer/fps-probe.log`。这跟 RTSS 统计的 Present 频率同源（render 之后
+ * 紧接 host 的 present），但能由我自己读，避免"改完再让人家报数字"的低效循环。
+ *
+ * 打开方式：run 家族 JVM 加 `-Dcp.fps.probe=true`。生产 Native Image 不带这个
+ * 属性，探针完全静默（连文件都不创建）。
+ */
+private object CpRenderProbe {
+    private val enabled = System.getProperty("cp.fps.probe") == "true"
+    private val frames = AtomicLong(0)
+    private var windowStartNs = System.nanoTime()
+
+    fun tick() {
+        if (!enabled) return
+        frames.incrementAndGet()
+        val now = System.nanoTime()
+        val elapsed = now - windowStartNs
+        if (elapsed < 2_000_000_000L) return  // 每 2 秒一个窗口
+        val n = frames.getAndSet(0)
+        windowStartNs = now
+        val fps = n * 1_000_000_000.0 / elapsed
+        runCatching {
+            val dir = java.io.File(System.getProperty("user.home"), ".cpplayer")
+            dir.mkdirs()
+            java.io.File(dir, "fps-probe.log").appendText(
+                "fps=${String.format(java.util.Locale.US, "%.1f", fps)} " +
+                    "frames=$n windowMs=${elapsed / 1_000_000}\n",
+            )
+        }
+    }
+}
+
+/**
+ * Optional phase timing for diagnosing low present rates.
+ *
+ * This deliberately measures only the Compose scene work. If these numbers stay
+ * low while an external Present counter reports ~10 FPS, the stall is below this
+ * layer (Skia flush, swap chain, driver, or window compositor).
+ */
+private object CpFrameTimingProbe {
+    private val enabled = System.getProperty("cp.frame.timing") == "true"
+    private val frames = AtomicLong(0)
+    private val totalNs = AtomicLong(0)
+    private val recompositionNs = AtomicLong(0)
+    private val layoutNs = AtomicLong(0)
+    private val maxTotalNs = AtomicLong(0)
+    private var windowStartNs = System.nanoTime()
+
+    fun start(): Long = if (enabled) System.nanoTime() else 0L
+
+    fun now(): Long = if (enabled) System.nanoTime() else 0L
+
+    fun record(totalNs: Long, recompositionNs: Long, layoutNs: Long) {
+        if (!enabled) return
+        frames.incrementAndGet()
+        this.totalNs.addAndGet(totalNs)
+        this.recompositionNs.addAndGet(recompositionNs)
+        this.layoutNs.addAndGet(layoutNs)
+        maxTotalNs.accumulateAndGet(totalNs) { a, b -> maxOf(a, b) }
+        val now = System.nanoTime()
+        val elapsed = now - windowStartNs
+        if (elapsed < 2_000_000_000L) return
+        val count = frames.getAndSet(0)
+        val total = this.totalNs.getAndSet(0)
+        val recomposition = this.recompositionNs.getAndSet(0)
+        val layout = this.layoutNs.getAndSet(0)
+        val max = maxTotalNs.getAndSet(0)
+        windowStartNs = now
+        if (count == 0L) return
+        runCatching {
+            val dir = java.io.File(System.getProperty("user.home"), ".cpplayer")
+            dir.mkdirs()
+            java.io.File(dir, "frame-timing.log").appendText(
+                "frames=$count " +
+                    "avgTotalMs=${"%.2f".format(java.util.Locale.US, total / count / 1_000_000.0)} " +
+                    "avgRecomposeMs=${"%.2f".format(java.util.Locale.US, recomposition / count / 1_000_000.0)} " +
+                    "avgLayoutMs=${"%.2f".format(java.util.Locale.US, layout / count / 1_000_000.0)} " +
+                    "maxSceneMs=${"%.2f".format(java.util.Locale.US, max / 1_000_000.0)} " +
+                    "windowMs=${elapsed / 1_000_000}\n",
+            )
+        }
+    }
+}

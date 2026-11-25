@@ -129,7 +129,7 @@ Compose 资源（字体 / 图片）要在 Android 生效，`:app` 必须 `androi
 | 持久化路径 | 统一走 `core/.../util/DesktopDataDir.kt`（`~/.cpplayer/`）；必须在 `jvmMain`，`desktopMain` 的类看不到它 |
 | `defaultSettingsStorage(namespace)` | 不是单例：构造时读全文件、每次写入全量回写；两实例写同一 namespace 会互相覆盖，新场景换新 namespace |
 | `MusicBackend.backendScope` | 用 `Dispatchers.Main`，状态读写天然串行；改 `Default` 会立刻变成真数据竞争 |
-| 例外 | `AudioPlayerImpl` 的位置轮询刻意用 `Default`：桌面 Main 是 Swing EDT，每 200ms 经 JNI 阻塞一次会破坏帧节奏 |
+| 例外 | 桌面播放由 FlickEngine 承载；播放器事件轮询与 JNI 调用不应阻塞 UI 线程 |
 | 编译失败 | 先确认报错文件是不是自己的；在途包会让整个 `:core` 编译不过。判定 WIP：`git grep -n "<符号>" HEAD` 在 HEAD 也找不到即是在途 |
 
 ## 5. 文档

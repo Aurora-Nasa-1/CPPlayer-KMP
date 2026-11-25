@@ -499,6 +499,8 @@ private fun CommentComposer(state: CommentUiState, model: CommentScreenModel) {
                         CpText(
                             s.inputPlaceholder,
                             style = MaterialTheme.typography.bodyMedium,
+                            // 文字不要叠透明度：0.6 在实测里只有 ~3:1，低于正文可读线。
+                            // 主次靠字号 / 字重区分（见 SurfaceTokens / Color 的说明）。
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     },

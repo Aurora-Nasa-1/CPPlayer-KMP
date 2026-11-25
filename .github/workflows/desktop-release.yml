@@ -51,6 +51,8 @@ concurrency:
 
 env:
   JAVA_VERSION: "25"
+  FLICK_VIP_PUBLIC_KEY: ${{ vars.FLICK_VIP_PUBLIC_KEY }}
+  FLICK_VIP_LEASE_URL: ${{ vars.FLICK_VIP_LEASE_URL }}
 
 jobs:
   # 版本号 / tag / 渠道只在这里解析一次。
@@ -233,6 +235,27 @@ jobs:
           }
           echo "PGO profile: $(stat -c%s "$profile") bytes"
           sha256sum "$profile"
+
+      - name: Fetch pinned FLICK Windows runtime
+        if: matrix.platform == 'windows'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FLICK_TAG: ${{ vars.FLICK_NATIVE_RELEASE_TAG }}
+          FLICK_SHA256: ${{ vars.FLICK_WINDOWS_SHA256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${FLICK_TAG:?Missing FLICK_NATIVE_RELEASE_TAG}" "${FLICK_VIP_PUBLIC_KEY:?Missing FLICK_VIP_PUBLIC_KEY}"
+          [[ "${FLICK_SHA256:-}" =~ ^[a-fA-F0-9]{64}$ ]]
+          dir="$RUNNER_TEMP/flick-windows"
+          mkdir -p "$dir"
+          gh release download "$FLICK_TAG" --repo "$GITHUB_REPOSITORY" --dir "$dir" --pattern rust_lib_flick_player.dll
+          dll="$dir/rust_lib_flick_player.dll"
+          printf '%s  %s\n' "$FLICK_SHA256" "$dll" | sha256sum -c
+          grep -aFq -- 'Java_cp_player_core_playback_DesktopHiResEngine_nativeSetVipLicenseV2' "$dll"
+          grep -aFq -- "$FLICK_VIP_PUBLIC_KEY" "$dll"
+          mkdir -p app/native
+          cp "$dll" app/native/rust_lib_flick_player.dll
 
       - name: Build desktop package
         shell: bash

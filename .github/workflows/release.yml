@@ -83,6 +83,24 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > keystore/release.jks
           test -s keystore/release.jks
 
+      - name: Fetch pinned FLICK Android runtime
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FLICK_TAG: ${{ vars.FLICK_NATIVE_RELEASE_TAG }}
+          FLICK_SHA256: ${{ vars.FLICK_ANDROID_SHA256 }}
+          FLICK_VIP_PUBLIC_KEY: ${{ vars.FLICK_VIP_PUBLIC_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${FLICK_TAG:?Missing FLICK_NATIVE_RELEASE_TAG}" "${FLICK_VIP_PUBLIC_KEY:?Missing FLICK_VIP_PUBLIC_KEY}"
+          [[ "${FLICK_SHA256:-}" =~ ^[a-fA-F0-9]{64}$ ]]
+          dir="$RUNNER_TEMP/flick-jni/arm64-v8a"
+          mkdir -p "$dir"
+          gh release download "$FLICK_TAG" --repo "$GITHUB_REPOSITORY" --dir "$dir" --pattern librust_lib_flick_player.so
+          printf '%s  %s\n' "$FLICK_SHA256" "$dir/librust_lib_flick_player.so" | sha256sum -c
+          grep -aFq -- "$FLICK_VIP_PUBLIC_KEY" "$dir/librust_lib_flick_player.so"
+          echo "FLICK_ANDROID_JNI_DIR=$RUNNER_TEMP/flick-jni" >> "$GITHUB_ENV"
+
       - name: Build release APK
         # 只传 versionName / releaseChannel —— **versionCode 由 Gradle 从 versionName
         # 派生**（根 build.gradle.kts）。以前这里传 GITHUB_RUN_NUMBER，与 tag 无关，
@@ -93,8 +111,11 @@ jobs:
           KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          FLICK_VIP_PUBLIC_KEY: ${{ vars.FLICK_VIP_PUBLIC_KEY }}
+          FLICK_VIP_LEASE_URL: ${{ vars.FLICK_VIP_LEASE_URL }}
         run: |
           ./gradlew :app-android:assembleRelease --no-daemon \
+            -Pflick.required=true \
             -Papp.versionName="${{ steps.meta.outputs.version }}" \
             -Papp.releaseChannel=stable
 
@@ -118,6 +139,31 @@ jobs:
             exit 1
           fi
           cp "$signed_apk" "CPPlayer-${{ steps.meta.outputs.version }}-android.apk"
+
+      - name: Verify packaged FLICK runtime and APK signature
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          FLICK_VIP_PUBLIC_KEY: ${{ vars.FLICK_VIP_PUBLIC_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="CPPlayer-$VERSION-android.apk"
+          tools="${ANDROID_SDK_ROOT:-$ANDROID_HOME}/build-tools/37.0.0"
+          "$tools/apksigner" verify "$apk"
+          "$tools/zipalign" -c -P 16 4 "$apk"
+          unzip -p "$apk" lib/arm64-v8a/librust_lib_flick_player.so > "$RUNNER_TEMP/packaged-flick.so"
+          cmp "$FLICK_ANDROID_JNI_DIR/arm64-v8a/librust_lib_flick_player.so" "$RUNNER_TEMP/packaged-flick.so"
+          grep -aFq -- "$FLICK_VIP_PUBLIC_KEY" "$RUNNER_TEMP/packaged-flick.so"
+          readelf -hW "$RUNNER_TEMP/packaged-flick.so" | grep -E 'Machine:.*AArch64'
+          loads=$(readelf -lW "$RUNNER_TEMP/packaged-flick.so" | awk '$1 == "LOAD" { print $NF }')
+          [[ -n "$loads" ]]
+          for alignment in $loads; do
+            (( alignment >= 16384 ))
+          done
+          symbols=$(readelf --dyn-syms --wide "$RUNNER_TEMP/packaged-flick.so")
+          for entry in nativeSetVipLicenseV2 nativePlayUrl nativeRegisterRustDirectUsbDevice nativeIsRustDirectUsbSessionActive nativeClearRustDirectUsbPlayback; do
+            grep -Fq "Java_cp_player_engine_RustEngine_${entry}" <<< "$symbols"
+          done
 
       - name: Generate release notes
         shell: bash

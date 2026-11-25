@@ -20,31 +20,10 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.os.Build
-import cp.player.core.playback.SyncedLyricLine
-
-/** 无 `endTime` 时的兜底时长（与 Halcyon 一致）。 */
-internal const val FALLBACK_LINE_DURATION_MS = 3_000L
 
 /** 曲目身份键：用于「是不是同一首歌」的去重。 */
 internal fun LyricPushTrack.trackKey(): String =
     listOf(id, sourceId.orEmpty(), title, artist, album).joinToString("|")
-
-/**
- * 一行的结束时间。
- *
- * 优先级：显式 [SyncedLyricLine.endTime] → 最后一个逐字词的结束 → 下一行的开始 →
- * 「本行 + 3s」。**不能只用下一行开始时间**：最后一行没有下一行，会退化成一个
- * 很短的窗口，接收端表现为「最后一句一闪而过」。
- */
-internal fun SyncedLyricLine.lineEndMs(
-    lines: List<SyncedLyricLine>,
-    index: Int,
-): Long {
-    endTime?.takeIf { it > time }?.let { return it }
-    words.maxOfOrNull { it.endTime }?.takeIf { it > time }?.let { return it }
-    lines.getOrNull(index + 1)?.time?.takeIf { it > time }?.let { return it }
-    return time + FALLBACK_LINE_DURATION_MS
-}
 
 /** 播放进度百分比（0..100）；时长未知时返回 0。 */
 internal fun progressPercent(positionMs: Long, durationMs: Long): Int =

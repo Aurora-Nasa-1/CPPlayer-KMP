@@ -19,6 +19,8 @@ interface UnifiedMusicSource : ExtendedMusicSource {
     val accountChanges: kotlinx.coroutines.flow.Flow<Unit> get() = kotlinx.coroutines.flow.emptyFlow()
     suspend fun getRecommendedSongs(limit: Int = 30): MusicResult<List<TrackSummary>> =
         cp.player.core.BackendResult.Unsupported("Recommendations not supported")
+    suspend fun getDailyStyleRecommendations(limit: Int = 30): MusicResult<List<TrackSummary>> =
+        cp.player.core.BackendResult.Unsupported("Style recommendations not supported")
     suspend fun getRecommendedPlaylists(limit: Int = 30): MusicResult<List<PlaylistSummary>> =
         cp.player.core.BackendResult.Unsupported("Recommendations not supported")
     suspend fun getPersonalizedPlaylists(limit: Int = 30): MusicResult<List<PlaylistSummary>> =
@@ -108,6 +110,12 @@ interface UnifiedMusicSource : ExtendedMusicSource {
     ): MusicResult<Boolean> = cp.player.core.BackendResult.Unsupported("Comment likes not supported")
     suspend fun getPersonalFm(): MusicResult<List<TrackSummary>> =
         cp.player.core.BackendResult.Unsupported("Personal FM not supported")
+    suspend fun getPersonalFmMode(
+        mode: String = "DEFAULT",
+        subMode: String = "",
+        limit: Int = 3,
+    ): MusicResult<List<TrackSummary>> =
+        cp.player.core.BackendResult.Unsupported("Personal FM modes not supported")
     suspend fun getSimilarSongs(mediaId: String, limit: Int = 30): MusicResult<List<TrackSummary>> =
         cp.player.core.BackendResult.Unsupported("Similar songs not supported")
     suspend fun getIntelligenceSongs(mediaId: String, playlistId: String, limit: Int = 30): MusicResult<List<TrackSummary>> =

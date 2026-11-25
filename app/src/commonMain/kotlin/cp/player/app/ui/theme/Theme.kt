@@ -141,7 +141,16 @@ fun CpTheme(
         null
     }
 
-    val target = platformScheme ?: generated ?: if (dark) DarkColors else LightColors
+    // 表面色族去染色必须排在动画之前：平台 Monet、materialkolor、静态回退三条路都过这一关。
+    // 顺序：先中性化表面（只动 surface 系），再修容器 / on 容器配对。
+    // 理由见 `withNeutralSurfaces` —— 大面积底色和文字被种子色染色是「脏 + 文字糊」的根因。
+    // ColorScheme 按实例比较。每帧 copy 即使颜色完全相同，也会让 Transition
+    // 收到新目标，持续驱动主题及其下游页面重组。
+    val baseScheme = platformScheme ?: generated ?: if (dark) DarkColors else LightColors
+    val target = remember(baseScheme, dark, pureBlack) {
+        val neutral = baseScheme.withNeutralSurfaces().withConsistentContainerPairs(dark)
+        if (dark && !pureBlack) neutral.withReadableDarkSurfaces() else neutral
+    }
 
     // 第 3 段：逐角色插值。
     val animated = animateColorScheme(
@@ -151,7 +160,11 @@ fun CpTheme(
 
     // 纯黑覆盖必须排在动画**之后**：若放在动画之前，`#000` 会被插值成深灰，
     // 切换纯黑时整屏会先亮一下再变黑。
-    val colorScheme = if (dark && pureBlack) animated.withPureBlackSurfaces() else animated
+    val colorScheme = if (dark && pureBlack) {
+        remember(animated) { animated.withPureBlackSurfaces() }
+    } else {
+        animated
+    }
 
     // Expressive 动效方案。**必须 remember**：`MotionScheme.expressive()` 每次都返回新实例时，
     // 所有读 `MaterialTheme.motionScheme` 的 `animate*AsState` 会把 targetState 认成变了，
@@ -214,20 +227,41 @@ fun CpTheme(
 }
 
 /**
- * 把 surface 系列压到 OLED 友好的极暗色阶。
+ * 把 surface 系列压到 OLED 友好的极暗色阶，**同时保住均匀的层级步长**。
  *
- * **只压「大面积背景」与「最低两级容器」**，保留 `surfaceContainerLow..Highest` 的极暗灰阶梯。
+ * ### 为什么不是「把最小那几级压成 #000」
  *
- * ⚠️ 这里曾经把 `surfaceVariant` + 六个 surface 角色**全部压成 `#000`**，后果是
- * 卡片与背景同色、整页糊成一块，只能靠 `bentoOutline()` 描边去补层级
- * （`LOG.md` 里那条「中性卡片必须带 bentoOutline 描边」正是这个原因）。
- * 但描边是比色阶**更重**的视觉元素 —— 用描边补层级，整页会显得生硬。
+ * 上一版只把 `surface` / `background` / `surfaceContainerLowest` 压成 `#000`，
+ * 保留其余几级的**绝对值**不变（`Low`=#0A0A0D / `Container`=#0E0E12 /
+ * `High`=#16161C / `Highest`=#22222A）。问题是页面掉到了 L\*=0 而卡片还停在 L\*=7.5，
+ * 第一步比正常深色（L\*4.1 → 6.1，一步 2.0）**大三倍多** —— 表现就是「纯黑底上贴了一块灰板」。
+ * 同时 `surfaceVariant` 被写成 `#16161C`（=High），而 M3 要求它等于
+ * `surfaceContainerHighest`，于是同一个「容器色」在两种写法下差 6 个明度点。
  *
- * 保留 4–5 点亮度差的极暗灰（`#0A0A0C` → `#19191D`）既能让 OLED 大面积熄屏，
- * 又能维持**无描边的层级**：肉眼在纯黑屏上仍能分辨卡片边界。
+ * ### 现在的做法：以页面为 0 重新排一条**等步长**阶梯
  *
- * 只覆盖 surface / background 系角色，**不动** primary / secondary 等语义色：
- * 纯黑模式的目的是让 OLED 大面积像素熄灭，把强调色也压黑会让界面彻底失去层级。
+ * | 角色 | 深色 | 纯黑 |
+ * |---|---|---|
+ * | `surface` 页面 | L\*4.1 | **L\*0** |
+ * | `surfaceContainerLow` | L\*6.1 | L\*1.8 (#070709) |
+ * | `surfaceContainer` 卡片 | L\*9.0 | L\*3.0 (#0A0A0D) |
+ * | `surfaceContainerHigh` 内嵌槽 | L\*12.0 | L\*6.1 (#131318) |
+ * | `surfaceContainerHighest` 浮层 | L\*15.0 | L\*9.0 (#191920) |
+ *
+ * 整条阶梯相对正常深色**下移一档**（步长仍是 3 / 3.1 / 3 / 3，与正常深色的
+ * 2 / 2.9 / 3 / 3 同量级），而不是「页面单独掉到 0、其余不动」。
+ * 纯黑下的卡片比页面亮 3 个明度点 —— 黑底上才看得出卡片边界。
+ *
+ * ⚠️ **纯黑模式下页面就是 `#000`，这是刻意的。** 用户点这个开关的唯一目的就是让
+ * 大面积像素熄灭；「页面不许是纯黑、要靠页面留一点灰来维持层级」那个思路，
+ * 等于把开关的意义抵消掉一半。层级靠**卡片色阶**表达（卡片在纯黑上仍比页面亮 3 个明度点），
+ * 不靠页面本身不是黑。
+ *
+ * ⚠️ 只覆盖 surface / background 系角色，**不动** primary / secondary / tertiary
+ * —— 纯黑模式的目的是让 OLED 大面积像素熄灭，把强调色也压黑会让界面彻底失去层级。
+ *
+ * ⚠️ 必须在配色动画**之后**调用：若放在动画之前，`#000` 会被插值成深灰，
+ * 切换纯黑时整屏会先亮一下再变黑。
  */
 private fun ColorScheme.withPureBlackSurfaces(): ColorScheme = copy(
     surface = Color.Black,
@@ -235,12 +269,13 @@ private fun ColorScheme.withPureBlackSurfaces(): ColorScheme = copy(
     surfaceDim = Color.Black,
     surfaceBright = Color(0xFF282832),
     surfaceContainerLowest = Color.Black,
-    // ↓ 下面这几档刻意**不压黑**：它们承担卡片与浮层的层级表达。
-    surfaceVariant = Color(0xFF16161C),
-    surfaceContainerLow = Color(0xFF0A0A0D),
-    surfaceContainer = Color(0xFF0E0E12),
-    surfaceContainerHigh = Color(0xFF16161C),
-    surfaceContainerHighest = Color(0xFF22222A),
+    surfaceContainerLow = Color(0xFF070709),
+    surfaceContainer = Color(0xFF0A0A0D),
+    surfaceContainerHigh = Color(0xFF131318),
+    surfaceContainerHighest = Color(0xFF191920),
+    // M3 要求 surfaceVariant 与 surfaceContainerHighest 等值（前者已弃用，只是别名）。
+    // 不等值会让仍在读 surfaceVariant 的旧代码比同页其它容器暗一档。
+    surfaceVariant = Color(0xFF191920),
 )
 
 val LocalThemeMode = staticCompositionLocalOf { ThemeMode.SYSTEM }

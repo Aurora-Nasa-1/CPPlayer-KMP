@@ -235,7 +235,14 @@ fun ISyncedLine.toSyncedLyricLine(): SyncedLyricLine? {
                 text = lineText,
                 words = words,
                 translation = translation?.takeIf { it.isNotBlank() },
-                romanization = phonetic?.takeIf { it.isNotBlank() },
+                romanization = phonetic?.takeIf { it.isNotBlank() }
+                    ?: buildString {
+                        for (syllable in syllables) {
+                            val reading = syllable.phonetic?.takeIf { it.isNotBlank() } ?: continue
+                            append(syllable.phoneticSeparatorBefore)
+                            append(reading)
+                        }
+                    }.trim().takeIf { it.isNotEmpty() },
             )
         }
         is SyncedLine -> {

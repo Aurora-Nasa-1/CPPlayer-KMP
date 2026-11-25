@@ -84,6 +84,7 @@ interface PluginRepositoryStrings {
     val pendingRestart: String
     val details: String
     val changelog: String
+    fun minimumAppVersion(version: String): String
     val downloading: String
     val verifying: String
     val installing: String
@@ -99,7 +100,7 @@ interface PluginRepositoryStrings {
     fun removeSourceMessage(url: String): String
     fun sourceFailed(name: String, error: String): String
     fun pendingFailed(error: String): String
-    fun packageInfo(platform: String, arch: String, runtime: String, bytes: Long): String
+    fun packageInfo(platform: String, arch: String, runtime: String, bytes: Long?): String
     fun statProviders(count: Int): String
     fun statLyrics(enabled: Int, total: Int): String
     fun statRepositories(enabled: Int, total: Int): String
@@ -204,6 +205,7 @@ object PluginRepositoryStringsZh : PluginRepositoryStrings {
     override val pendingRestart = "更新已暂存，重启应用后生效"
     override val details = "插件详情"
     override val changelog = "更新说明"
+    override fun minimumAppVersion(version: String) = "需要 CPPlayer v$version 或更高版本"
     override val downloading = "正在下载"
     override val verifying = "正在校验安装包"
     override val installing = "正在安装，请稍候"
@@ -219,8 +221,8 @@ object PluginRepositoryStringsZh : PluginRepositoryStrings {
     override fun removeSourceMessage(url: String) = "停止访问 $url，不会卸载已安装插件；该仓库的插件将不再检查更新。"
     override fun sourceFailed(name: String, error: String) = "$name 刷新失败，保留缓存：$error"
     override fun pendingFailed(error: String) = "重启更新未完成，已尝试保留旧版本：$error"
-    override fun packageInfo(platform: String, arch: String, runtime: String, bytes: Long) =
-        "$platform / $arch · $runtime · $bytes 字节"
+    override fun packageInfo(platform: String, arch: String, runtime: String, bytes: Long?) =
+        listOf("$platform / $arch · $runtime", bytes?.let { "$it 字节" }).filterNotNull().joinToString(" · ")
     override fun statProviders(count: Int) = "$count 个音源"
     override fun statLyrics(enabled: Int, total: Int) = "$enabled/$total 歌词启用"
     override fun statRepositories(enabled: Int, total: Int) = "$enabled/$total 仓库启用"
@@ -327,6 +329,7 @@ object PluginRepositoryStringsEn : PluginRepositoryStrings {
     override val pendingRestart = "Update staged; restart the app to apply"
     override val details = "Plugin details"
     override val changelog = "Release notes"
+    override fun minimumAppVersion(version: String) = "Requires CPPlayer v$version or newer"
     override val downloading = "Downloading"
     override val verifying = "Verifying package"
     override val installing = "Installing; please wait"
@@ -342,8 +345,8 @@ object PluginRepositoryStringsEn : PluginRepositoryStrings {
     override fun removeSourceMessage(url: String) = "Stop contacting $url. Installed plugins remain, but updates from this repository will no longer be checked."
     override fun sourceFailed(name: String, error: String) = "$name could not refresh; cache retained: $error"
     override fun pendingFailed(error: String) = "A staged update failed at restart; attempted to retain the previous version: $error"
-    override fun packageInfo(platform: String, arch: String, runtime: String, bytes: Long) =
-        "$platform / $arch · $runtime · $bytes bytes"
+    override fun packageInfo(platform: String, arch: String, runtime: String, bytes: Long?) =
+        listOf("$platform / $arch · $runtime", bytes?.let { "$it bytes" }).filterNotNull().joinToString(" · ")
     override fun statProviders(count: Int) = "$count providers"
     override fun statLyrics(enabled: Int, total: Int) = "$enabled/$total lyrics on"
     override fun statRepositories(enabled: Int, total: Int) = "$enabled/$total catalogs on"

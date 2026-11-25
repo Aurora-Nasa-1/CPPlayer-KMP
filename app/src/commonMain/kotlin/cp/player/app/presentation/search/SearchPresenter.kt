@@ -19,10 +19,12 @@ import cp.player.core.util.SettingsStorage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.coroutines.coroutineContext
 
 private const val SEARCH_HISTORY_KEY = "search_history"
 private const val MAX_SEARCH_HISTORY = 30
@@ -52,12 +54,16 @@ class SearchPresenter(
     private val activeProviderProvider: () -> BackendProvider? = { AppModel.activeProvider() },
     private val localItemsProvider: () -> List<LocalMediaItem> = { AppModel.localMedia.items().value },
     private val suggestionsLoader: suspend (String) -> List<String>? = ::loadSearchSuggestions,
+    private val hotSearchesLoader: suspend () -> List<HotSearch> = {
+        repositoryProvider().getHotSearches()
+    },
 ) : UiPresenter<SearchUiState> {
 
     private val _state = MutableStateFlow(SearchUiState(query = initialQuery))
     override val state: StateFlow<SearchUiState> = _state.asStateFlow()
 
     private var suggestionJob: Job? = null
+    private var hotSearchJob: Job? = null
     private var searchJob: Job? = null
 
     @Volatile
@@ -83,8 +89,16 @@ class SearchPresenter(
     }
 
     fun loadHotSearches() {
-        scope.launch {
-            val hot = runCatching { repositoryProvider().getHotSearches() }.getOrNull().orEmpty()
+        hotSearchJob?.cancel()
+        hotSearchJob = scope.launch {
+            val hot = try {
+                hotSearchesLoader()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                emptyList()
+            }
+            coroutineContext.ensureActive()
             _state.value = _state.value.copy(
                 hotSearches = hot.ifEmpty {
                     listOf(HotSearch("热门歌曲"), HotSearch("流行音乐"), HotSearch("古典乐"))

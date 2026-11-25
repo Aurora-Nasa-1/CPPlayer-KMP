@@ -107,6 +107,16 @@ class UnifiedMusicSourceImpl private constructor(
         })
     }
 
+    override suspend fun getDailyStyleRecommendations(limit: Int): MusicResult<List<TrackSummary>> = boundary("getDailyStyleRecommendations") {
+        require(limit in 1..MAX_ITEMS)
+        val host = sdkHost() ?: return@boundary BackendResult.Error("No active SDK provider")
+        BackendResult.Success(
+            host.getRecommendedSongs(RecommendationsRequest(limit, "dailyStyle")).items.map {
+                it.toDomain(host.context.session.providerId)
+            },
+        )
+    }
+
     override suspend fun getRecommendedPlaylists(limit: Int): MusicResult<List<PlaylistSummary>> = boundary("getRecommendedPlaylists") {
         require(limit in 1..MAX_ITEMS)
         val host = sdkHost() ?: return@boundary BackendResult.Error("No active SDK provider")
@@ -407,6 +417,19 @@ class UnifiedMusicSourceImpl private constructor(
     override suspend fun getPersonalFm(): MusicResult<List<TrackSummary>> = boundary("getPersonalFm") {
         val host = sdkHost() ?: return@boundary BackendResult.Error("No active SDK provider")
         BackendResult.Success(host.getPersonalFm().items.map { it.toDomain(host.context.session.providerId) })
+    }
+
+    override suspend fun getPersonalFmMode(
+        mode: String,
+        subMode: String,
+        limit: Int,
+    ): MusicResult<List<TrackSummary>> = boundary("getPersonalFmMode") {
+        require(limit in 1..100)
+        val host = sdkHost() ?: return@boundary BackendResult.Error("No active SDK provider")
+        BackendResult.Success(
+            host.getPersonalFmMode(FmModeRequest(mode, subMode, limit)).items
+                .map { it.toDomain(host.context.session.providerId) },
+        )
     }
 
     override suspend fun getSimilarSongs(mediaId: String, limit: Int): MusicResult<List<TrackSummary>> = boundary("getSimilarSongs") {

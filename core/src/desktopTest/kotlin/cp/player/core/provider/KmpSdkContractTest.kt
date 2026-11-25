@@ -87,6 +87,42 @@ class KmpSdkContractTest {
     }
 
     @Test
+    fun `JS crypto uses typed bytes and matches digest and HMAC test vectors`() {
+        runBlocking {
+            val runtime = createSdkRuntime(emptySet())
+            val js = JsSdkProvider("""
+                const hex = bytes => Array.from(bytes, b => (b & 255).toString(16).padStart(2, "0")).join("");
+                globalThis.provider = {
+                    capabilities: ["tracks.get"],
+                    async get({ id }, context) {
+                        const { randomBytes, hmacSha256, md5 } = context.crypto;
+                        const padded = new Uint8Array(context.utf8("_abc_"));
+                        const md5Hex = hex(await md5(padded.subarray(1, 4)));
+                        const tag = await hmacSha256(new Uint8Array(20).fill(0x0b), context.utf8("Hi There"));
+                        const random = await randomBytes(32);
+                        const empty = await randomBytes(0);
+                        let rejected = 0;
+                        for (const length of [-1, 1.5, 65537]) {
+                            try { await randomBytes(length); } catch { rejected++; }
+                        }
+                        try { await hmacSha256(new Int8Array(0), empty); } catch { rejected++; }
+                        return { id, title: [md5Hex, hex(tag), random.length, empty.length, rejected].join(" "), durationMs: 1 };
+                    }
+                };
+            """.trimIndent(), ProviderContext("crypto", "a", emptyMap(), null, runtime))
+            try {
+                assertEquals(
+                    "900150983cd24fb0d6963f7d28e17f72 " +
+                        "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7 32 0 4",
+                    js.get(IdRequest("crypto")).title,
+                )
+            } catch (e: ProviderException) {
+                throw AssertionError(e.failure.message, e)
+            } finally { js.close(); runtime.close() }
+        }
+    }
+
+    @Test
     fun `timeouts cancellation draining concurrency and invalid results are explicit`() {
         runBlocking {
             val inFlight = AtomicInteger()

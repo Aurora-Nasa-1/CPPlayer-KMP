@@ -126,12 +126,15 @@ class BottomBarMiniPlayerLayoutTest {
         fun computeLayout(
             isDesktop: Boolean,
             isDockedToBottomBar: Boolean,
+            isTablet: Boolean = false,
         ): Triple<Pair<androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp>, androidx.compose.ui.unit.Dp, androidx.compose.ui.unit.Dp> {
-            val horizontalMargin = if (isDesktop || isDockedToBottomBar) 8.dp else 12.dp
-            val innerHorizontalPadding = if (isDesktop || isDockedToBottomBar) 12.dp else 16.dp
+            val isDocked = isDockedToBottomBar && !isTablet
+            val horizontalMargin = if (isDesktop || isDocked) 8.dp else 12.dp
+            val innerHorizontalPadding = if (isDesktop || isDocked) 12.dp else 16.dp
             val floatingCorner = (screenCorner - horizontalMargin).coerceIn(20.dp, 28.dp)
-            val topCorner = if (isDesktop || isDockedToBottomBar) 28.dp else floatingCorner
-            val bottomCorner = if (isDesktop || isDockedToBottomBar) 16.dp else floatingCorner
+            val defaultCorner = if (isTablet) screenCorner else floatingCorner
+            val topCorner = if (isDesktop || isDocked) 28.dp else defaultCorner
+            val bottomCorner = if (isDesktop || isDocked) 16.dp else defaultCorner
             return Triple(topCorner to bottomCorner, horizontalMargin, innerHorizontalPadding)
         }
 
@@ -152,6 +155,12 @@ class BottomBarMiniPlayerLayoutTest {
         assertEquals(20.dp to 20.dp, floatingLayout.first)
         assertEquals(12.dp, floatingLayout.second)
         assertEquals(16.dp, floatingLayout.third)
+
+        // 4. 平板端（侧边栏无底栏）：默认与屏幕物理圆角完全一致 (32dp)，外边距 12dp，内边距 16dp
+        val tabletLayout = computeLayout(isDesktop = false, isDockedToBottomBar = true, isTablet = true)
+        assertEquals(32.dp to 32.dp, tabletLayout.first)
+        assertEquals(12.dp, tabletLayout.second)
+        assertEquals(16.dp, tabletLayout.third)
     }
 
     @Test

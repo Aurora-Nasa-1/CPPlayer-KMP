@@ -1,15 +1,18 @@
 package cp.player.app.ui.component
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.background
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.FloatState
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -17,7 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
@@ -34,6 +37,7 @@ import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import com.materialkolor.hct.Hct
 import cp.player.app.AppModel
@@ -56,10 +60,17 @@ import kotlin.random.Random
  *
  * ### 统一输入模型与视觉防护
  * - **色彩清洗与饱和度补偿**：Tone 压暗同时按亥姆霍兹-科尔劳奇效应补偿 Chroma，深色通透如宝石，避开死灰色阶；
- * - **切歌与播放物理惯性**：切歌 750ms 平滑过渡，暂停时指数缓降进入漫游模式；
- * - **利萨茹混沌游走**：非整数比互质频率双轴驱动，5 分钟内轨迹绝不重复闭合；
- * - **OLED 屏幕防色带**：1 LSB TPDF 加性空间抖动打散 8-bit SDR 量化阶梯；
- * - **前景可读性保护**：三次 Hermite 平滑底部控制栏与顶部遮罩暗角，保障 WCAG AA $\ge 4.5:1$ 对比度。
+ * - **切歌与播放物理惯性**：切歌 750ms 连续插值过渡；暂停时速度系数平滑降到 0.5x，
+ *   相位按每帧速度**累加**，不会因为系数变小而倒带；
+ * - **利萨茹混沌游走**：非整数比互质频率双轴驱动，组合周期以十分钟计；
+ * - **OLED 屏幕防色带**：1 LSB 加性空间抖动（均匀分布，非 TPDF）打散 8-bit SDR 量化阶梯；
+ * - **前景可读性保护**：底栏 28% 非线性渐隐 + 四周暗角抬升高光区的文字对比；
+ *   未做逐像素 WCAG 测量，底部遮罩 alpha 0.32 是经验值。
+ *
+ * @param palette 覆盖色板（调用方已取好色时传入）。
+ * @param coverUrl 封面地址，用于取封面派生色板。
+ * @param playing 固定播放状态；传 null 时跟随播放器。桌面单测进程不初始化
+ *   `MusicBackend`，直接读 `AppModel.playback` 会抛，测试用这个参数注入。
  */
 @Composable
 fun Modifier.cpFluidBackground(
@@ -70,6 +81,7 @@ fun Modifier.cpFluidBackground(
     pauseShaderAnimation: Boolean = false,
     palette: List<Color>? = null,
     coverUrl: String? = null,
+    playing: Boolean? = null,
 ): Modifier {
     if (!enabled) return this.background(fallback)
 
@@ -81,7 +93,10 @@ fun Modifier.cpFluidBackground(
     val base = if (dark) scheme.surfaceContainerLowest else scheme.surface
 
     val currentCoverPalette by AppModel.currentCoverFluidPalette.collectAsState()
-    val customCoverPalette = remember(coverUrl, dark) {
+    // currentCoverPalette 必须参与 key：封面是异步解码的，首次组合时缓存必然 miss，
+    // 只按 coverUrl 记忆会让 customCoverPalette 永远停在 null，浅色模式就取不到
+    // 对应的浅色色盘，只能拿深色盘硬映射。
+    val customCoverPalette = remember(coverUrl, dark, currentCoverPalette) {
         if (!coverUrl.isNullOrBlank()) {
             cp.player.app.ui.theme.CoverFluidPaletteCache.get(coverUrl, dark)
         } else null
@@ -102,21 +117,27 @@ fun Modifier.cpFluidBackground(
     val settled = rememberSettledPalette(effectivePalette)
     val paused = pauseShaderAnimation || DesktopShell.isWindowHidden
 
-    val playbackState by AppModel.playback.state.collectAsState()
-    val isPlaying = playbackState.isPlaying
+    val isPlaying = playing ?: rememberPlaybackIsPlaying()
 
-    val time = rememberFluidTime(fpsConfig = fpsConfig, paused = paused)
+    // 速度系数先于时间轴建立：相位在每一帧按当时的速度累加。
+    // 原先用「累计秒数 × 当前速度」，暂停时系数从 1.0 降到 0.5，
+    // 乘积瞬间减半 ⇒ 色团整体倒退一段，像是背景倒带。
+    val velocity = rememberFluidVelocity(isPlaying)
+    val time = rememberFluidTime(
+        fpsConfig = fpsConfig,
+        paused = paused,
+        speed = speed,
+        velocity = velocity,
+    )
     val tier = remember { resolveFluidRenderTier() }
 
     val sceneModel = rememberFluidSceneModel(
         targetPalette = settled,
         primary = primary,
         time = time,
-        isPlaying = isPlaying,
         isDark = dark,
         pureBlack = pureBlack,
         scale = scale,
-        speed = speed,
     )
 
     val dither = remember { createFluidDitherBrush() }
@@ -125,14 +146,25 @@ fun Modifier.cpFluidBackground(
         .renderPlatformFluid(
             tier = tier,
             sceneModel = sceneModel,
-            scale = scale,
             fallback = fallback,
         )
         .drawBehind {
             // 叠加 1 LSB 加性抖动，打碎 8-bit SDR OLED 屏幕上的等高线色带
             drawRect(brush = dither, blendMode = BlendMode.Plus)
         }
-        .fluidVignetteAndScrim(isDark = dark, scrimAlpha = sceneModel.scrimAlpha)
+        .fluidVignetteAndScrim(isDark = dark)
+}
+
+/**
+ * 读取播放器当前是否在播放。
+ *
+ * 单独抽出来是为了让测试能用 [cpFluidBackground] 的 `playing` 参数短路这条依赖：
+ * 桌面单测进程不初始化 `MusicBackend`，读 `AppModel.playback` 会直接抛。
+ */
+@Composable
+private fun rememberPlaybackIsPlaying(): Boolean {
+    val state by AppModel.playback.state.collectAsState()
+    return state.isPlaying
 }
 
 /**
@@ -158,93 +190,97 @@ data class FluidSceneModel(
     val baseColor: Color,
     val blobs: List<FluidBlobState>,
     val time: Float,
-    val velocity: Float,
-    val scrimAlpha: Float,
 )
 
 /**
  * 统一输入模型计算引擎：执行色彩清洗、彩度补偿、切歌过渡、播放物理惯性与利萨茹混沌游走。
  */
 @Composable
-internal fun rememberFluidSceneModel(
+private fun rememberFluidSceneModel(
     targetPalette: List<Color>,
     primary: Color,
-    time: State<Float>,
-    isPlaying: Boolean,
+    time: FloatState,
     isDark: Boolean,
     pureBlack: Boolean,
     scale: Float,
-    speed: Float,
-): FluidSceneModel {
+): State<FluidSceneModel> {
     // 1. 色彩清洗与饱和度逆向补偿
     val sanitized = remember(targetPalette, primary, isDark) {
         sanitizeAndBoostPalette(targetPalette, primary, isDark)
     }
 
-    // 2. 切歌色彩平滑渡变 (750ms 球形色彩插值)
-    var currentPalette by remember { mutableStateOf(sanitized) }
-    val paletteTransition = remember { Animatable(1f) }
-    var previousPalette by remember { mutableStateOf(sanitized) }
+    // 2. 切歌色彩连续过渡：先把目标换成新色板，再从头播放进度。
+    //    旧实现把「目标」也设成旧色板，750ms 内 from == to，插值恒等，
+    //    动画结束才更新目标 ⇒ 观感是延迟后硬切。
+    var fromPalette by remember { mutableStateOf(sanitized) }
+    var toPalette by remember { mutableStateOf(sanitized) }
+    val paletteProgress = remember { Animatable(1f) }
 
     LaunchedEffect(sanitized) {
-        if (currentPalette != sanitized) {
-            previousPalette = currentPalette
-            paletteTransition.snapTo(0f)
-            paletteTransition.animateTo(1f, tween(750))
-            currentPalette = sanitized
-        }
-    }
-
-    val activePalette = remember(paletteTransition.value, previousPalette, currentPalette) {
-        val p = paletteTransition.value
-        List(currentPalette.size) { i ->
-            val from = previousPalette.getOrElse(i) { currentPalette[i] }
-            val to = currentPalette[i]
-            lerp(from, to, p)
-        }
-    }
-
-    // 3. 播放与暂停阻尼惯性 (暂停时以平滑指数衰减降至 0.5x 缓速漫游，不生硬刹车)
-    val velocityAnim = remember { Animatable(if (isPlaying) 1.0f else 0.5f) }
-    LaunchedEffect(isPlaying) {
-        velocityAnim.animateTo(
-            targetValue = if (isPlaying) 1.0f else 0.5f,
-            animationSpec = tween(if (isPlaying) 600 else 1000),
+        if (toPalette == sanitized) return@LaunchedEffect
+        // 从当前可见色接住：快速连切时不会跳回上一段的起点。
+        fromPalette = blendPalette(fromPalette, toPalette, paletteProgress.value)
+        toPalette = sanitized
+        paletteProgress.snapTo(0f)
+        paletteProgress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(PaletteTransitionMillis, easing = FastOutSlowInEasing),
         )
     }
 
-    val t = time.value * speed * velocityAnim.value
-    val rawBase = if (isDark && pureBlack) Color.Black else activePalette.last()
-    val blobColors = activePalette.dropLast(1).take(3)
-
-    // 4. 利萨茹非整数比互质频率矩阵 (周期比无理化，5 分钟内轨迹绝不重合)
-    val freqX = floatArrayOf(0.31f, 0.23f, 0.37f)
-    val freqY = floatArrayOf(0.47f, 0.39f, 0.29f)
-    val phaseX = floatArrayOf(0.0f, 2.0944f, 4.1888f)
-    val phaseY = floatArrayOf(1.0472f, 3.1416f, 5.2360f)
-
-    val baseReach = (1.5f / scale.coerceAtLeast(0.1f)).coerceIn(0.45f, 1.2f)
-
-    val blobs = blobColors.mapIndexed { i, color ->
-        val cx = (0.5f + sin(t * freqX[i] + phaseX[i]) * 0.27f).coerceIn(0.08f, 0.92f)
-        val cy = (0.5f + cos(t * freqY[i] + phaseY[i]) * 0.23f).coerceIn(0.08f, 0.92f)
-        val breath = 0.94f + sin(t * 0.53f + phaseX[i]) * 0.08f
-
-        FluidBlobState(
-            center = Offset(cx, cy),
-            color = color,
-            reach = baseReach * breath,
-            intensity = breath,
-        )
+    val activePalette = remember {
+        derivedStateOf { blendPalette(fromPalette, toPalette, paletteProgress.value) }
     }
 
-    return FluidSceneModel(
-        baseColor = rawBase,
-        blobs = blobs,
-        time = t,
-        velocity = velocityAnim.value,
-        scrimAlpha = if (isDark) 0.15f else 0.06f,
-    )
+    // Defer animation reads to drawing so fluid motion does not recompose the player.
+    return remember(time, isDark, pureBlack, scale) {
+        derivedStateOf {
+            val t = time.floatValue
+            val colors = activePalette.value
+            val rawBase = if (isDark && pureBlack) Color.Black else colors.last()
+
+            // 4. 利萨茹双轴游走：0.31/0.23/0.37 与 0.47/0.39/0.29 互质，
+            //    组合周期以十分钟计，短时观感不会看到闭合轨迹。
+
+            val baseReach = (1.5f / scale.coerceAtLeast(0.1f)).coerceIn(0.45f, 1.2f)
+
+            val blobs = List(3) { i ->
+                val cx = (0.5f + sin(t * FluidBlobFreqX[i] + FluidBlobPhaseX[i]) * 0.27f)
+                    .coerceIn(0.08f, 0.92f)
+                val cy = (0.5f + cos(t * FluidBlobFreqY[i] + FluidBlobPhaseY[i]) * 0.23f)
+                    .coerceIn(0.08f, 0.92f)
+                val breath = 0.94f + sin(t * 0.53f + FluidBlobPhaseX[i]) * 0.08f
+                FluidBlobState(
+                    center = Offset(cx, cy),
+                    color = colors[i],
+                    reach = baseReach * breath,
+                    intensity = breath,
+                )
+            }
+
+            FluidSceneModel(
+                baseColor = rawBase,
+                blobs = blobs,
+                time = t,
+            )
+        }
+    }
+}
+
+/**
+ * 按比例混合两套色板。
+ *
+ * 尺寸不一致时以较长的一侧为准，缺失项沿用自身末位色，避免切歌瞬间某一格闪黑。
+ */
+private fun blendPalette(from: List<Color>, to: List<Color>, fraction: Float): List<Color> {
+    if (fraction <= 0f) return from
+    if (fraction >= 1f) return to
+    val size = maxOf(from.size, to.size)
+    return List(size) { i ->
+        val a = from.getOrNull(i) ?: from.lastOrNull() ?: to.getOrNull(i) ?: Color.Transparent
+        val b = to.getOrNull(i) ?: to.lastOrNull() ?: a
+        lerp(a, b, fraction)
+    }
 }
 
 /**
@@ -283,12 +319,10 @@ private fun sanitizeAndBoostPalette(palette: List<Color>, primary: Color, isDark
 /**
  * 叠加在流体背景之上的多段非线性柔和暗角与安全阅读遮罩。
  */
-private fun Modifier.fluidVignetteAndScrim(isDark: Boolean, scrimAlpha: Float): Modifier = this.drawWithContent {
-    drawContent()
-
+private fun Modifier.fluidVignetteAndScrim(isDark: Boolean): Modifier = drawWithCache {
     val w = size.width
     val h = size.height
-    if (w <= 0f || h <= 0f) return@drawWithContent
+    if (w <= 0f || h <= 0f) return@drawWithCache onDrawWithContent { drawContent() }
 
     if (isDark) {
         // A. 底部控制栏保护：非线性渐隐暗角 (底部 28% 高度)
@@ -300,8 +334,6 @@ private fun Modifier.fluidVignetteAndScrim(isDark: Boolean, scrimAlpha: Float): 
             startY = h * 0.72f,
             endY = h,
         )
-        drawRect(brush = bottomScrimBrush)
-
         // B. 顶部状态栏保护 (顶部 12% 高度)
         val topScrimBrush = Brush.verticalGradient(
             0.0f to Color.Black.copy(alpha = 0.18f),
@@ -310,17 +342,20 @@ private fun Modifier.fluidVignetteAndScrim(isDark: Boolean, scrimAlpha: Float): 
             startY = 0f,
             endY = h * 0.12f,
         )
-        drawRect(brush = topScrimBrush)
-
         // C. 四周轻微晕影 (Vignette)
         val vignetteBrush = Brush.radialGradient(
             0.0f to Color.Transparent,
             0.68f to Color.Transparent,
-            1.0f to Color.Black.copy(alpha = scrimAlpha),
+            1.0f to Color.Black.copy(alpha = 0.15f),
             center = Offset(w / 2f, h / 2f),
             radius = maxOf(w, h) * 0.72f,
         )
-        drawRect(brush = vignetteBrush)
+        onDrawWithContent {
+            drawContent()
+            drawRect(brush = bottomScrimBrush)
+            drawRect(brush = topScrimBrush)
+            drawRect(brush = vignetteBrush)
+        }
     } else {
         // 浅色模式柔和透光遮罩
         val bottomLightScrim = Brush.verticalGradient(
@@ -329,58 +364,152 @@ private fun Modifier.fluidVignetteAndScrim(isDark: Boolean, scrimAlpha: Float): 
             startY = h * 0.75f,
             endY = h,
         )
-        drawRect(brush = bottomLightScrim)
+        onDrawWithContent {
+            drawContent()
+            drawRect(brush = bottomLightScrim)
+        }
     }
 }
 
 /**
- * 用物理时钟节拍驱动网格时间；暂停时保留当前相位，恢复后从冻结点继续。
+ * 播放 / 暂停的速度系数：播放 1.0，暂停 0.5，切换时平滑过渡。
  */
 @Composable
-private fun rememberFluidTime(fpsConfig: FluidFpsConfig, paused: Boolean): MutableState<Float> {
-    val time = remember { mutableStateOf(0f) }
-    LaunchedEffect(fpsConfig, paused) {
+private fun rememberFluidVelocity(isPlaying: Boolean): Animatable<Float, AnimationVector1D> {
+    val velocity = remember { Animatable(if (isPlaying) 1f else FluidIdleVelocity) }
+    LaunchedEffect(isPlaying) {
+        val target = if (isPlaying) 1f else FluidIdleVelocity
+        // 已经是目标值时不要启动动画：Animatable.animateTo 即使数值不变也会
+        // 占着动画帧循环，暂停/冻结场景会因此一直请求新帧、白烧 GPU。
+        if (velocity.value == target) return@LaunchedEffect
+        velocity.animateTo(
+            targetValue = target,
+            animationSpec = tween(
+                durationMillis = if (isPlaying) 600 else 1000,
+                easing = FastOutSlowInEasing,
+            ),
+        )
+    }
+    return velocity
+}
+
+/**
+ * 用物理时钟节拍推进相位；暂停时保留当前相位，恢复后从冻结点继续。
+ *
+ * 相位按「每帧真实间隔 × 当时速度 × 全局速度」累加，而不是拿累计时间乘速度：
+ * 后者在速度系数下降的瞬间会把相位一起缩小，视觉上就是色团倒带。
+ */
+@Composable
+private fun rememberFluidTime(
+    fpsConfig: FluidFpsConfig,
+    paused: Boolean,
+    speed: Float,
+    velocity: Animatable<Float, AnimationVector1D>,
+): FloatState {
+    val phase = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(fpsConfig, paused, speed) {
         if (paused) return@LaunchedEffect
 
         var frameCount = 0L
-        var startNanos = 0L
-        val resumeTime = time.value
+        var lastNanos = 0L
+        var pendingSeconds = 0f
+        var accumulated = phase.floatValue
         val divisor = fpsConfig.divisor.coerceAtLeast(1)
         while (isActive) {
             withInfiniteAnimationFrameNanos { frameTimeNanos ->
-                if (startNanos == 0L) startNanos = frameTimeNanos
+                if (lastNanos == 0L) lastNanos = frameTimeNanos
+                val delta = (frameTimeNanos - lastNanos) / 1_000_000_000f
+                lastNanos = frameTimeNanos
+                // 首次采样与长时间挂起后不要吃掉一大段相位，否则恢复时色团会跳很远。
+                pendingSeconds += delta.coerceIn(0f, MaxFrameDeltaSeconds)
                 frameCount++
                 if (frameCount % divisor == 0L) {
-                    time.value = resumeTime + (frameTimeNanos - startNanos) / 1_000_000_000f
+                    accumulated += pendingSeconds * speed * velocity.value
+                    pendingSeconds = 0f
+                    phase.floatValue = accumulated
                 }
             }
         }
     }
-    return time
+    return phase
 }
 
 /**
- * Tier 1: 基于 Compose 官方 MeshGradientPainter 的贝塞尔网格渲染器。
+ * mesh 离屏绘制的降采样因子。渐变是极低频信号，1/4 尺寸绘制再双线性放大
+ * 肉眼无差，但顶点索引数 ÷16，直接消掉 Compose mesh 渲染器逐顶点装箱
+ * （Integer.valueOf）带来的巨量 young GC。见下方 draw 块内注释里的 JFR 数据。
  */
+private const val FluidMeshLodFactor = 4
+private const val FluidMeshMaxRasterSide = 320f
+private val FluidBlobFreqX = floatArrayOf(0.31f, 0.23f, 0.37f)
+private val FluidBlobFreqY = floatArrayOf(0.47f, 0.39f, 0.29f)
+private val FluidBlobPhaseX = floatArrayOf(0.0f, 2.0944f, 4.1888f)
+private val FluidBlobPhaseY = floatArrayOf(1.0472f, 3.1416f, 5.2360f)
+
+/** Rebuild the mesh image only when its inputs change. */
 @Composable
 internal fun Modifier.cpMeshGradientBackground(
-    sceneModel: FluidSceneModel,
-    scale: Float,
-    fallback: Brush,
+    sceneModel: State<FluidSceneModel>,
 ): Modifier {
-    val painter = remember(sceneModel.baseColor, sceneModel.blobs.map { it.color }, scale) {
+    val painter = remember(sceneModel) {
         MeshGradientPainter(
             rows = FluidMeshRows,
             columns = FluidMeshColumns,
             hasBicubicColor = true,
         ) {
-            configureFluidMeshWithModel(sceneModel)
+            configureFluidMeshWithModel(sceneModel.value)
         }
     }
+    val buffer = remember { FluidMeshLodBuffer() }
 
-    return this.drawBehind {
-        drawRect(fallback)
-        with(painter) { draw(size) }
+    // ⚠️ 必须离屏降采样后放大，不能直接 `with(painter) { draw(size) }`。
+    //
+    // MeshGradientPainter 的细分密度由 MeshGradientTessellationKt 的
+    // TargetPxPerSegment=8f 决定并 clamp 到 4..64 段：2560×1440 下每 patch
+    // 64×64 段，4×4 网格 = 9 patch ⇒ 一帧约 20 万个顶点索引，而
+    // DefaultMeshGradientRenderer.drawTriangles 逐个装箱成 ArrayList<Integer>，
+    // hasBicubicColor 的 Catmull-Rom 插值还逐顶点做色域转换。
+    //
+    // 2026-11-21 JFR 实测（2560×1440，播放页静止，25s）：
+    //   分配 252MB/s，98% Integer.valueOf(thread=main)；young GC 13.1 次/s，
+    //   平均 3.09ms，合计 40.6ms/s 停顿。1/4 绘制成本 ÷16。
+    // 位图按尺寸复用：每帧重建 ImageBitmap 会把省下的顶点开销又还回去。
+    return drawWithCache {
+        val model = sceneModel.value
+        // Bound triangle generation on large windows and keep the raster's aspect ratio.
+        val divisor = maxOf(FluidMeshLodFactor.toFloat(), size.maxDimension / FluidMeshMaxRasterSide)
+        val lodWidth = (size.width / divisor).toInt().coerceAtLeast(64)
+        val lodHeight = (size.height / divisor).toInt().coerceAtLeast(64)
+        val lodSize = Size(lodWidth.toFloat(), lodHeight.toFloat())
+        val bitmap = buffer.obtain(lodWidth, lodHeight)
+        buffer.drawScope.draw(
+            density = this,
+            layoutDirection = layoutDirection,
+            canvas = buffer.canvas,
+            size = lodSize,
+        ) {
+            drawRect(model.baseColor)
+            with(painter) { draw(lodSize) }
+        }
+        val destination = IntSize(size.width.toInt(), size.height.toInt())
+        onDrawBehind { drawImage(bitmap, dstSize = destination) }
+    }
+}
+
+/** 低分辨率网格位图：只在尺寸变化时重建，其余帧原地重绘。 */
+private class FluidMeshLodBuffer {
+    private var bitmap: ImageBitmap? = null
+    lateinit var canvas: Canvas
+        private set
+    val drawScope = CanvasDrawScope()
+
+    fun obtain(width: Int, height: Int): ImageBitmap {
+        val current = bitmap
+        if (current != null && current.width == width && current.height == height) return current
+        return ImageBitmap(width, height).also {
+            bitmap = it
+            canvas = Canvas(it)
+        }
     }
 }
 
@@ -389,7 +518,7 @@ internal fun Modifier.cpMeshGradientBackground(
  */
 @Composable
 internal fun Modifier.cpCanvasBlobFluidBackground(
-    sceneModel: FluidSceneModel,
+    sceneModel: State<FluidSceneModel>,
     fallback: Brush,
 ): Modifier {
     return this.drawBehind {
@@ -401,11 +530,12 @@ internal fun Modifier.cpCanvasBlobFluidBackground(
         }
 
         // 1. 底色铺底
-        drawRect(sceneModel.baseColor)
+        val model = sceneModel.value
+        drawRect(model.baseColor)
 
         // 2. 依次绘制 3 个漂移光团
         val maxDim = maxOf(w, h)
-        sceneModel.blobs.forEach { blob ->
+        model.blobs.forEach { blob ->
             val center = Offset(blob.center.x * w, blob.center.y * h)
             val radius = maxDim * blob.reach
 
@@ -537,4 +667,13 @@ private fun rememberSettledPalette(palette: List<Color>): List<Color> {
     return settled
 }
 
-private const val PaletteSettleMillis = 700L
+private const val PaletteSettleMillis = 220L
+
+/** 切歌色彩过渡时长；与 [PaletteSettleMillis] 相加才是用户感知的总延迟。 */
+private const val PaletteTransitionMillis = 750
+
+/** 暂停时的漫游速度系数（相对播放中）。 */
+private const val FluidIdleVelocity = 0.5f
+
+/** 单帧可计入相位的最大真实时长，防止挂起恢复后色团一次性跳很远。 */
+private const val MaxFrameDeltaSeconds = 0.1f

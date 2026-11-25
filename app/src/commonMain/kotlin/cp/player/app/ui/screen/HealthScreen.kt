@@ -210,7 +210,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.overviewTabContent(
     records: List<ApiCallRecord>,
     overall: HealthLevel,
     s: HealthStrings,
-    confirm: cp.player.app.ui.component.ConfirmHostState,
+    confirm: cp.player.app.ui.component.CpConfirmState,
 ) {
     // 1. 系统主动诊断与全面体检卡片
     item(key = "overview_diagnostics") {
@@ -594,7 +594,7 @@ private fun DiagnosticItemCard(item: DiagnosticItem, s: HealthStrings) {
 @Composable
 private fun TroubleshootingToolkitCard(
     s: HealthStrings,
-    confirm: cp.player.app.ui.component.ConfirmHostState,
+    confirm: cp.player.app.ui.component.CpConfirmState,
 ) {
     val clipboardManager = LocalClipboardManager.current
     val report by AppDiagnostics.report.collectAsState()

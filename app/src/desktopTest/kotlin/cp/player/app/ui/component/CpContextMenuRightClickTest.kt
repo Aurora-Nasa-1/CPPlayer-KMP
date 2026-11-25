@@ -26,7 +26,10 @@ import androidx.compose.ui.unit.dp
 import cp.player.app.ui.theme.CpTheme
 import cp.player.app.ui.theme.ThemeMode
 import cp.player.app.readPng
+import cp.player.core.music.TrackSummary
+import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -45,6 +48,36 @@ import kotlin.test.assertTrue
  * 阴影都会随主题和排版微调而变，钉死坐标的断言会在无关改版时假失败。
  */
 class CpContextMenuRightClickTest {
+    @Test
+    fun `song more button opens its menu without invoking an action`() {
+        var activated = false
+        val scene = ImageComposeScene(width = 390, height = 600, density = Density(1f)) {
+            CpTheme(themeMode = ThemeMode.DARK) {
+                SongItem(
+                    track = TrackSummary("123", "FM 曲目", "歌手", null, null, 180_000L),
+                    onClick = { activated = true },
+                    contextMenu = listOf(CpContextMenuItem("不感兴趣", onClick = { activated = true })),
+                )
+            }
+        }
+        try {
+            repeat(6) { scene.render(it * 16_666_667L) }
+            val before = scene.render(100_000_000L).toRgb()
+            val at = Offset(365f, 30f)
+            scene.sendPointerEvent(PointerEventType.Press, at, Offset.Zero, 110L, PointerType.Mouse, button = PointerButton.Primary)
+            scene.sendPointerEvent(PointerEventType.Release, at, Offset.Zero, 130L, PointerType.Mouse, button = PointerButton.Primary)
+            repeat(24) { scene.render(140_000_000L + it * 16_666_667L) }
+            val frame = scene.render(550_000_000L)
+            assertFalse(activated)
+            assertTrue(diffPixels(before, frame.toRgb()) > 500, "The more button should open a menu")
+            File("build/personal-fm-more-menu.png").apply {
+                parentFile.mkdirs()
+                writeBytes(frame.encodeToData()!!.bytes)
+            }
+        } finally {
+            scene.close()
+        }
+    }
 
     private fun menuItems(): List<CpContextMenuItem> = buildList {
         add(CpContextMenuItem("播放", Icons.Filled.PlayArrow, onClick = {}))

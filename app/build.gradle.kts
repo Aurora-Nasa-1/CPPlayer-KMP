@@ -344,7 +344,6 @@ tasks.withType<JavaCompile>().configureEach {
         val commonMain by getting {
             dependencies {
                 api(project(":core"))
-                implementation(libs.composemediaplayer.audio)
                 implementation(compose.runtime)
                 implementation(compose.foundation)
                 implementation(compose.material3)
@@ -588,13 +587,15 @@ val desktopCommonJvmArgs = (listOf(
 /**
  * 本地 run 家族的堆参数（打包产物仍用 `desktopCommonJvmArgs` 的 64/256）。
  *
- * - `-Xmx150m`：本地开发用更窄的堆，尽早暴露窄堆下的 GC 行为；
- * - `-Xmn24m`：Serial GC 的 minor GC 是 STW，年轻代越大单次停顿越长。24m 对应
- *   eden 约 16~19m，把单次 minor 压在几毫秒内，避免 120/144Hz 下整帧掉队；
+ * - `-Xmx192m`：给密集图片/控件页面的短时对象峰值留出余量，避免过早晋升和 Full GC；
+ * - `-Xmn48m`：配合更大的请求与布局突发，减少连续 minor GC；单次停顿仍由
+ *   Serial GC 的实际存活集决定，而不是按整个年轻代大小线性增长；
  * - `-Xms64m` 沿用原值：实测存活集 55~60m，再低会在启动后立刻触发老年代
  *   扩容/Full GC。若还要压 RSS，必须连同峰值路径一起压测后再动。
  */
-val desktopRunHeapArgs = listOf("-Xms64m", "-Xmx150m", "-Xmn24m")
+// Keep the initial heap small so idle RSS stays bounded, while relaxing the
+// peak limits for dense image/control pages that otherwise churn the young gen.
+val desktopRunHeapArgs = listOf("-Xms64m", "-Xmx192m", "-Xmn48m")
 
 nucleus {
     application {
@@ -795,7 +796,7 @@ nucleus {
             // 静态分析看不见，由插件补 public no-arg <init> 注册。
             detectOrphanProjectClasses.set(true)
             // 这是成品运行时 Java heap 上限（Nucleus 映射为 Native Image runtime 参数），不限制构建器 -Xmx。
-            maxHeapSize.set("128m")
+            maxHeapSize.set("160m")
             val pgoProfile = layout.projectDirectory.file("graalvm/pgo/default.iprof")
             pgo {
                 // 保留 runWithPgoInstrument 训练任务；Nucleus 仅在 profile 文件存在时给正式构建传 --pgo。
@@ -805,7 +806,7 @@ nucleus {
             // Windows Native Image 使用 Serial；Windows 不支持 G1 Native Image collector。
             garbageCollector.set(NativeImageGarbageCollector.SERIAL)
             // instrumented 镜像只用于收集 PGO profile，不参与分发。
-            // 采用 Quick Build Mode (-Ob) 加快 instrumented 构建并降低编译内存占用；
+            // 默认采用 Level 2 (-O2) 优化；可通过 -Pcp.graalvm.optimization=... 覆盖。
             // 生产正式镜像仍使用 -O3。
             val pgoInstrumenting: Boolean =
                 (findProperty("nucleus.graalvm.pgo") as String?)?.equals("instrument", ignoreCase = true) == true ||
@@ -813,8 +814,21 @@ nucleus {
                         val name = it.substringAfterLast(':')
                         name == "runWithPgoInstrument" || name.endsWith("WithPgoInstrument")
                     }
-            if (pgoInstrumenting) {
-                optimization.set(dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.QUICK_BUILD)
+            val explicitOptimization = ((findProperty("cp.graalvm.optimization") ?: findProperty("nucleus.graalvm.optimization")) as String?)?.trim()
+            if (!explicitOptimization.isNullOrEmpty()) {
+                val opt = when (explicitOptimization.uppercase()) {
+                    "0", "O0", "NONE" -> dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.NONE
+                    "1", "O1", "LEVEL_1" -> dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.LEVEL_1
+                    "2", "O2", "LEVEL_2" -> dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.LEVEL_2
+                    "3", "O3", "LEVEL_3" -> dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.LEVEL_3
+                    "B", "OB", "QUICK", "QUICK_BUILD" -> dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.QUICK_BUILD
+                    "S", "OS", "SIZE" -> dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.SIZE
+                    else -> throw GradleException("未知的 Native Image 优化级别: '$explicitOptimization'，可选: O0, O1, O2, O3, Ob, Os")
+                }
+                optimization.set(opt)
+            } else if (pgoInstrumenting) {
+                // 插桩编译默认使用 Level 2 (-O2)
+                optimization.set(dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.LEVEL_2)
             } else {
                 // Oracle-only 最高优化级别；25.3.4.1 对符合条件的数组算术循环默认执行 SIMD 向量化。
                 optimization.set(dev.nucleusframework.desktop.application.dsl.NativeImageOptimization.LEVEL_3)
@@ -826,11 +840,11 @@ nucleus {
                 // Native Image 的 Serial GC 只有 STW 的 minor / major 两种停顿：
                 // 年轻代越大，单次 minor 的复制量越大；120/144Hz 的帧预算只有
                 // 8.3/6.9ms，超过预算就是肉眼可见的掉帧。
-                // 24m 年轻代（eden 约 16~18m）让 minor 更频繁但每次更短；
-                // 老年代仍有 ~104m，相对 55~60m 的存活集有足够晋升余量，
+                // 32m 年轻代给图片解码、Compose layout 和短时请求对象更多缓冲；
+                // 老年代仍有 ~128m，相对 55~60m 的存活集有足够晋升余量，
                 // 减少必须做整堆 compaction 的 Full GC。`-Xmx` 仍由上面的
-                // `maxHeapSize=128m` 写进镜像（Nucleus -> -R:MaxHeapSize=128m）。
-                "-R:MaxNewSize=24m",
+                // `maxHeapSize=160m` 写进镜像（Nucleus -> -R:MaxHeapSize=160m）。
+                "-R:MaxNewSize=32m",
                 // 显式钉住 25.3 的默认策略 Adaptive2，避免升级 GraalVM 时
                 // 默认 collector 策略漂移导致停顿曲线悄悄变化。
                 "-R:InitialCollectionPolicy=Adaptive2",
@@ -853,7 +867,7 @@ nucleus {
                 "--enable-native-access=ALL-UNNAMED",
             )
             // ── 还能不能再压：堆参数这边的实测边界（2026-11-14）────────────────
-            // 用一个 `-Ob` 迷你镜像（同样的 `-R:MaxHeapSize=128m -R:MaxNewSize=24m`）
+            // 用一个 `-Ob` 迷你镜像（同样的 `-R:MaxHeapSize=160m -R:MaxNewSize=32m`）
             // 每 1s 采一次工作集，触达 60MB 存活集后 System.gc()：
             //   | 时点                    | 工作集  |
             //   | 启动后空闲              | 10.9MB  |
@@ -862,7 +876,7 @@ nucleus {
             // 结论：Serial GC **会把空闲堆还给 OS**，RSS 跟着存活集走、不跟着 `-Xmx` 走。所以：
             //   - `-XX:MaxHeapFree=…`（堆收缩阈值）：实测 RSS 无变化 ⇒ 不加（默认已经缩回去）；
             //   - `-XX:MinHeapSize=…`（初始堆）：实测 RSS 无变化（堆整块预留、按页提交）⇒ 不加；
-            //   - 继续压 `maxHeapSize`：只压峰值不动稳态，而 128m 对 55~60MB 存活集留得已经不多，
+            //   - 继续压 `maxHeapSize`：只压峰值不动稳态，而 160m 对 55~60MB 存活集已经留有更充足余量，
             //     再往下必须先压测「批量歌单 / 大 provider 响应 / Base64 歌词」三条峰值路径。
             // 剩余常驻的大头在堆外：skia 位图、29MB 内置字体（misans_vf 20MB + noto_sans_jp 9.6MB，
             // 第一段中日文本就会整份读进内存）、字体与 Win32 图形栈。唯一验证过有效的手段是换软件渲染
@@ -1215,6 +1229,38 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
                 "没有它，应用内的 Velopack 更新源就不可用。"
         }
         logger.lifecycle("Velopack 产物：${setup.name}（${setup.length() / 1024 / 1024} MiB）in ${out.absolutePath}")
+    }
+}
+
+// 确保 packageGraalvmNative 产物包含预编译原生动态库（如 rust_lib_flick_player.dll），
+// 使得直接运行 graalvm-app 或打包 PGO 插桩 ZIP 时 FlickEngine 原生音频库就绪。
+tasks.matching { it.name == "packageGraalvmNative" }.configureEach {
+    doLast {
+        val graalvmAppDir = layout.buildDirectory.dir("compose/binaries/main/graalvm-app/$cpPackageName").get().asFile
+        if (graalvmAppDir.isDirectory) {
+            val nativeFiles = listOf(
+                project.file("native"),
+                rootProject.file("native"),
+            ).filter { it.isDirectory }
+                .flatMap { it.listFiles()?.filter { f -> f.isFile }?.toList() ?: emptyList() }
+                .associateBy { it.name }
+                .values
+
+            if (nativeFiles.isNotEmpty()) {
+                val targets = listOf(
+                    graalvmAppDir,
+                    graalvmAppDir.resolve("native"),
+                )
+                nativeFiles.forEach { f ->
+                    targets.forEach { targetDir ->
+                        targetDir.mkdirs()
+                        val dest = targetDir.resolve(f.name)
+                        f.copyTo(dest, overwrite = true)
+                        logger.lifecycle("已注入原生动态库至 GraalVM 应用镜像: ${f.name} -> ${dest.absolutePath}")
+                    }
+                }
+            }
+        }
     }
 }
 

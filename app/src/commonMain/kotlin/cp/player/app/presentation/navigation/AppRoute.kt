@@ -190,6 +190,9 @@ sealed interface AppRoute {
     /** 全屏播放页 */
     data object Player : AppRoute
 
+    /** 私人 FM */
+    data object PersonalFm : AppRoute
+
     /** 评论弹窗/页 */
     data class Comment(val resourceId: String, val resourceType: String) : AppRoute
 }

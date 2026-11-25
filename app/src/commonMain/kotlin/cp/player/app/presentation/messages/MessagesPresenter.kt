@@ -24,6 +24,7 @@ data class MessagesUiState(
      * 放进 state 后，切换 → 更新 state → 列表重组，一条链走完。
      */
     val subscribedUids: Set<Long> = emptySet(),
+    val unsupported: Boolean = false,
 )
 
 /** Provider and account identity for a contact-list request. */
@@ -71,7 +72,7 @@ class MessagesPresenter(
         }
         previousJob?.cancel()
         _state.value = if (switchingSession) MessagesUiState(loading = true)
-        else _state.value.copy(loading = true, error = null)
+        else _state.value.copy(loading = true, error = null, unsupported = false)
 
         val request = scope.launch(start = CoroutineStart.LAZY) {
             val result = try {
@@ -89,7 +90,7 @@ class MessagesPresenter(
                     subscribedUids = subscribedUids(),
                 )
                 is BackendResult.Error -> MessagesUiState(loading = false, error = result.message)
-                is BackendResult.Unsupported -> MessagesUiState(loading = false, error = result.message)
+                is BackendResult.Unsupported -> MessagesUiState(loading = false, unsupported = true)
             }
         }
         synchronized(requestLock) {

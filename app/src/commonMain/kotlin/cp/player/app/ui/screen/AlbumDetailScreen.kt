@@ -2,8 +2,6 @@ package cp.player.app.ui.screen
 
 import cp.player.app.ui.component.CpText
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,10 +11,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -40,6 +41,7 @@ import cp.player.app.ui.component.AddToPlaylistSheet
 import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpDetailHeroSkeleton
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.component.CpAdaptiveListDetailScaffold
 import cp.player.app.ui.component.CpSectionHeaderSkeleton
 import cp.player.app.ui.component.CpSkeletonCaption
 import cp.player.app.ui.component.CpSongRowSkeleton
@@ -100,6 +102,7 @@ private class AlbumDetailModel : ScreenModel {
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3AdaptiveApi::class)
 private fun AlbumDetailContent(
     albumId: String,
     fallback: AlbumSummary?,
@@ -176,198 +179,244 @@ private fun AlbumDetailContent(
             UiEvents.notify(s.library.queuedToPlay)
         }
     }
-
-    CpRouteScaffold(title = detail?.name ?: fallback?.name ?: s.album.fallbackTitle, onBack = onBack) { pageModifier ->
-        BoxWithConstraints(pageModifier.fillMaxSize()) {
-            // 宽屏把「封面 + 说明」放到左侧固定栏，曲目占右侧 —— 与歌单详情同一套断点。
-            val isWide = cp.player.app.ui.component.CpBreakpoints.isExpanded(maxWidth)
-            when {
-                state.loading && detail == null -> ScrollColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(
-                        start = CpSpacing.pageHorizontal,
-                        end = CpSpacing.pageHorizontal,
-                        bottom = CpSpacing.formBottomInset,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
-                ) {
-                    // 骨架而不是居中加载器：这一页的结构（封面 + 元信息 + 曲目）在
-                    // 请求发出前就已经确定，先摆出来比「空一屏再整屏跳出」稳定得多。
-                    CpSkeletonCaption(s.album.loadingNote)
-                    CpDetailHeroSkeleton(wide = isWide)
-                    Spacer(Modifier.height(8.dp))
-                    CpSectionHeaderSkeleton(titleWidth = 64.dp, subtitleWidth = 150.dp, trailing = true)
-                    CpSongRowSkeleton(rows = 8)
-                }
-                detail == null -> ContentState(
-                    title = s.album.notOpened,
-                    // 后端给的 message 可能是空串（见 load() 里的 orEmpty）⇒ 用本地文案兜底。
-                    message = state.error?.takeIf { it.isNotBlank() } ?: s.album.loadFailed,
-                    error = true,
-                    actionLabel = s.album.retry,
-                    onAction = { model.load(albumId, fallback) },
-                )
-                else -> LazyScrollColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(
-                        start = CpSpacing.pageHorizontal,
-                        end = CpSpacing.pageHorizontal,
-                        bottom = CpSpacing.formBottomInset,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
-                ) {
-                    item {
-                        AlbumHeader(
-                            detail = detail,
-                            trackCount = allTracks.size,
-                            totalDurationMs = allTracks.sumOf { it.durationMs },
-                            wide = isWide,
-                            isFavorite = state.isFavorite,
-                            favoritePending = state.favoritePending,
-                            onToggleFavorite = { requestToggleFavorite() },
-                            onPlayAll = { playAt(0) },
-                            onShuffle = shufflePlay,
-                            onAddToQueue = queueAll,
-                            onDownloadAll = { AppModel.downloadTracks(allTracks) },
-                        )
-                    }
-                    item {
-                        SectionHeader(
-                            title = s.album.tracks,
-                            supportingText = if (allTracks.isEmpty()) {
-                                detail.let { state.error ?: s.album.noPlayableTracks }
-                            } else if (searchQuery.isNotBlank()) {
-                                "${filteredTracks.size} / ${allTracks.size}"
-                            } else {
-                                s.album.trackCount(allTracks.size)
+    val adaptiveNavigator = rememberListDetailPaneScaffoldNavigator<Unit>()
+    val albumHeader: @Composable (wide: Boolean) -> Unit = { wide ->
+        AlbumHeader(
+            detail = detail!!,
+            trackCount = allTracks.size,
+            totalDurationMs = allTracks.sumOf { it.durationMs },
+            wide = wide,
+            isFavorite = state.isFavorite,
+            favoritePending = state.favoritePending,
+            onToggleFavorite = requestToggleFavorite,
+            onPlayAll = { playAt(0) },
+            onShuffle = shufflePlay,
+            onAddToQueue = queueAll,
+            onDownloadAll = { AppModel.downloadTracks(allTracks) },
+        )
+    }
+    val albumTrackItems: LazyListScope.() -> Unit = {
+        item {
+            SectionHeader(
+                title = s.album.tracks,
+                supportingText = if (allTracks.isEmpty()) {
+                    state.error ?: s.album.noPlayableTracks
+                } else if (searchQuery.isNotBlank()) {
+                    "${filteredTracks.size} / ${allTracks.size}"
+                } else {
+                    s.album.trackCount(allTracks.size)
+                },
+                action = {
+                    if (allTracks.isNotEmpty()) {
+                        androidx.compose.material3.IconButton(
+                            onClick = {
+                                isSearchActive = !isSearchActive
+                                if (!isSearchActive) searchQuery = ""
                             },
-                            action = {
-                                if (allTracks.isNotEmpty()) {
-                                    androidx.compose.material3.IconButton(
-                                        onClick = {
-                                            isSearchActive = !isSearchActive
-                                            if (!isSearchActive) searchQuery = ""
-                                        },
-                                    ) {
-                                        androidx.compose.material3.Icon(
-                                            imageVector = if (isSearchActive) androidx.compose.material.icons.Icons.Filled.Close else androidx.compose.material.icons.Icons.Filled.Search,
-                                            contentDescription = s.album.searchAlbum,
-                                            tint = if (isSearchActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
+                        ) {
+                            androidx.compose.material3.Icon(
+                                imageVector = if (isSearchActive) androidx.compose.material.icons.Icons.Filled.Close else androidx.compose.material.icons.Icons.Filled.Search,
+                                contentDescription = s.album.searchAlbum,
+                                tint = if (isSearchActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                },
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        if (isSearchActive) {
+            item {
+                androidx.compose.material3.Surface(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    shape = androidx.compose.foundation.shape.CircleShape,
+                    color = cpCardSurface(),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        androidx.compose.material3.Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Filled.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        androidx.compose.foundation.text.BasicTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            modifier = Modifier.weight(1f),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                color = MaterialTheme.colorScheme.onSurface,
+                            ),
+                            singleLine = true,
+                            cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                            decorationBox = { innerTextField ->
+                                if (searchQuery.isEmpty()) {
+                                    CpText(
+                                        text = s.album.searchAlbum,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
+                                innerTextField()
                             },
-                            modifier = Modifier.padding(top = 8.dp),
                         )
-                    }
-                    if (isSearchActive) {
-                        item {
-                            androidx.compose.material3.Surface(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                shape = androidx.compose.foundation.shape.CircleShape,
-                                color = cpCardSurface(),
+                        if (searchQuery.isNotEmpty()) {
+                            androidx.compose.material3.IconButton(
+                                onClick = { searchQuery = "" },
+                                modifier = Modifier.size(24.dp),
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
-                                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                                ) {
-                                    androidx.compose.material3.Icon(
-                                        imageVector = androidx.compose.material.icons.Icons.Filled.Search,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    androidx.compose.foundation.text.BasicTextField(
-                                        value = searchQuery,
-                                        onValueChange = { searchQuery = it },
-                                        modifier = Modifier.weight(1f),
-                                        textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                        ),
-                                        singleLine = true,
-                                        cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
-                                        decorationBox = { innerTextField ->
-                                            if (searchQuery.isEmpty()) {
-                                                CpText(
-                                                    text = s.album.searchAlbum,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                            }
-                                            innerTextField()
-                                        },
-                                    )
-                                    if (searchQuery.isNotEmpty()) {
-                                        androidx.compose.material3.IconButton(
-                                            onClick = { searchQuery = "" },
-                                            modifier = Modifier.size(24.dp),
-                                        ) {
-                                            androidx.compose.material3.Icon(
-                                                imageVector = androidx.compose.material.icons.Icons.Filled.Close,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(16.dp),
-                                            )
-                                        }
-                                    }
-                                }
+                                androidx.compose.material3.Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Filled.Close,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp),
+                                )
                             }
-                        }
-                    }
-                    if (filteredTracks.isEmpty()) {
-                        item {
-                            ContentState(
-                                title = if (searchQuery.isNotBlank()) s.album.emptyTracks else s.album.emptyTracks,
-                                message = if (searchQuery.isNotBlank()) "没有匹配 \"$searchQuery\" 的曲目" else (state.error ?: s.album.emptyTracksNote),
-                            )
-                        }
-                    } else {
-                        items(filteredTracks.size, key = { filteredTracks[it].id }) { index ->
-                            val track = filteredTracks[index]
-                            SongItem(
-                                track = track,
-                                index = index,
-                                total = filteredTracks.size,
-                                isCurrentlyPlaying = track.id == currentTrackId,
-                                modifier = Modifier.animateItem(),
-                                onClick = { playAt(index) },
-                                onOptionsClick = { optionsTarget = track },
-                                // 桌面端右键菜单：动作集合与 SongOptionsSheet 对齐
-                                contextMenu = songContextMenuItems(
-                                    SongMenuActions(
-                                        onPlay = { playAt(index) },
-                                        onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
-                                            { navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId", title = "${track.name} - MV")) }
-                                        },
-                                        isFavorite = track.id in likedIds,
-                                        onToggleFavorite = {
-                                            val target = track.id !in likedIds
-                                            scope.launch {
-                                                AppModel.playback.toggleFavoriteFor("$provider://song/${track.id}")
-                                                UiEvents.notify(if (target) s.album.liked else s.album.unliked)
-                                            }
-                                        },
-                                        onAddToQueue = {
-                                            scope.launch { AppModel.playback.addToQueue("$provider://song/${track.id}") }
-                                            UiEvents.notify(s.library.queuedToPlay)
-                                        },
-                                        onPlayNext = {
-                                            scope.launch { AppModel.playback.addNextToQueue("$provider://song/${track.id}") }
-                                            UiEvents.notify(s.library.playNext)
-                                        },
-                                        isDownloaded = AppModel.isDownloaded(track.id),
-                                        onDownload = { AppModel.downloadTrack(track) },
-                                        onAddToPlaylist = { addToPlaylistTrack = track },
-                                        onShare = { shareText(songShareText(track)) },
-                                    )
-                                ),
-                            )
                         }
                     }
                 }
             }
         }
+        if (filteredTracks.isEmpty()) {
+            item {
+                ContentState(
+                    title = s.album.emptyTracks,
+                    message = if (searchQuery.isNotBlank()) {
+                        "没有匹配 \"$searchQuery\" 的曲目"
+                    } else {
+                        state.error ?: s.album.emptyTracksNote
+                    },
+                )
+            }
+        } else {
+            items(filteredTracks.size, key = { filteredTracks[it].id }) { index ->
+                val track = filteredTracks[index]
+                SongItem(
+                    track = track,
+                    index = index,
+                    total = filteredTracks.size,
+                    isCurrentlyPlaying = track.id == currentTrackId,
+                    modifier = Modifier.animateItem(),
+                    onClick = { playAt(index) },
+                    onOptionsClick = { optionsTarget = track },
+                    contextMenu = songContextMenuItems(
+                        SongMenuActions(
+                            onPlay = { playAt(index) },
+                            onPlayMv = track.mvId?.takeIf { it > 0 }?.let { mvId ->
+                                { navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId", title = "${track.name} - MV")) }
+                            },
+                            isFavorite = track.id in likedIds,
+                            onToggleFavorite = {
+                                val target = track.id !in likedIds
+                                scope.launch {
+                                    AppModel.playback.toggleFavoriteFor("$provider://song/${track.id}")
+                                    UiEvents.notify(if (target) s.album.liked else s.album.unliked)
+                                }
+                            },
+                            onAddToQueue = {
+                                scope.launch { AppModel.playback.addToQueue("$provider://song/${track.id}") }
+                                UiEvents.notify(s.library.queuedToPlay)
+                            },
+                            onPlayNext = {
+                                scope.launch { AppModel.playback.addNextToQueue("$provider://song/${track.id}") }
+                                UiEvents.notify(s.library.playNext)
+                            },
+                            isDownloaded = AppModel.isDownloaded(track.id),
+                            onDownload = { AppModel.downloadTrack(track) },
+                            onAddToPlaylist = { addToPlaylistTrack = track },
+                            onShare = { shareText(songShareText(track)) },
+                        )
+                    ),
+                )
+            }
+        }
+    }
+
+    CpRouteScaffold(title = detail?.name ?: fallback?.name ?: s.album.fallbackTitle, onBack = onBack) { pageModifier ->
+        CpAdaptiveListDetailScaffold(
+            navigator = adaptiveNavigator,
+            modifier = pageModifier,
+            listPane = { isDetailVisible ->
+                when {
+                    state.loading && detail == null -> ScrollColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = CpSpacing.pageHorizontal,
+                            end = CpSpacing.pageHorizontal,
+                            bottom = CpSpacing.formBottomInset,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
+                    ) {
+                        CpSkeletonCaption(s.album.loadingNote)
+                        CpDetailHeroSkeleton(wide = isDetailVisible)
+                        Spacer(Modifier.height(8.dp))
+                        CpSectionHeaderSkeleton(titleWidth = 64.dp, subtitleWidth = 150.dp, trailing = true)
+                        CpSongRowSkeleton(rows = 8)
+                    }
+                    detail == null -> ContentState(
+                        title = s.album.notOpened,
+                        message = state.error?.takeIf { it.isNotBlank() } ?: s.album.loadFailed,
+                        error = true,
+                        actionLabel = s.album.retry,
+                        onAction = { model.load(albumId, fallback) },
+                    )
+                    else -> LazyScrollColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = CpSpacing.pageHorizontal,
+                            end = CpSpacing.pageHorizontal,
+                            bottom = CpSpacing.formBottomInset,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
+                    ) {
+                        if (isDetailVisible) {
+                            item { albumHeader(true) }
+                        } else {
+                            item { albumHeader(false) }
+                            albumTrackItems()
+                        }
+                    }
+                }
+            },
+            detailPane = {
+                if (state.loading && detail == null) {
+                    ScrollColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = CpSpacing.pageHorizontal,
+                            end = CpSpacing.pageHorizontal,
+                            bottom = CpSpacing.formBottomInset,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
+                    ) {
+                        CpSectionHeaderSkeleton(titleWidth = 64.dp, subtitleWidth = 150.dp, trailing = true)
+                        CpSongRowSkeleton(rows = 8)
+                    }
+                } else if (detail == null) {
+                    ContentState(
+                        title = s.album.notOpened,
+                        message = state.error?.takeIf { it.isNotBlank() } ?: s.album.loadFailed,
+                        error = true,
+                        actionLabel = s.album.retry,
+                        onAction = { model.load(albumId, fallback) },
+                    )
+                } else {
+                    LazyScrollColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = CpSpacing.pageHorizontal,
+                            end = CpSpacing.pageHorizontal,
+                            bottom = CpSpacing.formBottomInset,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
+                        content = albumTrackItems,
+                    )
+                }
+            },
+        )
     }
 
     optionsTarget?.let { track ->

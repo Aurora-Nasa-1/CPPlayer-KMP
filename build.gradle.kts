@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.kotlin.multiplatform) apply false
+    alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.kotlin.compose) apply false
@@ -81,9 +82,8 @@ val cpGitSha: String = runCatching {
         .redirectErrorStream(true)
         .start()
     val text = process.inputStream.bufferedReader().use { it.readText() }.trim()
-    process.waitFor()
-    text
-}.getOrNull()?.takeIf { it.isNotBlank() } ?: "unknown"
+    text.takeIf { process.waitFor() == 0 && it.matches(Regex("[0-9a-f]{4,64}")) }
+}.getOrNull() ?: "unknown"
 
 extra["cpAppVersionName"] = cpAppVersionName
 extra["cpAppVersionCode"] = cpAppVersionCode

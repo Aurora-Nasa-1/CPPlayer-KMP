@@ -24,6 +24,13 @@ class CookieLoginTest {
     }
 
     @Test
+    fun `opaque provider token passes through and is masked`() {
+        val token = "Atza|opaque-token.value=="
+        assertEquals(token, CookieLogin.normalize(token))
+        assertEquals("Atza…(${token.length})", CookieLogin.mask(token))
+    }
+
+    @Test
     fun `strips the Cookie header prefix`() {
         assertEquals(
             "MUSIC_U=abc; __csrf=def",

@@ -1,17 +1,64 @@
 package cp.player.app.ui.screen
 
+import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.unit.Density
+import cp.player.app.i18n.AppLanguage
 import cp.player.app.i18n.CpStringsEn
 import cp.player.app.i18n.CpStringsZh
+import cp.player.app.i18n.ProvideCpStrings
+import cp.player.app.ui.component.CpContextMenuItem
+import cp.player.app.ui.component.PlaylistOptionsSheet
+import cp.player.app.ui.component.PlaylistSortType
 import cp.player.app.ui.model.PlaylistDetailScreenModel
+import cp.player.app.ui.theme.CpTheme
+import cp.player.app.ui.theme.ThemeMode
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.TrackSummary
 import cp.player.core.util.currentTimeMillis
 import cp.player.core.util.localDateTimeOf
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DailyRecommendationSaveTest {
+
+    @Test
+    fun `render daily recommendation options at phone width`() {
+        val scene = ImageComposeScene(width = 390, height = 844, density = Density(1f)) {
+            CpTheme(themeMode = ThemeMode.DARK) {
+                ProvideCpStrings(AppLanguage.ZH_HANS) {
+                    PlaylistOptionsSheet(
+                        playlistName = CpStringsZh.contextMenu.dailyRecommendation,
+                        isOwner = false,
+                        onDismiss = {},
+                        onPlay = {},
+                        onAddToQueue = {},
+                        onRefresh = {},
+                        onDownload = {},
+                        currentSort = PlaylistSortType.DEFAULT,
+                        onSortChange = {},
+                        onConvertToPlaylist = {},
+                        dailyFeedAction = CpContextMenuItem(
+                            CpStringsZh.contextMenu.showDailyStyleRecommendations,
+                            onClick = {},
+                        ),
+                    )
+                }
+            }
+        }
+        try {
+            repeat(32) { scene.render(it * 16_666_667L) }
+            val png = scene.render(32 * 16_666_667L).encodeToData()?.bytes ?: error("PNG encoding failed")
+            File("build/daily-recommendation-options.png").apply {
+                parentFile.mkdirs()
+                writeBytes(png)
+            }
+            assertTrue(png.size > 8_000)
+        } finally {
+            scene.close()
+        }
+    }
 
     @Test
     fun `daily playlist name is formatted with current local date`() {

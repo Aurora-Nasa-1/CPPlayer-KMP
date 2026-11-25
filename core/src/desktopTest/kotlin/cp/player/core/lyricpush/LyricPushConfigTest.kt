@@ -10,8 +10,8 @@ import kotlin.test.assertTrue
  * 投放配置的持久化契约 + SuperLyric 退避曲线。
  *
  * 这一层最容易出的事不是崩溃，而是**静默失效**：键拼错 → 开关打开后重启又变回关；
- * 枚举名字写错 → `enumValueOf` 抛异常把整页设置打死；退避曲线写错 → 没有接收方的
- * 机器上每帧一次跨进程广播。三种都测。
+ * 枚举名字写错 → `enumValueOf` 抛异常把整页设置打死；退避曲线写错 → 服务不可用时
+ * 播放帧持续触发无效 Binder IPC。三种都测。
  */
 class LyricPushConfigTest {
 
