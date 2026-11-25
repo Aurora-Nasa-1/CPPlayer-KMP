@@ -77,6 +77,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -959,7 +960,7 @@ private fun SegmentedControl(
                     options.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                 },
-                colors = ToggleButtonDefaults.tonalToggleButtonColors(),
+                colors = ToggleButtonDefaults.toggleButtonColors(),
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 9.dp),
                 modifier = Modifier
                     .weight(1f)
