@@ -326,28 +326,22 @@ internal class DesktopCroppingDecoder(
                     return DecodeResult(image = bitmap.asImage(), isSampled = false)
                 }
 
-                // 尽量利用 Codec 原生抽样（如 JPEG 1/2、1/4、1/8）减少临时像素缓冲
-                val cropSide = min(srcW, srcH).toFloat()
-                val rawScale = if (needCrop) {
-                    max(dstW / cropSide, dstH / cropSide)
-                } else {
-                    max(dstW.toFloat() / srcW, dstH.toFloat() / srcH)
-                }.coerceIn(0.05f, 1f)
-
-                val scaledDim = c.getScaledDimensions(rawScale)
-                val decW = scaledDim.width.coerceAtLeast(1)
-                val decH = scaledDim.height.coerceAtLeast(1)
-                val subBitmap = Bitmap()
-                if (!subBitmap.allocPixels(ImageInfo.makeN32Premul(decW, decH))) return null
+                // Skiko 的 Codec 不暴露 getScaledDimensions，且任意缩放读像素会触发 kInvalidScale；
+                // 先解码到临时原尺寸 Bitmap 再居中裁剪缩放到目标尺寸，并在 finally 立即释放临时缓冲
+                val srcBitmap = Bitmap()
+                if (!srcBitmap.allocPixels(ImageInfo.makeN32Premul(srcW, srcH))) return null
                 try {
-                    c.readPixels(subBitmap)
+                    c.readPixels(srcBitmap)
                     val outBitmap = Bitmap()
-                    if (!outBitmap.allocN32Pixels(dstW, dstH, opaque = false)) return null
-                    Image.makeFromBitmap(subBitmap).use { subImg ->
+                    if (!outBitmap.allocN32Pixels(dstW, dstH, opaque = false)) {
+                        outBitmap.close()
+                        return null
+                    }
+                    Image.makeFromBitmap(srcBitmap).use { srcImg ->
                         Canvas(outBitmap).use { canvas ->
-                            val srcRect = computeCenterCropRect(decW, decH, dstW, dstH, needCrop)
+                            val srcRect = computeCenterCropRect(srcW, srcH, dstW, dstH, needCrop)
                             val dstRect = Rect.makeWH(dstW.toFloat(), dstH.toFloat())
-                            canvas.drawImageRect(subImg, srcRect, dstRect, SamplingMode.LINEAR, null, true)
+                            canvas.drawImageRect(srcImg, srcRect, dstRect, SamplingMode.LINEAR, null, true)
                         }
                     }
                     val exactCacheHit = alreadyCropped && dstW == srcW && dstH == srcH
@@ -359,7 +353,7 @@ internal class DesktopCroppingDecoder(
                         isSampled = dstW < srcW || dstH < srcH,
                     )
                 } finally {
-                    subBitmap.close()
+                    srcBitmap.close()
                 }
             }
         } finally {

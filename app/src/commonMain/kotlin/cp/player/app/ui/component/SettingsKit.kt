@@ -960,7 +960,7 @@ private fun SegmentedControl(
                     options.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                 },
-                colors = ToggleButtonDefaults.tonalToggleButtonColors(),
+                colors = ToggleButtonDefaults.filledTonalToggleButtonColors(),
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 9.dp),
                 modifier = Modifier
                     .weight(1f)

@@ -43,9 +43,9 @@ fun buildCoverImageRequest(
         .precision(Precision.INEXACT)
         .memoryCacheKey("cover:$canonical:$bucket:${if (cropSquare) "c" else "f"}")
         .diskCacheKey(if (effectiveData == canonical) "orig:$canonical" else "cover_disk:$canonical:$bucket")
-        .extras {
-            it[CpCropSquareExtraKey] = cropSquare
-            it[CpOriginalUrlExtraKey] = canonical
+        .apply {
+            extras[CpCropSquareExtraKey] = cropSquare
+            extras[CpOriginalUrlExtraKey] = canonical
         }
     if (!memoryCacheWrite) {
         builder.memoryCachePolicy(CachePolicy.READ_ONLY)
