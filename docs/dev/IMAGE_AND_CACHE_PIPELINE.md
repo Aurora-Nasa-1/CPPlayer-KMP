@@ -82,7 +82,7 @@ Core 后端源码层 (ProviderHost + ScopedProviderRuntime)
 
 ## 4. Native Image `-Xmx100m`、Skia 生命周期与核心循环零分配
 
-- **仅对 GraalVM Native Image 约束 `-Xmx100m`**：`app/build.gradle.kts` 设置 `graalvm.maxHeapSize = "100m"` 与 `-R:MaxNewSize=16m`；普通 JVM 运行参数维持不变。
+- **仅对 GraalVM Native Image 约束 `-Xmx100m`**：`app/build.gradle.kts` 设置 `graalvm.maxHeapSize = "100m"` 与 `-R:MaxNewSize=24m`；普通 JVM 运行参数维持不变。
 - **存活集压缩与本地流式解析**：
   - `MusicReadCaches` 与 `PlaybackLyricsLoader` 收紧默认条数上限，后台/托盘触发 `trimMemoryForBackground()` 裁剪非活跃项；
   - `LocalCoverStore` 与 `LocalArtwork.desktop.kt` 通过 `RandomAccessFile` 流式扫描 ID3/MP4 结构定位封面偏移量，消除最大 8MB/32MB 的临时堆数组峰值。

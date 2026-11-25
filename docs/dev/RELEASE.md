@@ -184,7 +184,7 @@ JBR 的 `.sha256` 文件未发布（cache-redirector 返回 403），`app/build.
 
 ### 5.4 Native Image（Nucleus 3.0）
 
-Nucleus 固定在 `gradle/libs.versions.toml` 的 `3.0.0-dev-202611161221`。3.0 移除了 `NucleusBackend` / `LocalNucleusBackend`：`nucleusApplication(args) { ... }` 是唯一入口，且必须转发 `args`（单实例移交、深链、`--veloapp-*` 钩子都从那里进来）。
+Nucleus 固定在 `gradle/libs.versions.toml` 的 `3.0.0-dev-202611222143`。3.0 移除了 `NucleusBackend` / `LocalNucleusBackend`：`nucleusApplication(args) { ... }` 是唯一入口，且必须转发 `args`（单实例移交、深链、`--veloapp-*` 钩子都从那里进来）。
 
 | 项 | 内容 |
 |---|---|

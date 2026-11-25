@@ -9,7 +9,7 @@ datetime = "0.6.1"
 # 而 skiko 又是 Coil 选型的分水岭（见下面 coil 的注释）：两边一致时 compose 插件才不会报
 # "Skiko dependencies' versions are incompatible"。
 compose = "1.13.0-rc01"
-nucleus = "3.0.0-dev-202611161221"
+nucleus = "3.0.0-dev-202611222143"
 # Nucleus 同作者的无 AWT 托盘库：托盘图标与右键菜单都走平台原生 API
 # （Windows Shell_NotifyIcon / macOS NSStatusItem / Linux AppIndicator），
 # 不创建 `java.awt.SystemTray` / `TrayIcon`。

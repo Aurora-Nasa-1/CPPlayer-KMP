@@ -839,12 +839,12 @@ nucleus {
                 "-H:+CompactingOldGen",
                 // ── Serial GC 的帧率优先参数（Compose / Skiko）──────────────────
                 // Native Image 的 Serial GC 只有 STW 的 minor / major 两种停顿：
-                // 年轻代越大，单次 minor 的复制量越大；120/144Hz 的帧预算只有
-                // 8.3/6.9ms，超过预算就是肉眼可见的掉帧。
-                // 16m 年轻代配合 100m 总堆上限，给老年代留出 ~84m 空间容纳压缩后的存活集，
-                // 减少必须做整堆 compaction 的 Full GC；同时短命年轻代让单次 minor STW 更可控。
+                // 单次 minor 停顿主要取决于实际存活对象量，而过小的新生代会导致高频
+                // minor GC 与短命突发对象过早晋升老年代。
+                // 24m 年轻代配合 100m 总堆上限，为图片解码/Compose 布局突发留出缓冲，
+                // 同时给老年代留出 ~76m 空间容纳压缩后的存活集。
                 // `-Xmx` 仍由上面的 `maxHeapSize=100m` 写进镜像（Nucleus -> -R:MaxHeapSize=100m）。
-                "-R:MaxNewSize=16m",
+                "-R:MaxNewSize=24m",
                 // 显式钉住 25.3 的默认策略 Adaptive2，避免升级 GraalVM 时
                 // 默认 collector 策略漂移导致停顿曲线悄悄变化。
                 "-R:InitialCollectionPolicy=Adaptive2",
