@@ -1267,7 +1267,7 @@ private fun BannerDots(
             )
             val active = if (onImage) Color.White else MaterialTheme.colorScheme.primary
             val inactive = if (onImage) Color.White.copy(alpha = 0.45f)
-            else MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)
+            else MaterialTheme.colorScheme.outlineVariant
             Box(
                 Modifier
                     .size(width = width.dp, height = 6.dp)
@@ -2582,8 +2582,8 @@ private fun DailyMixCard(
                         // 移到顶部的「查看全部」操作胶囊
                         Surface(
                             shape = CircleShape,
-                            color = Color.White.copy(alpha = 0.22f),
-                            contentColor = Color.White,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier
                                 .height(38.dp)
                                 .cpBounceClickable(onClick = onOpenPlaylist),
@@ -2596,14 +2596,14 @@ private fun DailyMixCard(
                                 Icon(
                                     Icons.Filled.PlayArrow,
                                     contentDescription = null,
-                                    tint = Color.White,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier.size(16.dp),
                                 )
                                 CpText(
                                     s.library.seeAll,
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = Color.White,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 )
                             }
                         }
@@ -2671,7 +2671,7 @@ private fun CompactTrackCard(
     val defaultContainer = cp.player.app.ui.theme.cpCardSurface()
     val containerColor by animateColorAsState(
         targetValue = if (isCurrent) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f)
+            MaterialTheme.colorScheme.primaryContainer
         } else {
             defaultContainer
         },
@@ -2679,14 +2679,14 @@ private fun CompactTrackCard(
     )
     val titleColor by animateColorAsState(
         targetValue = if (isCurrent) {
-            MaterialTheme.colorScheme.primary
+            MaterialTheme.colorScheme.onPrimaryContainer
         } else {
             MaterialTheme.colorScheme.onSurface
         },
         label = "dailyCardTitle",
     )
     val artistColor = if (isCurrent) {
-        MaterialTheme.colorScheme.onSurfaceVariant
+        MaterialTheme.colorScheme.onPrimaryContainer
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }

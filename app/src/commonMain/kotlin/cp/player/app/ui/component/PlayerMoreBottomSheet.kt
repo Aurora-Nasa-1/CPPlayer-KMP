@@ -39,7 +39,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -838,10 +837,8 @@ fun SongInfoDialog(
     sourceQualityLabel: String? = null,
 ) {
     val s = cpStrings()
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = cpSheetSurface(),
-        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(s.player.songInfo, maxLines = 1) },
         text = {
             val info = formatInfo

@@ -82,6 +82,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpElevatedSurface
 import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -379,8 +380,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
     // ⚠️ 这支渐变是 `enabled = false`（用户在「外观」里关了流体背景）时的**唯一背景**。
     // 它不是可以随便糊弄的兜底，观感必须能单独站住。
     val isDark = LocalIsDarkTheme.current
-    val surfaceTop = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh
-    else MaterialTheme.colorScheme.surfaceVariant
+    val surfaceTop = MaterialTheme.colorScheme.surfaceContainerHigh
     val surfaceBottom = if (isDark) MaterialTheme.colorScheme.surfaceContainerLowest
     else MaterialTheme.colorScheme.surface
     val bgBrush = remember(surfaceTop, surfaceBottom) {
@@ -714,7 +714,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                                 onClick = { showQueueSheet = true },
                                                 modifier = Modifier.padding(end = 8.dp),
                                                 colors = IconButtonDefaults.filledIconButtonColors(
-                                                    containerColor = cpElevatedSurface().copy(alpha = if (isDark) 0.6f else 0.8f),
+                                                    containerColor = cpCardSurface(),
                                                     contentColor = MaterialTheme.colorScheme.onSurface,
                                                 ),
                                             ) {
@@ -730,7 +730,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                             onClick = { showQueueSheet = true },
                                             modifier = Modifier.padding(end = 8.dp),
                                             colors = IconButtonDefaults.filledIconButtonColors(
-                                                containerColor = cpElevatedSurface().copy(alpha = if (isDark) 0.6f else 0.8f),
+                                                containerColor = cpCardSurface(),
                                                 contentColor = MaterialTheme.colorScheme.onSurface,
                                             ),
                                         ) {

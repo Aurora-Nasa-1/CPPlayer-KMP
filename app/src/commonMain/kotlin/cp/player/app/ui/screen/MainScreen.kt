@@ -803,7 +803,6 @@ class MainScreen : Screen {
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.inverseSurface,
                     contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-                    tonalElevation = 6.dp,
                     shadowElevation = 8.dp,
                 ) {
                     Row(

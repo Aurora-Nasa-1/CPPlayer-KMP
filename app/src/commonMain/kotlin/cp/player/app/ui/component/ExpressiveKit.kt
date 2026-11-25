@@ -196,6 +196,22 @@ fun CpLinearProgress(
 }
 
 /**
+ * 直线线性进度条（不确定态），统一收口 M3 封装。
+ */
+@Composable
+fun CpLinearProgressIndeterminate(
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+    trackColor: Color = cpNestedSurface(),
+) {
+    LinearProgressIndicator(
+        modifier = modifier,
+        color = color,
+        trackColor = trackColor,
+    )
+}
+
+/**
  * 波形线性进度条（确定值）。
  *
  * 这是 M3 Expressive 在「音乐播放器」里最具辨识度的元素。
@@ -1480,12 +1496,12 @@ fun CpToggleChip(
         modifier = modifier,
         enabled = enabled,
     ) {
-        ChipContent(icon = icon, label = label, badge = badge)
+        ChipContent(icon = icon, label = label, badge = badge, checked = checked)
     }
 }
 
 @Composable
-private fun RowScope.ChipContent(icon: ImageVector?, label: String, badge: String?) {
+private fun RowScope.ChipContent(icon: ImageVector?, label: String, badge: String?, checked: Boolean) {
     if (icon != null) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
@@ -1495,14 +1511,20 @@ private fun RowScope.ChipContent(icon: ImageVector?, label: String, badge: Strin
         Spacer(Modifier.width(6.dp))
         Surface(
             shape = CircleShape,
-            // 选中态由 ToggleButton 自己换容器色，徽标必须跟着换「前景/背景」这一对，
-            // 否则选中时圆钮是 primary 底的，徽标还是 surfaceContainerHigh —— 直接看不见。
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+            color = if (checked) {
+                MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.18f)
+            } else {
+                cpNestedSurface()
+            },
         ) {
             CpText(
                 badge,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = if (checked) {
+                    MaterialTheme.colorScheme.onPrimary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
                 maxLines = 1,
                 modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
             )

@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -22,7 +21,6 @@ import androidx.compose.ui.unit.dp
 import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
 import cp.player.app.ui.util.UiEvents
-import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.core.BackendResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -43,10 +41,8 @@ fun CreatePlaylistDialog(
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        containerColor = cpSheetSurface(),
-        shape = MaterialTheme.shapes.extraLarge,
         title = {
             CpText(
                 s.playlistSheet.createDialogTitle,

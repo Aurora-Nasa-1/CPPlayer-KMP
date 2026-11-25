@@ -347,3 +347,6 @@ actual fun platformMemoryInfo(): PlatformMemoryInfo {
     )
 }
 
+@Composable
+actual fun SyncSystemBarsEffect(darkTheme: Boolean) = Unit
+

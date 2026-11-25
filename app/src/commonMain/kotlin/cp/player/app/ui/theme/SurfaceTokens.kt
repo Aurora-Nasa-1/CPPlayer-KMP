@@ -40,10 +40,10 @@ object CpSurfaceTokens {
     @Composable
     fun canvas(): Color = MaterialTheme.colorScheme.surface
 
-    /** 模式 B (卡片分组/设置/仪表盘)：以有调性的 surfaceContainer 为底，纯黑模式下为纯黑 surface */
+    /** 模式 B (卡片分组/设置/仪表盘)：以有调性的 surfaceContainer 为底，纯黑模式下保留极暗灰阶以维持页面/卡片层级 */
     @Composable
     fun grouped(): Color =
-        if (LocalPureBlack.current) MaterialTheme.colorScheme.surface
+        if (LocalPureBlack.current) MaterialTheme.colorScheme.surfaceContainerLow
         else MaterialTheme.colorScheme.surfaceContainer
 
     /** 模式 A 内容流卡片：浮于 canvas 之上 */

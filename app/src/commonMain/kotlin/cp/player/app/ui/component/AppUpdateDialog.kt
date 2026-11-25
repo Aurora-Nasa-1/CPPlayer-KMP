@@ -38,7 +38,6 @@ import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -90,16 +89,13 @@ fun AppUpdateDialog(
     val s = cpStrings().update
 
     // 对话框 = 浮层层；日志块 = 浮层内部的次级块。两者刻意不同档，否则整块糊在一起。
-    val containerColor = cp.player.app.ui.theme.cpSheetSurface()
     val changelogContainerColor = cp.player.app.ui.theme.cpSheetInnerSurface()
 
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier
             .widthIn(min = 320.dp, max = if (isExpanded) 620.dp else 440.dp)
             .fillMaxWidth(if (isExpanded) 0.65f else 0.94f),
-        shape = MaterialTheme.shapes.extraLarge,
-        containerColor = containerColor,
         icon = {
             // M3E 风格的 Hero 图标容器
             Surface(

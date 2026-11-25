@@ -295,3 +295,7 @@ data class PlatformMemoryInfo(
 /** 获取当前平台堆内存占用统计。 */
 expect fun platformMemoryInfo(): PlatformMemoryInfo
 
+/** 将系统状态栏与导航栏图标明暗同步到应用当前主题（仅 Android 生效）。 */
+@Composable
+expect fun SyncSystemBarsEffect(darkTheme: Boolean)
+

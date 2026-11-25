@@ -19,7 +19,6 @@ import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.RestartAlt
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -73,10 +72,8 @@ fun LyricOffsetDialog(
         updateOffset(updated)
     }
 
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = onDismiss,
-        shape = MaterialTheme.shapes.extraLarge,
-        containerColor = cpSheetSurface(),
         icon = {
             Surface(
                 shape = MaterialTheme.shapes.medium,
@@ -87,7 +84,7 @@ fun LyricOffsetDialog(
                     Icon(
                         imageVector = Icons.Filled.Lyrics,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(24.dp),
                     )
                 }

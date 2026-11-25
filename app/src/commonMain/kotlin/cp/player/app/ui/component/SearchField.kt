@@ -185,7 +185,6 @@ fun CpSearchSuggestionPanel(
         modifier = modifier.wrapContentHeight(align = Alignment.Top, unbounded = true),
         shape = MaterialTheme.shapes.large,
         color = cpElevatedSurface(),
-        tonalElevation = 3.dp,
         shadowElevation = 8.dp,
     ) {
         Column(Modifier.padding(vertical = 6.dp)) {

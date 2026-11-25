@@ -49,7 +49,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material3.AlertDialog
+import cp.player.app.ui.component.CpAlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -905,7 +905,8 @@ private fun LocalLibraryToolbar(
         if (state.scanning) {
             Surface(
                 shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxWidth()
                     .padding(horizontal = CpSpacing.pageHorizontal, vertical = 4.dp),
             ) {
@@ -1343,10 +1344,8 @@ private fun ScanSettingsDialog(
     // 输入框是唯一事实来源：预设只是替它填值，所以选中态由当前文本反推
     val presetSeconds = listOf(0, LocalScanSettings.SHORT_AUDIO_SECONDS, 30)
 
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = cpSheetSurface(),
-        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(strings.downloads.scanSettings) },
         text = {
             // 规则一多（时长 + 预设 + 三个开关 + 排除目录）在窄屏上会顶出对话框，
@@ -1975,10 +1974,8 @@ private fun CreateLocalPlaylistDialog(
     onConfirm: (String) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = cpSheetSurface(),
-        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(strings.downloads.newLocalPlaylist) },
         text = {
             OutlinedTextField(
@@ -2012,10 +2009,8 @@ private fun RenameLocalPlaylistDialog(
     onConfirm: (String) -> Unit,
 ) {
     var name by remember { mutableStateOf(currentName) }
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = cpSheetSurface(),
-        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(strings.library.renamePlaylist) },
         text = {
             OutlinedTextField(

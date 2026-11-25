@@ -10,12 +10,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
+import cp.player.app.ui.component.CpAlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.theme.cpSheetInnerSurface
-import cp.player.app.ui.theme.cpSheetSurface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -275,9 +274,8 @@ private fun ShortcutRecorderDialog(
         waiting = false
     }
 
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = cpSheetSurface(),
         title = { CpText(s.shortcuts.recorderTitle) },
         text = {
             Column(

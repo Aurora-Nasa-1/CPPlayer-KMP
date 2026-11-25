@@ -18,7 +18,7 @@ import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.AlertDialog
+import cp.player.app.ui.component.CpAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,7 +43,6 @@ import cp.player.app.ui.component.CpText
 import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.component.AppUpdateDialog
 import cp.player.app.ui.component.SettingsClickItem
-import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
@@ -223,10 +222,8 @@ class AboutScreen : Screen {
         if (showDestructiveConfirm && updateResult?.destructivePolicy != null) {
             val result = updateResult!!
             val policy = result.destructivePolicy!!
-            AlertDialog(
+            CpAlertDialog(
                 onDismissRequest = { showDestructiveConfirm = false },
-                containerColor = cpSheetSurface(),
-                shape = MaterialTheme.shapes.extraLarge,
                 title = { CpText(policy.title) },
                 text = {
                     Column {

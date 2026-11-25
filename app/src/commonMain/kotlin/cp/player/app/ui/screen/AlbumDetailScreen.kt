@@ -292,7 +292,7 @@ private fun AlbumDetailContent(
                                                 CpText(
                                                     text = s.album.searchAlbum,
                                                     style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 )
                                             }
                                             innerTextField()

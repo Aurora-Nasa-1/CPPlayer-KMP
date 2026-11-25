@@ -27,12 +27,10 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
@@ -56,8 +54,10 @@ import cp.player.app.i18n.PluginRepositoryStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.rememberZipPicker
 import cp.player.app.platform.sendPlatformToast
+import cp.player.app.ui.component.CpAlertDialog
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpConfirmState
+import cp.player.app.ui.component.CpLinearProgress
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpSpacing
@@ -1129,13 +1129,11 @@ private fun HubBanners(
                     },
                 )
                 if (task.phase == PluginInstallPhase.DOWNLOADING) {
-                    LinearProgressIndicator(
-                        progress = {
-                            if (task.totalBytes > 0) {
-                                (task.downloadedBytes.toFloat() / task.totalBytes).coerceIn(0f, 1f)
-                            } else {
-                                0f
-                            }
+                    CpLinearProgress(
+                        progress = if (task.totalBytes > 0) {
+                            (task.downloadedBytes.toFloat() / task.totalBytes).coerceIn(0f, 1f)
+                        } else {
+                            0f
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -1171,10 +1169,8 @@ private fun PluginDetailsDialog(
     onDismiss: () -> Unit,
     onInstall: () -> Unit,
 ) {
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = cpSheetSurface(),
-        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(entry.plugin.name, maxLines = Int.MAX_VALUE) },
         text = {
             SelectionContainer {
@@ -1232,10 +1228,8 @@ private fun AddRepositoryDialog(
 ) {
     var url by remember { mutableStateOf("") }
     val valid = runCatching { requireRepositoryHttpsUrl(url.trim()) }.isSuccess
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = cpSheetSurface(),
-        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(t.addSource) },
         text = {
             Column {

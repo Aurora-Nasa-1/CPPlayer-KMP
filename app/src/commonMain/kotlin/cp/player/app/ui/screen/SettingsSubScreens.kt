@@ -10,7 +10,7 @@ import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material3.AlertDialog
+import cp.player.app.ui.component.CpAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
@@ -24,7 +24,6 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
 import cp.player.app.ui.theme.LocalIsDarkTheme
-import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.i18n.AppLanguage
 import cp.player.app.i18n.displayName
 import cp.player.app.i18n.displayNote
@@ -571,10 +570,8 @@ private fun StorageSettingsContent(
     }
 
     pendingMigratePath?.let { targetPath ->
-        AlertDialog(
+        CpAlertDialog(
             onDismissRequest = { pendingMigratePath = null },
-            containerColor = cpSheetSurface(),
-            shape = MaterialTheme.shapes.extraLarge,
             title = {
                 CpText(
                     s.storage.migrateCacheDirConfirmTitle,

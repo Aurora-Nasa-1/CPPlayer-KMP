@@ -3,6 +3,8 @@ package cp.player.app.ui.theme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 
 // Material 3 Expressive 静态回退色板。
@@ -57,7 +59,26 @@ val SurfaceContainerHighestLight = Color(0xFFE5E1EC)
 
 val InverseSurfaceLight = Color(0xFF313034)
 val InverseOnSurfaceLight = Color(0xFFF4EFF4)
+val InversePrimaryLight = Color(0xFFC1C1FF)
+val SurfaceDimLight = Color(0xFFDCD8E2)
+val SurfaceBrightLight = Color(0xFFFCF8FC)
 val ScrimLight = Color(0xFF000000)
+
+// —— Fixed 角色（不随明暗模式反转，给分类图标/固定强调位使用）——
+val PrimaryFixed = Color(0xFFE1E0FF)
+val OnPrimaryFixed = Color(0xFF15175C)
+val PrimaryFixedDim = Color(0xFFC1C1FF)
+val OnPrimaryFixedVariant = Color(0xFF383B8C)
+
+val SecondaryFixed = Color(0xFF9CF1EE)
+val OnSecondaryFixed = Color(0xFF00201F)
+val SecondaryFixedDim = Color(0xFF80D5D2)
+val OnSecondaryFixedVariant = Color(0xFF00504E)
+
+val TertiaryFixed = Color(0xFFFFDBCF)
+val OnTertiaryFixed = Color(0xFF3A0B00)
+val TertiaryFixedDim = Color(0xFFFFB59D)
+val OnTertiaryFixedVariant = Color(0xFF7B2E15)
 
 val PrimaryDark = Color(0xFFC1C1FF)
 val OnPrimaryDark = Color(0xFF20216F)
@@ -100,11 +121,15 @@ val SurfaceContainerHighestDark = Color(0xFF35343B)
 
 val InverseSurfaceDark = Color(0xFFE5E1E9)
 val InverseOnSurfaceDark = Color(0xFF313034)
+val InversePrimaryDark = Color(0xFF4F55A5)
+val SurfaceDimDark = Color(0xFF131318)
+val SurfaceBrightDark = Color(0xFF393840)
 val ScrimDark = Color(0xFF000000)
 
 val LightColors: ColorScheme = lightColorScheme(
     primary = PrimaryLight, onPrimary = OnPrimaryLight,
     primaryContainer = PrimaryContainerLight, onPrimaryContainer = OnPrimaryContainerLight,
+    inversePrimary = InversePrimaryLight,
     secondary = SecondaryLight, onSecondary = OnSecondaryLight,
     secondaryContainer = SecondaryContainerLight, onSecondaryContainer = OnSecondaryContainerLight,
     tertiary = TertiaryLight, onTertiary = OnTertiaryLight,
@@ -115,6 +140,8 @@ val LightColors: ColorScheme = lightColorScheme(
     surface = SurfaceLight, onSurface = OnSurfaceLight,
     surfaceVariant = SurfaceVariantLight, onSurfaceVariant = OnSurfaceVariantLight,
     outline = OutlineLight, outlineVariant = OutlineVariantLight,
+    surfaceDim = SurfaceDimLight,
+    surfaceBright = SurfaceBrightLight,
     surfaceContainerLowest = SurfaceContainerLowestLight,
     surfaceContainerLow = SurfaceContainerLowLight,
     surfaceContainer = SurfaceContainerLight,
@@ -122,11 +149,18 @@ val LightColors: ColorScheme = lightColorScheme(
     surfaceContainerHighest = SurfaceContainerHighestLight,
     inverseSurface = InverseSurfaceLight, inverseOnSurface = InverseOnSurfaceLight,
     scrim = ScrimLight,
+    primaryFixed = PrimaryFixed, onPrimaryFixed = OnPrimaryFixed,
+    primaryFixedDim = PrimaryFixedDim, onPrimaryFixedVariant = OnPrimaryFixedVariant,
+    secondaryFixed = SecondaryFixed, onSecondaryFixed = OnSecondaryFixed,
+    secondaryFixedDim = SecondaryFixedDim, onSecondaryFixedVariant = OnSecondaryFixedVariant,
+    tertiaryFixed = TertiaryFixed, onTertiaryFixed = OnTertiaryFixed,
+    tertiaryFixedDim = TertiaryFixedDim, onTertiaryFixedVariant = OnTertiaryFixedVariant,
 )
 
 val DarkColors: ColorScheme = darkColorScheme(
     primary = PrimaryDark, onPrimary = OnPrimaryDark,
     primaryContainer = PrimaryContainerDark, onPrimaryContainer = OnPrimaryContainerDark,
+    inversePrimary = InversePrimaryDark,
     secondary = SecondaryDark, onSecondary = OnSecondaryDark,
     secondaryContainer = SecondaryContainerDark, onSecondaryContainer = OnSecondaryContainerDark,
     tertiary = TertiaryDark, onTertiary = OnTertiaryDark,
@@ -137,6 +171,8 @@ val DarkColors: ColorScheme = darkColorScheme(
     surface = SurfaceDark, onSurface = OnSurfaceDark,
     surfaceVariant = SurfaceVariantDark, onSurfaceVariant = OnSurfaceVariantDark,
     outline = OutlineDark, outlineVariant = OutlineVariantDark,
+    surfaceDim = SurfaceDimDark,
+    surfaceBright = SurfaceBrightDark,
     surfaceContainerLowest = SurfaceContainerLowestDark,
     surfaceContainerLow = SurfaceContainerLowDark,
     surfaceContainer = SurfaceContainerDark,
@@ -144,4 +180,55 @@ val DarkColors: ColorScheme = darkColorScheme(
     surfaceContainerHighest = SurfaceContainerHighestDark,
     inverseSurface = InverseSurfaceDark, inverseOnSurface = InverseOnSurfaceDark,
     scrim = ScrimDark,
+    primaryFixed = PrimaryFixed, onPrimaryFixed = OnPrimaryFixed,
+    primaryFixedDim = PrimaryFixedDim, onPrimaryFixedVariant = OnPrimaryFixedVariant,
+    secondaryFixed = SecondaryFixed, onSecondaryFixed = OnSecondaryFixed,
+    secondaryFixedDim = SecondaryFixedDim, onSecondaryFixedVariant = OnSecondaryFixedVariant,
+    tertiaryFixed = TertiaryFixed, onTertiaryFixed = OnTertiaryFixed,
+    tertiaryFixedDim = TertiaryFixedDim, onTertiaryFixedVariant = OnTertiaryFixedVariant,
 )
+
+/**
+ * M3 扩展语义状态色板（Success / Warning）。
+ *
+ * 浅/深色分别按 Tonal 算法与 WCAG AA（≥ 4.5:1）校准，避免页面直接硬编码
+ * `Color(0xFF4CAF50)` / `Color(0xFFFF9800)` 导致浅色模式下对比度跌破 3:1。
+ */
+@Immutable
+data class CpSemanticColors(
+    val success: Color,
+    val onSuccess: Color,
+    val successContainer: Color,
+    val onSuccessContainer: Color,
+    val warning: Color,
+    val onWarning: Color,
+    val warningContainer: Color,
+    val onWarningContainer: Color,
+)
+
+private val LightSemanticColors = CpSemanticColors(
+    success = Color(0xFF1B6E2D),
+    onSuccess = Color(0xFFFFFFFF),
+    successContainer = Color(0xFFD2F5D7),
+    onSuccessContainer = Color(0xFF002107),
+    warning = Color(0xFF8A5000),
+    onWarning = Color(0xFFFFFFFF),
+    warningContainer = Color(0xFFFFDFB8),
+    onWarningContainer = Color(0xFF2C1600),
+)
+
+private val DarkSemanticColors = CpSemanticColors(
+    success = Color(0xFF81D88B),
+    onSuccess = Color(0xFF00390F),
+    successContainer = Color(0xFF00531A),
+    onSuccessContainer = Color(0xFFB8F5BE),
+    warning = Color(0xFFFFB95D),
+    onWarning = Color(0xFF492900),
+    warningContainer = Color(0xFF693C00),
+    onWarningContainer = Color(0xFFFFDFB8),
+)
+
+/** 根据当前已解析的明暗主题返回合规的语义状态色板。 */
+@Composable
+fun cpSemanticColors(): CpSemanticColors =
+    if (LocalIsDarkTheme.current) DarkSemanticColors else LightSemanticColors

@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -22,7 +21,6 @@ import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.UiEvents
-import cp.player.app.ui.theme.cpSheetSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -48,10 +46,8 @@ fun RenamePlaylistDialog(
     val trimmed = name.trim()
     val canSubmit = trimmed.isNotEmpty() && trimmed != currentName && !busy
 
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        containerColor = cpSheetSurface(),
-        shape = MaterialTheme.shapes.extraLarge,
         title = { CpText(s.library.renamePlaylist, style = MaterialTheme.typography.headlineSmall) },
         text = {
             OutlinedTextField(

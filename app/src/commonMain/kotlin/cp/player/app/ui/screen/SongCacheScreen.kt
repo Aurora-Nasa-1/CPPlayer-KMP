@@ -13,11 +13,11 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import cp.player.app.ui.component.CpLoadingIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -216,9 +216,8 @@ private fun ColumnScope.SongCacheHeader(
                 enabled = state.canConvertAll || state.converting,
             ) {
                 if (state.converting) {
-                    CircularProgressIndicator(
+                    CpLoadingIndicator(
                         modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
                         // 按钮底色是 primary，指示器必须用 onPrimary 才看得见
                         color = MaterialTheme.colorScheme.onPrimary,
                     )

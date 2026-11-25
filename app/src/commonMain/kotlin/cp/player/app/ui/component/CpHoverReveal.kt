@@ -134,7 +134,6 @@ private fun RevealCard(text: String, style: TextStyle) {
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = cpElevatedSurface(),
-        tonalElevation = 3.dp,
         shadowElevation = 8.dp,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
     ) {

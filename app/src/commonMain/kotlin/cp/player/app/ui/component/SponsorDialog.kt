@@ -30,11 +30,8 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.ZoomIn
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -71,9 +68,10 @@ enum class SponsorPaymentType {
     ALIPAY,
 }
 
-private val WeChatBrandColor = Color(0xFF07C160)
-private val AlipayBrandColor = Color(0xFF1677FF)
-private val HeartBrandColor = Color(0xFFE91E63)
+// 在白底收款码卡片与浅色容器上校准至满足 WCAG AA（>= 4.5:1）的高对比度品牌色阶
+private val WeChatBrandColor = Color(0xFF057A3D)
+private val AlipayBrandColor = Color(0xFF0C5AD6)
+private val HeartBrandColor = Color(0xFFC2185B)
 
 /**
  * 赞助与支持弹窗。
@@ -92,28 +90,22 @@ fun SponsorDialog(
     var selectedType by remember { mutableStateOf(initialType) }
     val scope = rememberCoroutineScope()
 
-    // 对话框是浮层：深色取 `surfaceContainerHigh`（比卡片略暗、比页面亮），
-    // 浅色取纯白 —— 与 `cpSheetSurface` 同一档。
-    val containerColor = cp.player.app.ui.theme.cpSheetSurface()
-
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier
             .widthIn(min = 320.dp, max = if (isExpanded) 620.dp else 420.dp)
             .fillMaxWidth(if (isExpanded) 0.70f else 0.95f),
-        shape = MaterialTheme.shapes.extraLarge,
-        containerColor = containerColor,
         icon = {
             Surface(
                 shape = CircleShape,
-                color = HeartBrandColor.copy(alpha = 0.14f),
+                color = MaterialTheme.colorScheme.tertiaryContainer,
                 modifier = Modifier.size(52.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Default.Favorite,
                         contentDescription = s.sponsorDialogTitle,
-                        tint = HeartBrandColor,
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
                         modifier = Modifier.size(28.dp),
                     )
                 }
@@ -147,43 +139,14 @@ fun SponsorDialog(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                // 宽屏模式下可选择并排展示或切换；紧凑屏幕提供切换 Chip
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    FilterChip(
-                        selected = selectedType == SponsorPaymentType.WECHAT,
-                        onClick = { selectedType = SponsorPaymentType.WECHAT },
-                        label = { CpText(s.wechatPay) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = WeChatBrandColor.copy(alpha = 0.16f),
-                            selectedLabelColor = WeChatBrandColor,
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            borderColor = MaterialTheme.colorScheme.outlineVariant,
-                            selectedBorderColor = WeChatBrandColor,
-                            enabled = true,
-                            selected = selectedType == SponsorPaymentType.WECHAT,
-                        ),
-                    )
-
-                    FilterChip(
-                        selected = selectedType == SponsorPaymentType.ALIPAY,
-                        onClick = { selectedType = SponsorPaymentType.ALIPAY },
-                        label = { CpText(s.alipay) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = AlipayBrandColor.copy(alpha = 0.16f),
-                            selectedLabelColor = AlipayBrandColor,
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            borderColor = MaterialTheme.colorScheme.outlineVariant,
-                            selectedBorderColor = AlipayBrandColor,
-                            enabled = true,
-                            selected = selectedType == SponsorPaymentType.ALIPAY,
-                        ),
-                    )
-                }
+                // M3E 连通切换：微信支付 / 支付宝
+                CpConnectedChoice(
+                    selectedIndex = if (selectedType == SponsorPaymentType.WECHAT) 0 else 1,
+                    labels = listOf(s.wechatPay, s.alipay),
+                    onSelect = { idx ->
+                        selectedType = if (idx == 0) SponsorPaymentType.WECHAT else SponsorPaymentType.ALIPAY
+                    },
+                )
 
                 // 收款码展示卡片：二维码外层垫白色背景以保证任意主题下对比度清晰可扫
                 AnimatedContent(
@@ -370,14 +333,14 @@ fun SponsorInlineCard(
             ) {
                 Surface(
                     shape = CircleShape,
-                    color = HeartBrandColor.copy(alpha = 0.12f),
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
                     modifier = Modifier.size(36.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Favorite,
                             contentDescription = null,
-                            tint = HeartBrandColor,
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
                             modifier = Modifier.size(20.dp),
                         )
                     }

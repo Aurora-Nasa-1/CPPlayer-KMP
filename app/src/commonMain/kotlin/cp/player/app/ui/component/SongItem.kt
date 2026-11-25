@@ -124,11 +124,21 @@ fun SongItem(
     val useAnchoredMenu = hasContextMenu && (LocalWindowChromeActive.current || onOptionsClick == null)
 
     val targetContainerColor = when {
-        selectionMode && isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+        selectionMode && isSelected -> MaterialTheme.colorScheme.secondaryContainer
         isCurrent -> MaterialTheme.colorScheme.primaryContainer
         // 行是「页面上的卡片」，统一走卡片层 —— 深浅两套层级是反的，
         // 分散写角色名会在「用户显式选深色、系统是浅色」时取错色板（见 cpCardSurface）。
         else -> cp.player.app.ui.theme.cpCardSurface()
+    }
+    val rowPrimaryTextColor = when {
+        selectionMode && isSelected -> MaterialTheme.colorScheme.onSecondaryContainer
+        isCurrent -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val rowSecondaryTextColor = when {
+        selectionMode && isSelected -> MaterialTheme.colorScheme.onSecondaryContainer
+        isCurrent -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val animatedContainerColor by animateColorAsState(
         targetValue = targetContainerColor,
@@ -165,8 +175,7 @@ fun SongItem(
                             CpText(
                                 text = "${index + 1}",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = if (isCurrent) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = rowSecondaryTextColor,
                                 modifier = Modifier.padding(end = 12.dp),
                             )
                         }
@@ -215,8 +224,7 @@ fun SongItem(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
                         maxLines = 1,
-                        color = if (isCurrent) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface,
+                        color = rowPrimaryTextColor,
                         emphasized = isCurrent,
                         modifier = Modifier.weight(1f, fill = false),
                     )
@@ -226,8 +234,8 @@ fun SongItem(
                         Spacer(Modifier.width(6.dp))
                         Surface(
                             shape = RoundedCornerShape(4.dp),
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                            color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                             modifier = Modifier.clickable {
                                 nav.push(AppRoute.VideoPlayer("netease://mv/$mvId", title = "${track.name} - MV"))
                             },
@@ -258,7 +266,7 @@ fun SongItem(
                             }
                         },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = rowSecondaryTextColor,
                         maxLines = 1,
                         emphasized = isCurrent,
                         modifier = Modifier.weight(1f, fill = false),

@@ -284,7 +284,7 @@ fun QueueContent(
                                     CpText(
                                         text = s.player.searchQueue,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                                 innerTextField()
@@ -594,7 +594,6 @@ private fun QueueFloatingToolbar(content: @Composable RowScope.() -> Unit) {
     Surface(
         shape = CircleShape,
         color = cpSheetInnerSurface(),
-        tonalElevation = 3.dp,
         shadowElevation = 6.dp,
     ) {
         Row(

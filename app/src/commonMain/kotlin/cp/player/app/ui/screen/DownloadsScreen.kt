@@ -711,8 +711,10 @@ private fun ActiveTaskCard(
     val failed = task.status == DownloadStatus.FAILED || task.status == DownloadStatus.CANCELLED
     val fraction = taskFraction(task)
 
-    val targetColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else settingsRowContainer()
+    val targetColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else settingsRowContainer()
     val animatedColor by animateColorAsState(targetColor, animationSpec = CpMotion.effects())
+    val selectedTitleColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    val selectedSubColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
 
     Surface(
         shape = MaterialTheme.shapes.largeIncreased,
@@ -744,6 +746,7 @@ private fun ActiveTaskCard(
                         task.title,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
+                        color = selectedTitleColor,
                         maxLines = 1,
                         emphasized = task.status == DownloadStatus.DOWNLOADING,
                         marqueeEnabled = task.status == DownloadStatus.DOWNLOADING,
@@ -751,7 +754,7 @@ private fun ActiveTaskCard(
                     CpText(
                         task.artist ?: s.downloads.unknownArtist,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = selectedSubColor,
                         maxLines = 1,
                     )
                 }
@@ -1131,8 +1134,10 @@ private fun CompletedTaskCard(
         )
     )
 
-    val targetColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else settingsRowContainer()
+    val targetColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else settingsRowContainer()
     val animatedColor by animateColorAsState(targetColor, animationSpec = CpMotion.effects())
+    val selectedTitleColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    val selectedSubColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
 
     CpContextMenu(items = contextMenu, modifier = modifier) {
         Surface(
@@ -1167,6 +1172,7 @@ private fun CompletedTaskCard(
                         task.title,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
+                        color = selectedTitleColor,
                         maxLines = 1,
                     )
                     // 副标题刻意不显示本地绝对路径：那串字符对用户没有信息量，
@@ -1178,7 +1184,7 @@ private fun CompletedTaskCard(
                             if (size > 0) append(" · ").append(formatBytes(size))
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = selectedSubColor,
                         maxLines = 1,
                     )
                 }

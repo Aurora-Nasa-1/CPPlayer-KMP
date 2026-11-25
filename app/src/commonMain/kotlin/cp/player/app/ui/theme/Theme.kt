@@ -192,6 +192,8 @@ fun CpTheme(
         )
     }
 
+    cp.player.app.platform.SyncSystemBarsEffect(dark)
+
     CompositionLocalProvider(
         LocalThemeMode provides themeMode,
         LocalIsDarkTheme provides dark,
@@ -230,6 +232,8 @@ fun CpTheme(
 private fun ColorScheme.withPureBlackSurfaces(): ColorScheme = copy(
     surface = Color.Black,
     background = Color.Black,
+    surfaceDim = Color.Black,
+    surfaceBright = Color(0xFF282832),
     surfaceContainerLowest = Color.Black,
     // ↓ 下面这几档刻意**不压黑**：它们承担卡片与浮层的层级表达。
     surfaceVariant = Color(0xFF16161C),

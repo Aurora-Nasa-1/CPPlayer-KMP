@@ -80,6 +80,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpElevatedSurface
 import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -948,7 +949,7 @@ internal fun DesktopPlayerLayout(
                                     ambientColor = Color.Black.copy(alpha = 0.12f),
                                 ),
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.15f), // 极轻薄直通流动背景
+                            color = cpElevatedSurface().copy(alpha = 0.86f),
                             border = BorderStroke(
                                 width = 1.dp,
                                 brush = Brush.verticalGradient(
@@ -1067,7 +1068,7 @@ private fun PlayerSheetGrabber(
     val color = if (hovered) {
         MaterialTheme.colorScheme.onSurface
     } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        MaterialTheme.colorScheme.outline
     }
     Box(
         modifier = modifier
@@ -1132,8 +1133,8 @@ internal fun DesktopTabSelector(
 
             val containerColor by animateColorAsState(
                 targetValue = when {
-                    selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
-                    hovered -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.45f)
+                    selected -> MaterialTheme.colorScheme.primaryContainer
+                    hovered -> MaterialTheme.colorScheme.surfaceContainerHighest
                     else -> Color.Transparent
                 },
                 animationSpec = CpMotion.effects(),
@@ -1146,6 +1147,11 @@ internal fun DesktopTabSelector(
                 animationSpec = CpMotion.effects(),
                 label = "desktopTabContent$index",
             )
+            val tabCorner by animateDpAsState(
+                targetValue = if (selected) 19.dp else 12.dp,
+                animationSpec = CpMotion.spatialFast(),
+                label = "desktopTabCorner$index",
+            )
             val icon = when (index) {
                 0 -> Icons.Rounded.Lyrics
                 1 -> Icons.AutoMirrored.Rounded.QueueMusic
@@ -1154,12 +1160,13 @@ internal fun DesktopTabSelector(
 
             Surface(
                 onClick = { onTabSelect(index) },
-                shape = CircleShape,
+                shape = RoundedCornerShape(tabCorner),
                 color = containerColor,
                 contentColor = contentColor,
                 interactionSource = interaction,
                 modifier = Modifier
                     .size(38.dp)
+                    .cpPressScale()
                     .hoverable(interaction),
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -1187,8 +1194,8 @@ internal fun PlayerTopToolButton(
     val hovered by interaction.collectIsHoveredAsState()
     val container by animateColorAsState(
         targetValue = when {
-            active -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
-            hovered -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.45f)
+            active -> MaterialTheme.colorScheme.primaryContainer
+            hovered -> MaterialTheme.colorScheme.surfaceContainerHighest
             else -> Color.Transparent
         },
         animationSpec = CpMotion.effectsFast(),
@@ -1199,10 +1206,15 @@ internal fun PlayerTopToolButton(
         animationSpec = CpMotion.effectsFast(),
         label = "topToolContentColor",
     )
+    val corner by animateDpAsState(
+        targetValue = if (active) 19.dp else 12.dp,
+        animationSpec = CpMotion.spatialFast(),
+        label = "topToolCorner",
+    )
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(38.dp).hoverable(interaction),
-        shape = CircleShape,
+        modifier = Modifier.size(38.dp).cpPressScale().hoverable(interaction),
+        shape = RoundedCornerShape(corner),
         color = container,
         interactionSource = interaction,
     ) {

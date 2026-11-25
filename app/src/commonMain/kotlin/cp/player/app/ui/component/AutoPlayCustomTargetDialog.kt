@@ -13,9 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -71,10 +69,8 @@ fun AutoPlayCustomTargetDialog(
     val currentTrack = playbackState.currentTrack
     val currentSourceId = playbackState.sourceId?.takeIf { it.isNotBlank() }
 
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = cpSheetSurface(),
-        shape = MaterialTheme.shapes.extraLarge,
         title = {
             CpText(
                 s.playback.autoPlayCustomDialogTitle,
@@ -191,21 +187,13 @@ fun AutoPlayCustomTargetDialog(
                 )
 
                 // 类型切换：歌单 / 单曲
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    FilterChip(
-                        selected = selectedType == AutoPlayCustomType.PLAYLIST,
-                        onClick = { selectedType = AutoPlayCustomType.PLAYLIST },
-                        label = { CpText(s.playback.autoPlayTypePlaylist) },
-                    )
-                    FilterChip(
-                        selected = selectedType == AutoPlayCustomType.TRACK,
-                        onClick = { selectedType = AutoPlayCustomType.TRACK },
-                        label = { CpText(s.playback.autoPlayTypeTrack) },
-                    )
-                }
+                CpConnectedChoice(
+                    selectedIndex = if (selectedType == AutoPlayCustomType.PLAYLIST) 0 else 1,
+                    labels = listOf(s.playback.autoPlayTypePlaylist, s.playback.autoPlayTypeTrack),
+                    onSelect = { idx ->
+                        selectedType = if (idx == 0) AutoPlayCustomType.PLAYLIST else AutoPlayCustomType.TRACK
+                    },
+                )
 
                 // ID 或 链接输入框
                 OutlinedTextField(

@@ -298,7 +298,6 @@ internal fun ChatContent(
             Surface(
                 // 输入栏是压在页面上的浮层，走 sheet 层而不是卡片层。
                 color = cpSheetSurface(),
-                tonalElevation = 2.dp,
             ) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),

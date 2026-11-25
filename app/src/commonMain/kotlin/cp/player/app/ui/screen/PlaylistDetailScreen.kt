@@ -55,7 +55,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SortByAlpha
-import androidx.compose.material3.AlertDialog
+import cp.player.app.ui.component.CpAlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -694,7 +694,7 @@ fun PlaylistDetailContent(
                 showInfoTarget = null
             }
         }
-        AlertDialog(
+        CpAlertDialog(
             onDismissRequest = { showInfoTarget = null },
             title = { CpText(s.library.songDetails, maxLines = 1) },
             text = {
@@ -2257,12 +2257,12 @@ private fun PlaylistTopBarSearchBar(
                                     contentAlignment = Alignment.CenterStart,
                                 ) {
                                     if (query.isEmpty()) {
-                                        CpText(
-                                            text = "搜索歌曲、歌手、专辑...",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                            maxLines = 1,
-                                        )
+                                            CpText(
+                                                text = "搜索歌曲、歌手、专辑...",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                            )
                                     }
                                     innerTextField()
                                 }
@@ -2332,7 +2332,6 @@ private fun InPlaylistSearchBar(
         modifier = modifier.fillMaxWidth(),
         shape = CircleShape,
         color = cpCardSurface(),
-        tonalElevation = 2.dp,
     ) {
         Row(
             modifier = Modifier
@@ -2367,7 +2366,7 @@ private fun InPlaylistSearchBar(
                             CpText(
                                 text = "在歌单中搜索歌曲、歌手、专辑...",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         innerTextField()

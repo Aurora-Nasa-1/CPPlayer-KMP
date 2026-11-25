@@ -39,13 +39,10 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
@@ -85,13 +82,19 @@ import cp.player.app.diagnostics.ProbeResult
 import cp.player.app.i18n.HealthStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpConfirmHost
+import cp.player.app.ui.component.CpConnectedChoice
+import cp.player.app.ui.component.CpLinearProgress
+import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
+import cp.player.app.ui.component.CpToggleChip
+import cp.player.app.ui.component.CpWavyProgressIndeterminate
 import cp.player.app.ui.component.SettingsLazyPage
 import cp.player.app.ui.component.TopBarAction
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.ui.component.settingsRowContainer
 import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.theme.cpNestedSurface
+import cp.player.app.ui.theme.cpSemanticColors
 import cp.player.app.ui.util.UiEvents
 import cp.player.core.monitor.HealthMonitor
 import cp.player.core.provider.BackendProvider
@@ -162,37 +165,18 @@ class HealthScreen : Screen {
             SettingsLazyPage(
                 pageModifier = pageModifier,
                 header = {
-                    // M3 水平滚动导航芯片行
-                    Surface(
-                        color = settingsRowContainer(),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth(),
+                    // M3E 连通切换导航栏（支持窄屏横向滚动）
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState())
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            HealthTab.entries.forEach { tab ->
-                                val selected = currentTab == tab
-                                FilterChip(
-                                    selected = selected,
-                                    onClick = { currentTab = tab },
-                                    label = {
-                                        Text(
-                                            tab.label(s),
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                        )
-                                    },
-                                    leadingIcon = {
-                                        Icon(tab.icon, null, Modifier.size(18.dp))
-                                    },
-                                )
-                            }
-                        }
+                        CpConnectedChoice(
+                            selectedIndex = currentTab.ordinal,
+                            labels = HealthTab.entries.map { it.label(s) },
+                            icons = HealthTab.entries.map { it.icon },
+                            onSelect = { idx -> currentTab = HealthTab.entries[idx] },
+                        )
                     }
                 },
             ) {
@@ -328,10 +312,9 @@ private fun SystemDiagnosticSection(s: HealthStrings) {
                     enabled = !isRunning,
                 ) {
                     if (isRunning) {
-                        CircularProgressIndicator(
+                        CpLoadingIndicator(
                             modifier = Modifier.size(16.dp),
                             color = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 2.dp,
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(s.runningDiagnostics)
@@ -345,8 +328,8 @@ private fun SystemDiagnosticSection(s: HealthStrings) {
 
             if (isRunning) {
                 Spacer(Modifier.height(14.dp))
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(MaterialTheme.shapes.extraSmall),
+                CpWavyProgressIndeterminate(
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 progressMessage?.let { msg ->
                     Spacer(Modifier.height(6.dp))
@@ -397,9 +380,10 @@ private fun SystemDiagnosticSection(s: HealthStrings) {
                 }
             } else if (currentReport != null) {
                 // 评分与状态指示
+                val semanticColors = cpSemanticColors()
                 val scoreColor = when (currentReport.overallStatus) {
-                    DiagnosticStatus.OK -> Color(0xFF4CAF50)
-                    DiagnosticStatus.WARNING -> Color(0xFFFF9800)
+                    DiagnosticStatus.OK -> semanticColors.success
+                    DiagnosticStatus.WARNING -> semanticColors.warning
                     DiagnosticStatus.ERROR -> MaterialTheme.colorScheme.error
                     DiagnosticStatus.SKIPPED -> MaterialTheme.colorScheme.outline
                 }
@@ -463,9 +447,10 @@ private fun SystemDiagnosticSection(s: HealthStrings) {
 private fun DiagnosticItemCard(item: DiagnosticItem, s: HealthStrings) {
     var expanded by remember { mutableStateOf(false) }
 
+    val semanticColors = cpSemanticColors()
     val statusColor = when (item.status) {
-        DiagnosticStatus.OK -> Color(0xFF4CAF50)
-        DiagnosticStatus.WARNING -> Color(0xFFFF9800)
+        DiagnosticStatus.OK -> semanticColors.success
+        DiagnosticStatus.WARNING -> semanticColors.warning
         DiagnosticStatus.ERROR -> MaterialTheme.colorScheme.error
         DiagnosticStatus.SKIPPED -> MaterialTheme.colorScheme.outline
     }
@@ -556,7 +541,7 @@ private fun DiagnosticItemCard(item: DiagnosticItem, s: HealthStrings) {
                     item.details?.let { detail ->
                         Surface(
                             shape = MaterialTheme.shapes.extraSmall,
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            color = cpNestedSurface(),
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Column(Modifier.padding(8.dp)) {
@@ -581,7 +566,7 @@ private fun DiagnosticItemCard(item: DiagnosticItem, s: HealthStrings) {
                     item.suggestion?.let { sugg ->
                         Surface(
                             shape = MaterialTheme.shapes.extraSmall,
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                            color = MaterialTheme.colorScheme.primaryContainer,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Column(Modifier.padding(8.dp)) {
@@ -589,7 +574,7 @@ private fun DiagnosticItemCard(item: DiagnosticItem, s: HealthStrings) {
                                     s.diagnosticSuggestionLabel,
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 )
                                 Spacer(Modifier.height(2.dp))
                                 Text(
@@ -756,9 +741,10 @@ internal fun GlobalHealthCard(records: List<ApiCallRecord>, overall: HealthLevel
     val globalSuccessRate = if (totalCalls > 0) totalSuccess * 100f / totalCalls else 100f
     val avgResponse = summary.avgResponse
 
+    val semanticColors = cpSemanticColors()
     val accentColor = when (overall) {
-        HealthLevel.OK -> Color(0xFF4CAF50)
-        HealthLevel.WARNING -> Color(0xFFFF9800)
+        HealthLevel.OK -> semanticColors.success
+        HealthLevel.WARNING -> semanticColors.warning
         HealthLevel.ERROR -> MaterialTheme.colorScheme.error
     }
 
@@ -817,9 +803,9 @@ internal fun GlobalHealthCard(records: List<ApiCallRecord>, overall: HealthLevel
             Spacer(Modifier.height(14.dp))
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                GlobalMetricChip(s.success, "$totalSuccess", Color(0xFF4CAF50), Icons.Default.CheckCircle)
+                GlobalMetricChip(s.success, "$totalSuccess", semanticColors.success, Icons.Default.CheckCircle)
                 GlobalMetricChip(s.failure, "$totalFail", MaterialTheme.colorScheme.error, Icons.Default.Error)
-                GlobalMetricChip(s.unsupported, "$totalUnsupported", Color(0xFFFF9800), Icons.Default.Warning)
+                GlobalMetricChip(s.unsupported, "$totalUnsupported", semanticColors.warning, Icons.Default.Warning)
             }
         }
     }
@@ -853,10 +839,11 @@ internal fun ProviderHealthCard(
     val active = AppModel.activeProvider()?.id == providerId
     val score = stats?.healthScore ?: (if (provider?.loadError == null) 1f else 0f)
 
+    val semanticColors = cpSemanticColors()
     val scoreColor = when {
         provider?.loadError != null -> MaterialTheme.colorScheme.error
-        score >= 0.8f -> Color(0xFF4CAF50)
-        score >= 0.5f -> Color(0xFFFF9800)
+        score >= 0.8f -> semanticColors.success
+        score >= 0.5f -> semanticColors.warning
         else -> MaterialTheme.colorScheme.error
     }
 
@@ -937,7 +924,7 @@ internal fun ProviderHealthCard(
                 Spacer(Modifier.height(10.dp))
                 Surface(
                     shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                    color = MaterialTheme.colorScheme.errorContainer,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Row(
@@ -973,8 +960,8 @@ internal fun ProviderHealthCard(
                         Text("${(successRate * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = scoreColor)
                     }
                     Spacer(Modifier.height(4.dp))
-                    LinearProgressIndicator(
-                        progress = { successRate },
+                    CpLinearProgress(
+                        progress = successRate,
                         modifier = Modifier.fillMaxWidth().height(6.dp).clip(MaterialTheme.shapes.extraSmall),
                         color = scoreColor,
                         trackColor = scoreColor.copy(alpha = 0.15f),
@@ -984,9 +971,9 @@ internal fun ProviderHealthCard(
                 Spacer(Modifier.height(10.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     MiniMetric(s.metricCalls, "${stat.totalCalls}")
-                    MiniMetric(s.success, "${stat.successCount}", Color(0xFF4CAF50))
+                    MiniMetric(s.success, "${stat.successCount}", semanticColors.success)
                     MiniMetric(s.failure, "${stat.failCount}", if (stat.failCount > 0) MaterialTheme.colorScheme.error else Color.Unspecified)
-                    MiniMetric(s.metricWarning, "${stat.warningCount}", if (stat.warningCount > 0) Color(0xFFFF9800) else Color.Unspecified)
+                    MiniMetric(s.metricWarning, "${stat.warningCount}", if (stat.warningCount > 0) semanticColors.warning else Color.Unspecified)
                     MiniMetric(s.metricAverage, "${stat.avgResponseMs}ms")
                     MiniMetric("P95", "${stat.p95ResponseMs}ms")
                 }
@@ -995,7 +982,7 @@ internal fun ProviderHealthCard(
                     Spacer(Modifier.height(8.dp))
                     Surface(
                         shape = MaterialTheme.shapes.extraSmall,
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+                        color = MaterialTheme.colorScheme.errorContainer,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1122,9 +1109,9 @@ private fun ProbeWorkbenchCard(s: HealthStrings) {
                 ) {
                     providers.forEach { prov ->
                         val isCurrent = prov.id == activeProvider?.id
-                        FilterChip(
-                            selected = isCurrent,
-                            onClick = {
+                        CpToggleChip(
+                            checked = isCurrent,
+                            onCheckedChange = {
                                 if (!isCurrent) {
                                     val ok = AppModel.switchOrReport(prov)
                                     if (ok) {
@@ -1132,10 +1119,8 @@ private fun ProbeWorkbenchCard(s: HealthStrings) {
                                     }
                                 }
                             },
-                            label = { Text(prov.name) },
-                            leadingIcon = if (isCurrent) {
-                                { Icon(Icons.Filled.CheckCircle, null, Modifier.size(16.dp)) }
-                            } else null,
+                            label = prov.name,
+                            icon = if (isCurrent) Icons.Filled.CheckCircle else null,
                         )
                     }
                 }
@@ -1164,15 +1149,15 @@ private fun ProbeWorkbenchCard(s: HealthStrings) {
                         ProbeOperation.PLAYLISTS -> s.probeOpPlaylists
                     }
                     val selected = selectedOp == op
-                    FilterChip(
-                        selected = selected,
-                        onClick = {
+                    CpToggleChip(
+                        checked = selected,
+                        onCheckedChange = {
                             selectedOp = op
                             if (op == ProbeOperation.SEARCH && paramText.isEmpty()) {
                                 paramText = "周杰伦"
                             }
                         },
-                        label = { Text(label) },
+                        label = label,
                     )
                 }
             }
@@ -1216,10 +1201,10 @@ private fun ProbeWorkbenchCard(s: HealthStrings) {
                 ) {
                     Text(s.probeQualityLabel, style = MaterialTheme.typography.labelSmall)
                     listOf("standard", "exhigh", "lossless").forEach { q ->
-                        FilterChip(
-                            selected = quality == q,
-                            onClick = { quality = q },
-                            label = { Text(q) },
+                        CpToggleChip(
+                            checked = quality == q,
+                            onCheckedChange = { quality = q },
+                            label = q,
                         )
                     }
                 }
@@ -1242,10 +1227,9 @@ private fun ProbeWorkbenchCard(s: HealthStrings) {
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (isRunning) {
-                    CircularProgressIndicator(
+                    CpLoadingIndicator(
                         modifier = Modifier.size(16.dp),
                         color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp,
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(s.probeExecuting)
@@ -1261,9 +1245,10 @@ private fun ProbeWorkbenchCard(s: HealthStrings) {
             // 5. 响应结果展示
             val res = probeResult
             if (res != null) {
+                val semanticColors = cpSemanticColors()
                 val resStatusColor = when (res) {
-                    is ProbeResult.Success -> Color(0xFF4CAF50)
-                    is ProbeResult.Unsupported -> Color(0xFFFF9800)
+                    is ProbeResult.Success -> semanticColors.success
+                    is ProbeResult.Unsupported -> semanticColors.warning
                     is ProbeResult.Error -> MaterialTheme.colorScheme.error
                 }
 
@@ -1343,7 +1328,7 @@ private fun ProbeWorkbenchCard(s: HealthStrings) {
                                 res.songs.take(4).forEach { song ->
                                     Surface(
                                         shape = MaterialTheme.shapes.extraSmall,
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        color = cpNestedSurface(),
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
                                         Row(
@@ -1535,7 +1520,7 @@ internal fun MethodStatCard(
                     Spacer(Modifier.width(6.dp))
                 }
                 if (stat.warningCount > 0) {
-                    Text(s.warningCount(stat.warningCount), style = MaterialTheme.typography.labelSmall, color = Color(0xFFFF9800))
+                    Text(s.warningCount(stat.warningCount), style = MaterialTheme.typography.labelSmall, color = cpSemanticColors().warning)
                     Spacer(Modifier.width(6.dp))
                 }
 
@@ -1603,28 +1588,28 @@ private fun LogsFilterHeader(records: List<ApiCallRecord>, s: HealthStrings) {
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            FilterChip(
-                selected = activeFilter == LogFilter.ALL,
-                onClick = { activeFilter = LogFilter.ALL },
-                label = { Text("${s.filterAll} (${records.size})") },
+            CpToggleChip(
+                checked = activeFilter == LogFilter.ALL,
+                onCheckedChange = { activeFilter = LogFilter.ALL },
+                label = "${s.filterAll} (${records.size})",
             )
             val errCount = records.count { it.level == HealthLevel.ERROR }
-            FilterChip(
-                selected = activeFilter == LogFilter.ERRORS,
-                onClick = { activeFilter = LogFilter.ERRORS },
-                label = { Text("${s.filterErrors} ($errCount)") },
+            CpToggleChip(
+                checked = activeFilter == LogFilter.ERRORS,
+                onCheckedChange = { activeFilter = LogFilter.ERRORS },
+                label = "${s.filterErrors} ($errCount)",
             )
             val warnCount = records.count { it.level == HealthLevel.WARNING }
-            FilterChip(
-                selected = activeFilter == LogFilter.WARNINGS,
-                onClick = { activeFilter = LogFilter.WARNINGS },
-                label = { Text("${s.filterWarnings} ($warnCount)") },
+            CpToggleChip(
+                checked = activeFilter == LogFilter.WARNINGS,
+                onCheckedChange = { activeFilter = LogFilter.WARNINGS },
+                label = "${s.filterWarnings} ($warnCount)",
             )
             val okCount = records.count { it.level == HealthLevel.OK }
-            FilterChip(
-                selected = activeFilter == LogFilter.SUCCESS,
-                onClick = { activeFilter = LogFilter.SUCCESS },
-                label = { Text("${s.filterSuccess} ($okCount)") },
+            CpToggleChip(
+                checked = activeFilter == LogFilter.SUCCESS,
+                onCheckedChange = { activeFilter = LogFilter.SUCCESS },
+                label = "${s.filterSuccess} ($okCount)",
             )
         }
 
@@ -1785,7 +1770,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.statusTabContent(
                         Spacer(Modifier.height(8.dp))
                         Surface(
                             shape = MaterialTheme.shapes.small,
-                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                            color = MaterialTheme.colorScheme.errorContainer,
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {

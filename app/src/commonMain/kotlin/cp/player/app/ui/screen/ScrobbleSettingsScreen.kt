@@ -16,15 +16,16 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
+import cp.player.app.ui.component.CpAlertDialog
+import cp.player.app.ui.component.CpLoadingIndicator
+import cp.player.app.ui.theme.cpSemanticColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -115,7 +116,7 @@ class ScrobbleSettingsScreen : Screen {
                                     Surface(
                                         modifier = Modifier.size(10.dp),
                                         shape = CircleShape,
-                                        color = if (lastFmStatus.isAuthorized) Color(0xFF4CAF50) else MaterialTheme.colorScheme.outlineVariant,
+                                        color = if (lastFmStatus.isAuthorized) cpSemanticColors().success else MaterialTheme.colorScheme.outlineVariant,
                                     ) {}
                                     Spacer(Modifier.width(10.dp))
                                     Column {
@@ -169,9 +170,8 @@ class ScrobbleSettingsScreen : Screen {
                                         },
                                     ) {
                                         if (isAuthorizing) {
-                                            CircularProgressIndicator(
+                                            CpLoadingIndicator(
                                                 modifier = Modifier.size(16.dp),
-                                                strokeWidth = 2.dp,
                                                 color = MaterialTheme.colorScheme.onPrimary,
                                             )
                                             Spacer(Modifier.width(8.dp))
@@ -353,10 +353,8 @@ class ScrobbleSettingsScreen : Screen {
 
         // 网页授权完成后等待确认的弹窗
         authPendingToken?.let { token ->
-            AlertDialog(
+            CpAlertDialog(
                 onDismissRequest = { authPendingToken = null },
-                containerColor = cpSheetSurface(),
-                shape = MaterialTheme.shapes.extraLarge,
                 title = { CpText(strings.lastFmAuthDialogTitle) },
                 // 授权步骤是三句话的操作指引，默认单行只会留下第一句。
                 text = { CpText(strings.lastFmAuthDialogMessage, maxLines = Int.MAX_VALUE) },

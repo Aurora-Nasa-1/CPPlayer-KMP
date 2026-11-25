@@ -400,7 +400,7 @@ class AccountScreen : Screen {
                     SettingsSection(s.account.sectionAccountActions) {
                         Surface(
                             shape = MaterialTheme.shapes.large,
-                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f),
+                            color = MaterialTheme.colorScheme.errorContainer,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(MaterialTheme.shapes.large)
@@ -427,7 +427,7 @@ class AccountScreen : Screen {
                                 Icon(
                                     Icons.AutoMirrored.Filled.Logout,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
+                                    tint = MaterialTheme.colorScheme.onErrorContainer,
                                     modifier = Modifier.size(CpIconSize.inline),
                                 )
                                 Spacer(Modifier.width(8.dp))
@@ -435,7 +435,7 @@ class AccountScreen : Screen {
                                     s.account.logout,
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.error,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
                                 )
                             }
                         }
@@ -810,7 +810,8 @@ private fun QrLoginPanel(
                     qrUrl != null -> QrCodeImage(qrUrl, Modifier.size(200.dp))
                     else -> CpText(
                         s.qrLoadFailed,
-                        color = Color.Gray,
+                        // QR 容器固定为纯白纸底，使用固定深灰确保浅/深色主题下均有高对比度
+                        color = Color(0xFF47464F),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -1164,7 +1165,7 @@ internal fun SecurityVerificationCard(
     val s = cpStrings().account
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f),
+        color = MaterialTheme.colorScheme.errorContainer,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
     ) {
@@ -1179,7 +1180,7 @@ internal fun SecurityVerificationCard(
                 Icon(
                     Icons.Filled.Security,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
                     modifier = Modifier.size(22.dp),
                 )
                 CpText(
@@ -1196,7 +1197,7 @@ internal fun SecurityVerificationCard(
                     Icon(
                         Icons.Filled.Close,
                         contentDescription = s.clearVerify,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.size(18.dp),
                     )
                 }
@@ -1205,7 +1206,7 @@ internal fun SecurityVerificationCard(
             CpText(
                 text = s.verifyUrlHint,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onErrorContainer,
             )
 
             Row(

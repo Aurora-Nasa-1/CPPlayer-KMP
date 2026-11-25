@@ -437,7 +437,7 @@ private fun CommentComposer(state: CommentUiState, model: CommentScreenModel) {
         state.replyTarget?.let { target ->
             Surface(
                 shape = MaterialTheme.shapes.small,
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f),
+                color = MaterialTheme.colorScheme.primaryContainer,
                 modifier = Modifier.padding(start = 6.dp, bottom = 6.dp),
             ) {
                 Row(
@@ -499,7 +499,7 @@ private fun CommentComposer(state: CommentUiState, model: CommentScreenModel) {
                         CpText(
                             s.inputPlaceholder,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.60f),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     },
                     maxLines = 4,

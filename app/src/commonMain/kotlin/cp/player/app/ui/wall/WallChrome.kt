@@ -119,8 +119,7 @@ private fun WallSortChips(
     Surface(
         modifier = modifier,
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp,
+        color = cp.player.app.ui.theme.cpElevatedSurface(),
     ) {
         Row(
             Modifier.padding(4.dp),

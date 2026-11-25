@@ -705,3 +705,16 @@ actual fun platformMemoryInfo(): PlatformMemoryInfo {
     )
 }
 
+@Composable
+actual fun SyncSystemBarsEffect(darkTheme: Boolean) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    if (!view.isInEditMode) {
+        androidx.compose.runtime.SideEffect {
+            val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
+            val controller = androidx.core.view.WindowCompat.getInsetsController(window, view)
+            controller.isAppearanceLightStatusBars = !darkTheme
+            controller.isAppearanceLightNavigationBars = !darkTheme
+        }
+    }
+}
+

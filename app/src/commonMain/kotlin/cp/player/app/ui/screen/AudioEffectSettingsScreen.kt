@@ -23,11 +23,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.RestartAlt
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -418,7 +417,7 @@ internal fun EqualizerCurveCard(
     // 频率轴刻度文字：对数轴下 100 / 1k / 10k 才是等距的三档。
     val measurer = rememberTextMeasurer()
     val tickStyle = MaterialTheme.typography.labelSmall.copy(
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         fontSize = 9.sp,
     )
     val tickLabels = remember(measurer, tickStyle) {
@@ -551,19 +550,19 @@ internal fun EqualizerCurveCard(
         CpText(
             text = "+12 dB",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.align(Alignment.TopStart).background(containerBg),
         )
         CpText(
             text = "0 dB",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.align(Alignment.CenterStart).background(containerBg),
         )
         CpText(
             text = "-12 dB",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.align(Alignment.BottomStart).background(containerBg),
         )
     }
@@ -588,37 +587,17 @@ private fun EqualizerPresetChipsRow(
     ) {
         PRESET_ORDER.forEach { preset ->
             val isSelected = selectedPreset == preset
-            FilterChip(
-                selected = isSelected,
-                onClick = { onSelectPreset(preset) },
-                label = {
-                    CpText(
-                        text = presetName(s, preset),
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
-                shape = androidx.compose.foundation.shape.CircleShape,
+            CpToggleChip(
+                checked = isSelected,
+                onCheckedChange = { onSelectPreset(preset) },
+                label = presetName(s, preset),
             )
         }
         if (selectedPreset == AudioEffectPreset.CUSTOM) {
-            FilterChip(
-                selected = true,
-                onClick = {},
-                label = {
-                    CpText(
-                        text = s.audioEffect.presetCustom,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                ),
-                shape = androidx.compose.foundation.shape.CircleShape,
+            CpToggleChip(
+                checked = true,
+                onCheckedChange = {},
+                label = s.audioEffect.presetCustom,
             )
         }
     }

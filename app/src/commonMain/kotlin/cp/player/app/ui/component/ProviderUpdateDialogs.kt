@@ -22,7 +22,6 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -68,13 +67,10 @@ fun ProviderUpdateDetailsDialog(
     val clipboardManager = LocalClipboardManager.current
 
     // 对话框走浮层层，内部再嵌一层（浮层里的说明块 / 版本行）。
-    val containerColor = cp.player.app.ui.theme.cpSheetSurface()
     val subContainerColor = cp.player.app.ui.theme.cpSheetInnerSurface()
 
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = { if (!critical) onDismiss() },
-        shape = MaterialTheme.shapes.extraLarge,
-        containerColor = containerColor,
         icon = {
             Surface(
                 shape = MaterialTheme.shapes.medium,
@@ -359,13 +355,10 @@ fun ProviderUpdateSourceDialog(
     var urlText by remember { mutableStateOf(currentCustomUrl ?: manifestDefaultUrl ?: "") }
 
     // 对话框走浮层层，内部再嵌一层（浮层里的说明块 / 版本行）。
-    val containerColor = cp.player.app.ui.theme.cpSheetSurface()
     val subContainerColor = cp.player.app.ui.theme.cpSheetInnerSurface()
 
-    AlertDialog(
+    CpAlertDialog(
         onDismissRequest = onDismiss,
-        shape = MaterialTheme.shapes.extraLarge,
-        containerColor = containerColor,
         icon = {
             Surface(
                 shape = MaterialTheme.shapes.medium,

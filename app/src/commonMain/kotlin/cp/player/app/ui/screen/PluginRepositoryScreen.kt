@@ -1,6 +1,7 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,23 +12,27 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SecondaryTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material3.TextButton
+import cp.player.app.ui.component.CpAlertDialog
+import cp.player.app.ui.component.CpLinearProgress
+import cp.player.app.ui.component.CpViewSwitcher
+import cp.player.app.ui.component.CpViewSwitcherItem
+import cp.player.app.ui.component.CpWavyProgressIndeterminate
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -191,14 +196,18 @@ internal fun PluginRepositoryContent(
     SettingsLazyPage(
         pageModifier = modifier,
         header = {
-            SecondaryTabRow(selectedTabIndex = tab.ordinal) {
-                PluginRepositoryTab.entries.forEach { value ->
-                    Tab(
-                        selected = tab == value,
-                        onClick = { tab = value },
-                        text = { CpText(tabLabels[value.ordinal], style = MaterialTheme.typography.labelMedium, maxLines = 2) },
-                    )
-                }
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                CpViewSwitcher(
+                    items = listOf(
+                        CpViewSwitcherItem(t.browse, Icons.Filled.Search),
+                        CpViewSwitcherItem(t.installed, Icons.Filled.CheckCircle),
+                        CpViewSwitcherItem(t.updates, Icons.Filled.Sync),
+                        CpViewSwitcherItem(t.repositories, Icons.Filled.Dns),
+                    ),
+                    selectedIndex = tab.ordinal,
+                    onSelect = { index -> tab = PluginRepositoryTab.entries[index] },
+                    compact = maxWidth < 600.dp,
+                )
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 CpText(
@@ -216,7 +225,7 @@ internal fun PluginRepositoryContent(
                     CpText(t.refresh, maxLines = 2)
                 }
             }
-            if (state.refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (state.refreshing) CpWavyProgressIndeterminate(Modifier.fillMaxWidth())
             if (tab == PluginRepositoryTab.BROWSE || tab == PluginRepositoryTab.UPDATES) {
                 OutlinedTextField(
                     value = query, onValueChange = { query = it },
@@ -258,8 +267,8 @@ internal fun PluginRepositoryContent(
                     },
                 )
                 if (task.phase == PluginInstallPhase.DOWNLOADING) {
-                    LinearProgressIndicator(
-                        progress = { if (task.totalBytes > 0) (task.downloadedBytes.toFloat() / task.totalBytes).coerceIn(0f, 1f) else 0f },
+                    CpLinearProgress(
+                        progress = if (task.totalBytes > 0) (task.downloadedBytes.toFloat() / task.totalBytes).coerceIn(0f, 1f) else 0f,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -368,10 +377,8 @@ internal fun PluginRepositoryContent(
         }
     }
     details?.let { entry ->
-        AlertDialog(
+        CpAlertDialog(
             onDismissRequest = { details = null },
-            containerColor = cpSheetSurface(),
-            shape = MaterialTheme.shapes.extraLarge,
             title = { CpText(entry.plugin.name, maxLines = Int.MAX_VALUE) },
             text = {
                 SelectionContainer {
@@ -405,10 +412,8 @@ internal fun PluginRepositoryContent(
     if (addingSource) {
         var url by remember { mutableStateOf("") }
         val valid = runCatching { requireRepositoryHttpsUrl(url.trim()) }.isSuccess
-        AlertDialog(
+        CpAlertDialog(
             onDismissRequest = { addingSource = false },
-            containerColor = cpSheetSurface(),
-            shape = MaterialTheme.shapes.extraLarge,
             title = { CpText(t.addSource) },
             text = {
                 Column {
