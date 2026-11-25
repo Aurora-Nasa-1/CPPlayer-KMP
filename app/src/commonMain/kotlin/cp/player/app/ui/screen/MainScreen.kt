@@ -133,7 +133,7 @@ import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.observeBottomBarDrag
 import cp.player.app.ui.component.playlistShareText
-import cp.player.app.ui.util.resized
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.app.ui.navigation.socialNavigationState
 import cp.player.core.music.PlaylistSummary
 
@@ -1015,9 +1015,14 @@ private fun AppTopBar(
         )
         Spacer(Modifier.width(8.dp))
     }
+    val scrolledChromeColor = if (LocalIsDarkTheme.current) {
+        MaterialTheme.colorScheme.surfaceContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLowest
+    }
     val colors = TopAppBarDefaults.topAppBarColors(
         containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0f),
-        scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+        scrolledContainerColor = scrolledChromeColor,
     )
     if (isDesktopExpanded) {
         TopAppBar(
@@ -1240,7 +1245,11 @@ private fun AppNavigationBar(
     ) {
         NavigationBar(
             modifier = Modifier.onSizeChanged { onHeightChanged(it.height) },
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            containerColor = if (LocalIsDarkTheme.current) {
+                MaterialTheme.colorScheme.surfaceContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerLowest
+            },
         ) {
         val haptics = cp.player.app.ui.feedback.LocalCpHaptics.current
         tabs.forEachIndexed { index, tab ->
@@ -1628,7 +1637,7 @@ private fun SidebarHeader(profileName: String?, avatarUrl: String?) {
     ) {
         if (!avatarUrl.isNullOrBlank()) {
             AsyncImage(
-                model = avatarUrl.resized(96),
+                model = rememberCoverImageRequest(avatarUrl, targetPx = 128),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.size(38.dp).clip(CircleShape),
@@ -1784,7 +1793,7 @@ private fun SidebarPlaylistRow(
             )
             if (!playlist.coverUrl.isNullOrBlank()) {
                 AsyncImage(
-                    model = playlist.coverUrl.resized(96),
+                    model = rememberCoverImageRequest(playlist.coverUrl, targetPx = 128),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),

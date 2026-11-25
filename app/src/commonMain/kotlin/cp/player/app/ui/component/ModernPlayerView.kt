@@ -41,6 +41,7 @@ import cp.player.app.ui.feedback.LocalCpHaptics
 import cp.player.app.ui.model.CommentScreenModel
 import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.core.music.ArtistSummary
 import cp.player.core.playback.PlaybackUiState
 import cp.player.core.provider.ProviderCapability
@@ -257,7 +258,11 @@ fun ModernCommentBottomSheet(trackId: String, onClose: () -> Unit) {
             Modifier.fillMaxWidth().fillMaxHeight(0.84f)
                 .padding(horizontal = CpSpacing.pageHorizontal),
         ) {
-            CommentPane(model = model, modifier = Modifier.fillMaxSize())
+            CommentPane(
+                model = model,
+                modifier = Modifier.fillMaxSize(),
+                sortChipContainerColor = cpNestedSurface(),
+            )
         }
     }
 }

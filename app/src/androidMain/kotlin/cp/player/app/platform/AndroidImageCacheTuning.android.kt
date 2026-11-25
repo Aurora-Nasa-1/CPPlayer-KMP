@@ -18,6 +18,7 @@ import coil3.size.Dimension
 import cp.player.app.ui.util.CpOriginalUrlExtraKey
 import cp.player.app.ui.util.canonicalCoverBaseUrl
 import cp.player.app.ui.util.quantizeCoverBucketPx
+import cp.player.core.provider.CoverUrlResolver
 import cp.player.core.provider.HostTrafficPolicy
 import okio.Path.Companion.toOkioPath
 import kotlin.math.max
@@ -28,7 +29,6 @@ import kotlin.math.max
  */
 private const val ImageMemoryCacheBytes = 32L * 1024 * 1024
 private const val ImageDiskCacheBytes = 256L * 1024 * 1024
-private val AndroidBucketsDesc = intArrayOf(1440, 1024, 512, 256, 128)
 
 /**
  * 给 Coil 单例装上固定上限的内存缓存、磁盘缓存与按需色彩降耗策略。
@@ -84,17 +84,27 @@ private class AndroidLocalReuseFetcher(
             val canonical = options.getExtra(CpOriginalUrlExtraKey) ?: canonicalCoverBaseUrl(url)
             val allowSmaller = HostTrafficPolicy.shouldDeferNetworkFallback()
 
-            // 若当前槽位本身已有精确写入则交给 Coil 默认 DiskCache 流程，避免额外判断
+            // 1. 优先精确命中或按升序取最小够用的高档位（避免有 256 时却去解码 1440）
+            for (b in CoverUrlResolver.STANDARD_BUCKETS_ASC) {
+                if (b < minNeeded) continue
+                val key = "cover_disk:$canonical:$b"
+                diskCache.openSnapshot(key)?.let { snap ->
+                    return AndroidLocalReuseFetcher(snap, options, key)
+                }
+            }
+            // 2. 回退原图快照
             val origKey = "orig:$canonical"
             diskCache.openSnapshot(origKey)?.let { snap ->
                 return AndroidLocalReuseFetcher(snap, options, origKey)
             }
-            for (b in AndroidBucketsDesc) {
-                if (b < minNeeded && !allowSmaller) continue
-                if (b == minNeeded && url != canonical) continue
-                val key = "cover_disk:$canonical:$b"
-                diskCache.openSnapshot(key)?.let { snap ->
-                    return AndroidLocalReuseFetcher(snap, options, key)
+            // 3. 托盘/省流/离线受限模式下，按降序复用已有最大小图
+            if (allowSmaller) {
+                for (b in CoverUrlResolver.STANDARD_BUCKETS_DESC) {
+                    if (b >= minNeeded) continue
+                    val key = "cover_disk:$canonical:$b"
+                    diskCache.openSnapshot(key)?.let { snap ->
+                        return AndroidLocalReuseFetcher(snap, options, key)
+                    }
                 }
             }
             return null

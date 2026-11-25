@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.LocalIsDarkTheme
+import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpElevatedSurface
 import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.runtime.LaunchedEffect
@@ -85,9 +86,11 @@ import cp.player.core.music.Comment
 fun CommentPane(
     model: CommentScreenModel,
     modifier: Modifier = Modifier,
+    sortChipContainerColor: Color? = null,
 ) {
     val state by model.state.collectAsState()
     val s = cpStrings()
+    val resolvedChipColor = sortChipContainerColor ?: cpCardSurface()
 
     Column(modifier.fillMaxSize()) {
         CommentSortRow(
@@ -95,6 +98,7 @@ fun CommentPane(
             totalCount = state.totalCount,
             sortTypes = state.visibleSortTypes,
             onSelect = model::setSort,
+            chipContainerColor = resolvedChipColor,
         )
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
@@ -131,6 +135,7 @@ private fun CommentSortRow(
     totalCount: Long,
     sortTypes: List<Int>,
     onSelect: (Int) -> Unit,
+    chipContainerColor: Color,
 ) {
     val s = cpStrings().social.comment
     Row(
@@ -147,6 +152,7 @@ private fun CommentSortRow(
                     CommentSort.LATEST -> s.sortLatest
                     else -> s.sortRecommend
                 },
+                containerColor = chipContainerColor,
             )
         }
         Spacer(Modifier.weight(1f))

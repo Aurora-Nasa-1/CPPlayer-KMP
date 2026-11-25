@@ -1,5 +1,6 @@
 package cp.player.app.ui.component
 
+import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.ui.theme.LocalIsDarkTheme
 
@@ -242,7 +243,7 @@ fun SharedTransitionScope.MiniPlayer(
                 sharedContentState = rememberSharedContentState(key = "player-container"),
                 animatedVisibilityScope = animatedVisibilityScope
             ),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = cpCardSurface(),
         tonalElevation = 0.dp,
         shadowElevation = if (isDark) 4.dp else 2.dp,
         border = BorderStroke(

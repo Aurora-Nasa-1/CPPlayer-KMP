@@ -1121,6 +1121,7 @@ private fun ProbeWorkbenchCard(s: HealthStrings) {
                             },
                             label = prov.name,
                             icon = if (isCurrent) Icons.Filled.CheckCircle else null,
+                            containerColor = cpNestedSurface(),
                         )
                     }
                 }
@@ -1158,6 +1159,7 @@ private fun ProbeWorkbenchCard(s: HealthStrings) {
                             }
                         },
                         label = label,
+                        containerColor = cpNestedSurface(),
                     )
                 }
             }
@@ -1205,6 +1207,7 @@ private fun ProbeWorkbenchCard(s: HealthStrings) {
                             checked = quality == q,
                             onCheckedChange = { quality = q },
                             label = q,
+                            containerColor = cpNestedSurface(),
                         )
                     }
                 }

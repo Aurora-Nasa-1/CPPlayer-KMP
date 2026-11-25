@@ -18,6 +18,7 @@ import cp.player.app.ui.util.CpCropSquareExtraKey
 import cp.player.app.ui.util.CpOriginalUrlExtraKey
 import cp.player.app.ui.util.canonicalCoverBaseUrl
 import cp.player.app.ui.util.quantizeCoverBucketPx
+import cp.player.core.provider.CoverUrlResolver
 import cp.player.core.provider.HostTrafficPolicy
 import cp.player.core.util.DesktopDataDir
 import kotlinx.coroutines.CoroutineScope
@@ -57,7 +58,6 @@ internal object DesktopCroppedThumbDiskCache {
 
     private const val MAX_CACHE_BYTES = 128L * 1024 * 1024
     private const val PRUNE_CHECK_INTERVAL_WRITES = 32
-    internal val STANDARD_BUCKETS_DESC = intArrayOf(1440, 1024, 512, 256, 128)
 
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val inFlightWrites = ConcurrentHashMap.newKeySet<String>()
@@ -102,7 +102,8 @@ internal object DesktopCroppedThumbDiskCache {
     ): File? {
         find(canonicalUrl, targetW, targetH, cropSquare)?.let { return it }
         val minNeeded = max(targetW, targetH)
-        for (bucket in STANDARD_BUCKETS_DESC) {
+        // 按升序优先找最小够用的高档位（减少大图解码开销）
+        for (bucket in CoverUrlResolver.STANDARD_BUCKETS_ASC) {
             if (bucket < minNeeded) continue
             find(canonicalUrl, bucket, bucket, cropSquare)?.let { return it }
             if (cropSquare) {
@@ -110,7 +111,7 @@ internal object DesktopCroppedThumbDiskCache {
             }
         }
         if (allowSmallerOnConstrained) {
-            for (bucket in STANDARD_BUCKETS_DESC) {
+            for (bucket in CoverUrlResolver.STANDARD_BUCKETS_DESC) {
                 if (bucket >= minNeeded) continue
                 find(canonicalUrl, bucket, bucket, cropSquare)?.let { return it }
                 if (cropSquare) {
@@ -249,9 +250,20 @@ internal class DesktopCachedCroppedFetcher(
                 return DesktopCachedCroppedFetcher(local, options, diskCacheKey = null)
             }
 
-            // 如果原始图或任意可用分桶图已经在 Coil DiskCache 中，直接复用避免二次下载
+            // 如果原始图或任意可用分桶图已经在 Coil DiskCache 中，按最小够用高档位 -> 原图 -> 受限小图顺序复用
             val diskCache = imageLoader.diskCache
             if (diskCache != null) {
+                val minNeeded = max(bucketW, bucketH)
+                for (b in CoverUrlResolver.STANDARD_BUCKETS_ASC) {
+                    if (b < minNeeded) continue
+                    val key = "cover_disk:$canonical:$b"
+                    diskCache.openSnapshot(key)?.use { snapshot ->
+                        val file = snapshot.data.toFile()
+                        if (file.isFile && file.length() > 0L) {
+                            return DesktopCachedCroppedFetcher(file, options, diskCacheKey = key)
+                        }
+                    }
+                }
                 val origKey = "orig:$canonical"
                 diskCache.openSnapshot(origKey)?.use { snapshot ->
                     val origFile = snapshot.data.toFile()
@@ -259,14 +271,15 @@ internal class DesktopCachedCroppedFetcher(
                         return DesktopCachedCroppedFetcher(origFile, options, diskCacheKey = origKey)
                     }
                 }
-                val minNeeded = max(bucketW, bucketH)
-                for (b in DesktopCroppedThumbDiskCache.STANDARD_BUCKETS_DESC) {
-                    if (b < minNeeded && !allowConstrainedReuse) continue
-                    val key = "cover_disk:$canonical:$b"
-                    diskCache.openSnapshot(key)?.use { snapshot ->
-                        val file = snapshot.data.toFile()
-                        if (file.isFile && file.length() > 0L) {
-                            return DesktopCachedCroppedFetcher(file, options, diskCacheKey = key)
+                if (allowConstrainedReuse) {
+                    for (b in CoverUrlResolver.STANDARD_BUCKETS_DESC) {
+                        if (b >= minNeeded) continue
+                        val key = "cover_disk:$canonical:$b"
+                        diskCache.openSnapshot(key)?.use { snapshot ->
+                            val file = snapshot.data.toFile()
+                            if (file.isFile && file.length() > 0L) {
+                                return DesktopCachedCroppedFetcher(file, options, diskCacheKey = key)
+                            }
                         }
                     }
                 }

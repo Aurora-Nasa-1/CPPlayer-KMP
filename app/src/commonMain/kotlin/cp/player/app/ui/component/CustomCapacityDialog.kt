@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.util.formatBytes
 
 /**
@@ -90,11 +91,13 @@ fun CustomCapacityDialog(
                             checked = !isGb,
                             onCheckedChange = { isGb = false },
                             label = s.storage.customCapacityUnitMb,
+                            containerColor = cpNestedSurface(),
                         )
                         CpToggleChip(
                             checked = isGb,
                             onCheckedChange = { isGb = true },
                             label = s.storage.customCapacityUnitGb,
+                            containerColor = cpNestedSurface(),
                         )
                     }
                 }

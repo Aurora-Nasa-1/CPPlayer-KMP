@@ -59,7 +59,7 @@ import cp.player.app.ui.component.cpPressScale
 import cp.player.app.ui.component.rememberActiveProviderSupports
 import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.util.formatTimeMs
-import cp.player.app.ui.util.resized
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.core.music.TrackSummary
 import cp.player.core.provider.ProviderCapability
 
@@ -72,7 +72,12 @@ internal fun LandingArtwork(url: String?, modifier: Modifier = Modifier) {
             Modifier.fillMaxSize(0.3f), tint = MaterialTheme.colorScheme.onSecondaryContainer,
         )
         if (!url.isNullOrBlank()) {
-            AsyncImage(url.resized(500), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            AsyncImage(
+                model = rememberCoverImageRequest(url, targetPx = 512),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
         }
     }
 }

@@ -35,8 +35,8 @@ import androidx.compose.ui.graphics.Color
  * | [canvas] / [grouped] 页面 | `surfaceContainer` T94 带染色 | `surface` L\*6 / `#000` | `#000` |
  * | [standardCard] / [groupedCard] 卡片 | `surfaceContainerLowest` T100 白 | `surfaceContainerHigh` L\*18 | L\*6.1 |
  * | [nested] 卡片内嵌槽（凹陷） | `surfaceContainerLow` T96 | `surfaceContainer` L\*13 | L\*3 |
- * | [overlay] 浮层 | `surfaceContainerLowest` T100 白 | `surfaceContainerHighest` L\*23 | L\*9 |
- * | [overlayInner] 浮层内块 | `surfaceContainerLow` T96 | `surfaceContainerHigh` L\*18 | L\*6.1 |
+ * | [overlay] 浮层 | `surfaceContainerLowest` T100 白 | `surfaceContainerHighest` L\*18.2 | L\*9 |
+ * | [overlayInner] 浮层内块 | `surfaceContainerLow` T96 | `surfaceContainer` L\*11.5 | L\*3 |
  *
  * ### 为什么浅色浮层和卡片同色（都是 T100 白）
  *
@@ -87,10 +87,10 @@ object CpSurfaceTokens {
         MaterialTheme.colorScheme.surfaceContainerLowest
     }
 
-    /** 浮层内部的次级块（日志容器、选项行）。比 [overlay] 退一阶。 */
+    /** 浮层内部的次级块（日志容器、选项行）。深色下比 [overlay] 退两阶以拉开明度差。 */
     @Composable
     fun overlayInner(): Color = if (LocalIsDarkTheme.current) {
-        MaterialTheme.colorScheme.surfaceContainerHigh
+        MaterialTheme.colorScheme.surfaceContainer
     } else {
         MaterialTheme.colorScheme.surfaceContainerLow
     }

@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.ui.theme.CpMotion
-import cp.player.app.ui.util.resized
+import cp.player.app.ui.util.rememberCoverImageRequest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -375,8 +375,9 @@ private fun CoverFlightRenderer(
                 }
                 .background(cpNestedSurface()),
         ) {
+            val flightTargetPx = if (flight.targetKey == CoverFlight.TARGET_PLAYLIST_HEADER) 256 else 128
             AsyncImage(
-                model = flight.coverUrl.resized(600),
+                model = rememberCoverImageRequest(flight.coverUrl, targetPx = flightTargetPx),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,

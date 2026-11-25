@@ -142,7 +142,7 @@ import cp.player.app.ui.model.PlaylistDetailScreenModel
 import cp.player.app.ui.model.PlaylistSource
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.util.formatTimeMs
-import cp.player.app.ui.util.resized
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.core.BackendResult
 import cp.player.core.music.AlbumSummary
 import cp.player.core.provider.ProviderCapability
@@ -1424,7 +1424,7 @@ internal fun BannerCarousel(
                         animated = false,
                     )
                     AsyncImage(
-                        model = banner.imageUrl.resized(1000),
+                        model = rememberCoverImageRequest(banner.imageUrl, targetPx = 1024, cropSquare = false),
                         contentDescription = banner.title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
@@ -1757,7 +1757,7 @@ private fun HomePlayingCover(track: TrackSummary) {
         CpCoverPlaceholder(Modifier.fillMaxSize(), corner = 12.dp, animated = false)
         if (!track.coverUrl.isNullOrBlank()) {
             AsyncImage(
-                model = track.coverUrl.resized(180),
+                model = rememberCoverImageRequest(track.coverUrl, targetSizeDp = 64.dp),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
@@ -2200,7 +2200,7 @@ private fun CoverTile(
             )
             if (overImage) {
                 AsyncImage(
-                    model = coverUrl.resized(400),
+                    model = rememberCoverImageRequest(coverUrl, targetPx = 512),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(corner)),
                     contentScale = ContentScale.Crop,
@@ -2313,7 +2313,7 @@ private fun RankingRow(
             ) {
                 if (!ranking.coverUrl.isNullOrBlank()) {
                     AsyncImage(
-                        model = ranking.coverUrl.resized(200),
+                        model = rememberCoverImageRequest(ranking.coverUrl, targetSizeDp = 52.dp),
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize().clip(MaterialTheme.shapes.medium),
                         contentScale = ContentScale.Crop,
@@ -2428,7 +2428,7 @@ private fun ArtistTile(
             }
             if (!artist.avatarUrl.isNullOrBlank()) {
                 AsyncImage(
-                    model = artist.avatarUrl.resized(300),
+                    model = rememberCoverImageRequest(artist.avatarUrl, targetPx = 256),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize().clip(avatarShape),
                     contentScale = ContentScale.Crop,
@@ -2681,7 +2681,7 @@ private fun RecentPlayPill(
                 )
                 if (!track.coverUrl.isNullOrBlank()) {
                     AsyncImage(
-                        model = track.coverUrl.resized(120),
+                        model = rememberCoverImageRequest(track.coverUrl, targetPx = 128),
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize().clip(CircleShape),
                         contentScale = ContentScale.Crop,
@@ -2805,7 +2805,7 @@ private fun DailyMixCard(
                                     ) {
                                         if (!track.coverUrl.isNullOrBlank()) {
                                             AsyncImage(
-                                                model = track.coverUrl.resized(160),
+                                                model = rememberCoverImageRequest(track.coverUrl, targetPx = 256),
                                                 contentDescription = null,
                                                 modifier = Modifier.fillMaxSize(),
                                                 contentScale = ContentScale.Crop,
@@ -2955,7 +2955,7 @@ private fun CompactTrackCard(
             ) {
                 if (!track.coverUrl.isNullOrBlank()) {
                     AsyncImage(
-                        model = track.coverUrl.resized(180),
+                        model = rememberCoverImageRequest(track.coverUrl, targetPx = 256),
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,

@@ -36,7 +36,7 @@ import cp.player.app.ui.component.TrackPrimaryAction
 import cp.player.app.ui.component.TrackPrimaryActionRow
 import cp.player.app.ui.component.TrackSecondaryActionRow
 import cp.player.app.ui.component.TrackSecondarySpec
-import cp.player.app.ui.util.resized
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.core.music.PlaylistSummary
 
 /**
@@ -90,7 +90,11 @@ internal fun PlaylistHeaderInfo(
         ) {
             if (!summary.coverUrl.isNullOrBlank()) {
                 AsyncImage(
-                    model = summary.coverUrl.resized(300),
+                    model = rememberCoverImageRequest(
+                        summary.coverUrl,
+                        targetSizeDp = 108.dp,
+                        placeholderBucketPx = 256,
+                    ),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
@@ -212,7 +216,11 @@ internal fun PlaylistInfoRail(
         ) {
             if (!summary.coverUrl.isNullOrBlank()) {
                 AsyncImage(
-                    model = summary.coverUrl.resized(600),
+                    model = rememberCoverImageRequest(
+                        summary.coverUrl,
+                        targetSizeDp = 208.dp,
+                        placeholderBucketPx = 256,
+                    ),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),

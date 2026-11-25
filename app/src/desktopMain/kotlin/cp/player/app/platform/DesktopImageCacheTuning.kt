@@ -9,21 +9,30 @@ import cp.player.core.util.DesktopDataDir
 import okio.Path.Companion.toOkioPath
 
 /**
- * 桌面端图片内存缓存上限：默认收紧为 32MB（可通过 -Dcp.coil.cacheMb=16..128 覆盖）。
- *
- * 结合裁剪解码管线（按槽位目标像素分桶解码、居中裁剪）与双层磁盘缓存，
- * 只将真正需要的像素尺寸送入原生内存，显著降低常驻 Working Set。
+ * 桌面端图片内存缓存上限：
+ * - GraalVM Native Image（`-Xmx100m`）保持 **32MB**，守住低堆预算；
+ * - 普通 JVM 桌面端默认放宽至 **64MB**，减少长列表滚动与频繁切换页面时的 LRU 逐出重解码；
+ * - 均支持通过 `-Dcp.coil.cacheMb=16..128` 覆盖。
  */
-private const val DefaultDesktopImageMemoryCacheMb = 32L
+private const val NativeImageDesktopMemoryCacheMb = 32L
+private const val DefaultJvmDesktopImageMemoryCacheMb = 64L
 private const val MinDesktopImageMemoryCacheMb = 16L
 private const val MaxDesktopImageMemoryCacheMb = 128L
 private const val DesktopOriginalDiskCacheBytes = 256L * 1024 * 1024
 
+private fun isGraalNativeImage(): Boolean =
+    System.getProperty("org.graalvm.nativeimage.imagecode") != null
+
 private fun desktopImageMemoryCacheBytes(): Long {
+    val defaultMb = if (isGraalNativeImage()) {
+        NativeImageDesktopMemoryCacheMb
+    } else {
+        DefaultJvmDesktopImageMemoryCacheMb
+    }
     val requestedMb = System.getProperty("cp.coil.cacheMb")
         ?.toLongOrNull()
         ?.coerceIn(MinDesktopImageMemoryCacheMb, MaxDesktopImageMemoryCacheMb)
-        ?: DefaultDesktopImageMemoryCacheMb
+        ?: defaultMb
     return requestedMb * 1024L * 1024L
 }
 

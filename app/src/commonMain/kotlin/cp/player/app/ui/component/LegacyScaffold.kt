@@ -36,7 +36,7 @@ fun LegacyModalBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        containerColor = cp.player.app.ui.theme.cpSheetSurface(),
         // 底部弹窗形状收敛到 `CpShapes.sheet` —— 原先这里、`MoreOptionsSheet`、
         // `DownloadsScreen` 各写了一遍同样的「上两角 32dp」，改一次要改三处。
         shape = CpShapes.sheet,

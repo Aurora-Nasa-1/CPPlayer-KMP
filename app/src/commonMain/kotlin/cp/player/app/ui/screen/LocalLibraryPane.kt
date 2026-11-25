@@ -1378,6 +1378,7 @@ private fun ScanSettingsDialog(
                             } else {
                                 strings.downloads.durationSeconds(seconds)
                             },
+                            containerColor = cpNestedSurface(),
                         )
                     }
                 }

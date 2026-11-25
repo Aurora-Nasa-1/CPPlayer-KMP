@@ -61,7 +61,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
-import cp.player.app.ui.util.resized
+import cp.player.app.ui.theme.cpSheetInnerSurface
+import cp.player.app.ui.util.rememberCoverImageRequest
 
 /** Playlist sort order shared by the playlist options sheet and screen models. */
 typealias PlaylistSortType = cp.player.app.presentation.playlistdetail.PlaylistSortType
@@ -218,7 +219,7 @@ internal fun SongOptionsSheetContent(
                         containerColor = if (isFavorite) {
                             MaterialTheme.colorScheme.primaryContainer
                         } else {
-                            MaterialTheme.colorScheme.surfaceContainerHigh
+                            cpSheetInnerSurface()
                         },
                         contentColor = if (isFavorite) {
                             MaterialTheme.colorScheme.onPrimaryContainer
@@ -230,7 +231,7 @@ internal fun SongOptionsSheetContent(
                         icon = Icons.Filled.Share,
                         label = s.player.share,
                         onClick = { onShare(); onDismiss() },
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        containerColor = cpSheetInnerSurface(),
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         shape = CircleShape,
                     )
@@ -416,7 +417,7 @@ fun PlaylistOptionsSheet(
                         icon = Icons.AutoMirrored.Filled.QueueMusic,
                         label = s.library.addToQueue,
                         onClick = { onAddToQueue(); onDismiss() },
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        containerColor = cpSheetInnerSurface(),
                         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     if (onShare != null) {
@@ -424,7 +425,7 @@ fun PlaylistOptionsSheet(
                             icon = Icons.Filled.Share,
                             label = s.contextMenu.sharePlaylist,
                             onClick = { onShare(); onDismiss() },
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            containerColor = cpSheetInnerSurface(),
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             shape = CircleShape,
                         )
@@ -563,11 +564,11 @@ private fun SheetHeader(
         Surface(
             modifier = Modifier.size(SheetHeroSize),
             shape = if (circleCover) CircleShape else RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            color = cpSheetInnerSurface(),
         ) {
             if (!coverUrl.isNullOrBlank()) {
                 AsyncImage(
-                    model = coverUrl.resized(220),
+                    model = rememberCoverImageRequest(coverUrl, targetPx = 256, placeholderBucketPx = 128),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
@@ -636,7 +637,7 @@ private fun SheetIconButton(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    containerColor: Color = cpSheetInnerSurface(),
     contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     shape: Shape = CircleShape,
 ) {
@@ -664,11 +665,12 @@ private fun SheetSectionLabel(text: String) {
 }
 
 /**
- * 官方 M3 动作列表：透明底色行、无多余内嵌背景，统一由 Compose 标准 Ripple / 状态层反馈。
+ * 一组 M3E segmented list：外圈 20dp 圆角、组内相邻角 4dp、缝宽 2dp，容器底取 [cpSheetInnerSurface]
+ * 以与弹层底 [cp.player.app.ui.theme.cpSheetSurface] 拉开层级。
  */
 @Composable
 private fun SheetActionGroup(actions: List<SheetAction>) {
-    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         actions.forEachIndexed { index, action ->
             SheetActionRow(action, index, actions.size)
         }
@@ -693,8 +695,8 @@ private fun SheetActionRow(action: SheetAction, index: Int, total: Int) {
         onClick = action.onClick,
         enabled = action.enabled,
         modifier = Modifier.fillMaxWidth().heightIn(min = SheetRowMinHeight),
-        shape = RoundedCornerShape(12.dp),
-        color = Color.Transparent,
+        shape = legacySegmentShape(index, total),
+        color = cpSheetInnerSurface(),
     ) {
         Row(
             Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 10.dp),

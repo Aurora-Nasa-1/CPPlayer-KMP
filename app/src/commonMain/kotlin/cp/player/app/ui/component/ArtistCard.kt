@@ -23,7 +23,7 @@ import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpNestedSurface
-import cp.player.app.ui.util.resized
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.core.music.ArtistSummary
 
 /**
@@ -103,7 +103,7 @@ fun ArtistAvatar(
         )
         if (!url.isNullOrBlank()) {
             AsyncImage(
-                model = url.resized(200),
+                model = rememberCoverImageRequest(url, targetPx = 256),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,

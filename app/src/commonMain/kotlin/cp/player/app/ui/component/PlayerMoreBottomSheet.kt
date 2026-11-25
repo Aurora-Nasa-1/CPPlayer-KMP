@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpSheetInnerSurface
 import cp.player.app.ui.theme.cpSheetSurface
 import androidx.compose.material3.Surface
@@ -70,7 +71,7 @@ import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatTimeMs
-import cp.player.app.ui.util.resized
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.core.music.CPMediaId
 import cp.player.core.music.TrackSummary
 import cp.player.core.model.LyricsInfo
@@ -202,7 +203,7 @@ fun PlayerMoreContent(
                 ) {
                     if (!track.coverUrl.isNullOrBlank()) {
                         AsyncImage(
-                            model = track.coverUrl.resized(220),
+                            model = rememberCoverImageRequest(track.coverUrl, targetPx = 256, placeholderBucketPx = 128),
                             contentDescription = null,
                             modifier = Modifier.size(76.dp).clip(RoundedCornerShape(20.dp)),
                             contentScale = ContentScale.Crop,
@@ -326,7 +327,7 @@ fun PlayerMoreContent(
                     onOpenDjDesk()
                 },
                 shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
+                color = MaterialTheme.colorScheme.tertiaryContainer,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
@@ -428,7 +429,7 @@ fun PlayerMoreContent(
                         modifier = Modifier.weight(1f),
                         text = s.player.dislike,
                         icon = Icons.Filled.Block,
-                        bgColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.75f),
+                        bgColor = MaterialTheme.colorScheme.errorContainer,
                         textColor = MaterialTheme.colorScheme.onErrorContainer,
                         onClick = {
                             onDislike()
@@ -603,7 +604,7 @@ private fun DetailChip(
 ) {
     Surface(
         shape = RoundedCornerShape(10.dp),
-        color = cpSheetInnerSurface(),
+        color = cpCardSurface(),
         modifier = modifier,
     ) {
         Row(

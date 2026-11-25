@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.core.util.currentTimeMillis
 import cp.player.core.util.localDateTimeOf
 
@@ -95,6 +96,7 @@ fun SleepTimerDialog(
                                     checked = !afterTrackActive && (minutes == activeMinutes),
                                     onCheckedChange = { onSelect(minutes); onDismiss() },
                                     label = s.playback.timerMinutesChip(minutes),
+                                    containerColor = cpNestedSurface(),
                                 )
                             }
                         }
@@ -104,6 +106,7 @@ fun SleepTimerDialog(
                                     checked = !afterTrackActive && (minutes == activeMinutes),
                                     onCheckedChange = { onSelect(minutes); onDismiss() },
                                     label = s.playback.timerMinutesChip(minutes),
+                                    containerColor = cpNestedSurface(),
                                 )
                             }
                             CpToggleChip(
@@ -114,6 +117,7 @@ fun SleepTimerDialog(
                                 } else {
                                     s.playback.timerCustomChip
                                 },
+                                containerColor = cpNestedSurface(),
                             )
                         }
                     }
@@ -122,6 +126,7 @@ fun SleepTimerDialog(
                             checked = afterTrackActive,
                             onCheckedChange = { onSelect(AppModel.sleepAfterTrack); onDismiss() },
                             label = s.playback.timerAfterTrackChip,
+                            containerColor = cpNestedSurface(),
                         )
                     }
                 }
@@ -235,11 +240,13 @@ fun SleepCustomTimeDialog(
                         checked = isCountdownMode,
                         onCheckedChange = { isCountdownMode = true },
                         label = s.playback.timerCustomModeDuration,
+                        containerColor = cpNestedSurface(),
                     )
                     CpToggleChip(
                         checked = !isCountdownMode,
                         onCheckedChange = { isCountdownMode = false },
                         label = s.playback.timerCustomModeAtTime,
+                        containerColor = cpNestedSurface(),
                     )
                 }
 

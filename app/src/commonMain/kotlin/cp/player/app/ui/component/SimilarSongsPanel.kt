@@ -48,7 +48,7 @@ import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.anim.CoverFlight
-import cp.player.app.ui.util.resized
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.core.BackendResult
 import cp.player.core.music.CPMediaId
 import cp.player.core.music.TrackSummary
@@ -370,7 +370,7 @@ fun SimilarSongsPanel(
 private fun SimilarArtwork(url: String?) {
     if (!url.isNullOrBlank()) {
         AsyncImage(
-            model = url.resized(180),
+            model = rememberCoverImageRequest(url, targetSizeDp = 46.dp),
             contentDescription = null,
             modifier = Modifier.size(46.dp).aspectRatio(1f).clip(MaterialTheme.shapes.medium),
             contentScale = ContentScale.Crop,

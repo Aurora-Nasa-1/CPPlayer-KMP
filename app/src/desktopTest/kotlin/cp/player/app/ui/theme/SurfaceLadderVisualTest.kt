@@ -125,7 +125,7 @@ class SurfaceLadderVisualTest {
                     ) {
                         Surface(
                             shape = CpShapes.sheet,
-                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            color = cpSheetSurface(),
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             cp.player.app.ui.component.SongOptionsSheetContent(
@@ -185,7 +185,7 @@ class SurfaceLadderVisualTest {
                     ) {
                         Surface(
                             shape = RoundedCornerShape(20.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            color = cpCardSurface(),
                             shadowElevation = if (LocalIsDarkTheme.current) 4.dp else 2.dp,
                             border = androidx.compose.foundation.BorderStroke(
                                 1.dp,

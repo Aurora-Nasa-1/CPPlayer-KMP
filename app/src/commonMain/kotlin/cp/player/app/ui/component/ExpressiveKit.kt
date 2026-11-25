@@ -120,6 +120,7 @@ import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpElevatedSurface
 import cp.player.app.ui.theme.cpNestedSurface
+import cp.player.app.ui.theme.cpPageSurface
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.DesktopShell
 import kotlin.math.abs
@@ -902,6 +903,18 @@ fun CpExpressiveArtwork(
     Box(modifier.clip(shape), content = content)
 }
 
+/**
+ * M3E 页面级 `ToggleButton` 配色：官方 `ToggleButtonDefaults.toggleButtonColors()` 未选中底色是
+ * `surfaceContainer`，恰好与浅色下 [cpPageSurface]（`surfaceContainer`）同色而融为一体。
+ * 默认改为 [cpCardSurface]（浅色白 / 深色亮灰），与页面底色拉开层级；卡片/弹窗内部传入 [cpNestedSurface]。
+ */
+@Composable
+private fun cpToggleButtonColors(containerColor: Color = cpCardSurface()) =
+    ToggleButtonDefaults.toggleButtonColors(
+        containerColor = containerColor,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
 /** Connected selection, with official checked/pressed shape transitions. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -912,7 +925,9 @@ fun CpConnectedChoice(
     modifier: Modifier = Modifier,
     icons: List<ImageVector?> = emptyList(),
     iconOnly: Boolean = false,
+    containerColor: Color = cpCardSurface(),
 ) {
+    val buttonColors = cpToggleButtonColors(containerColor)
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween)) {
         labels.forEachIndexed { index, label ->
             val button: @Composable () -> Unit = {
@@ -924,6 +939,7 @@ fun CpConnectedChoice(
                     labels.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                 },
+                colors = buttonColors,
             ) {
                 val icon = icons.getOrNull(index)
                 if (icon != null) Icon(icon, if (iconOnly) label else null, Modifier.size(18.dp))
@@ -971,7 +987,9 @@ fun CpViewSwitcher(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    containerColor: Color = cpCardSurface(),
 ) {
+    val buttonColors = cpToggleButtonColors(containerColor)
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
@@ -987,6 +1005,7 @@ fun CpViewSwitcher(
                     items.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
                     else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                 },
+                colors = buttonColors,
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = if (compact) 62.dp else 48.dp),
@@ -1497,19 +1516,34 @@ fun CpToggleChip(
     icon: ImageVector? = null,
     enabled: Boolean = true,
     badge: String? = null,
+    containerColor: Color = cpCardSurface(),
 ) {
+    val unselectedBadgeColor = if (containerColor == cpNestedSurface()) cpPageSurface() else cpNestedSurface()
     ToggleButton(
         checked = checked,
         onCheckedChange = onCheckedChange,
         modifier = modifier,
         enabled = enabled,
+        colors = cpToggleButtonColors(containerColor),
     ) {
-        ChipContent(icon = icon, label = label, badge = badge, checked = checked)
+        ChipContent(
+            icon = icon,
+            label = label,
+            badge = badge,
+            checked = checked,
+            unselectedBadgeColor = unselectedBadgeColor,
+        )
     }
 }
 
 @Composable
-private fun RowScope.ChipContent(icon: ImageVector?, label: String, badge: String?, checked: Boolean) {
+private fun RowScope.ChipContent(
+    icon: ImageVector?,
+    label: String,
+    badge: String?,
+    checked: Boolean,
+    unselectedBadgeColor: Color = cpNestedSurface(),
+) {
     if (icon != null) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
@@ -1522,7 +1556,7 @@ private fun RowScope.ChipContent(icon: ImageVector?, label: String, badge: Strin
             color = if (checked) {
                 MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.18f)
             } else {
-                cpNestedSurface()
+                unselectedBadgeColor
             },
         ) {
             CpText(

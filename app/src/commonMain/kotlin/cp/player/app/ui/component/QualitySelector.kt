@@ -20,6 +20,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpSheetInnerSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -178,6 +179,7 @@ fun QualitySectionCard(
                             if (checked && !isChecked) onSelect(candidate.targetQuality)
                         },
                         label = optionLabel,
+                        containerColor = cpCardSurface(),
                     )
                 }
             }

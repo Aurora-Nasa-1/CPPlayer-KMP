@@ -77,7 +77,7 @@ import cp.player.app.platform.shareText
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.LocalIsDarkTheme
-import cp.player.app.ui.util.resized
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.core.music.CPMediaId
 import cp.player.core.music.TrackSummary
 import cp.player.core.playback.QueueItem
@@ -807,9 +807,8 @@ private fun QueueRow(
                 ) {
                 Box(Modifier.size(48.dp).aspectRatio(1f)) {
                     if (!item.coverUrl.isNullOrBlank()) {
-                        // [Bolt] Fetch smaller (150px) cover images for the queue list to reduce loading time
                         AsyncImage(
-                            model = item.coverUrl.resized(150),
+                            model = rememberCoverImageRequest(item.coverUrl, targetSizeDp = 48.dp),
                             contentDescription = s.player.coverContentDescription,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()

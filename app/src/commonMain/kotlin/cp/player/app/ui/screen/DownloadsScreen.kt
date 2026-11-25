@@ -95,7 +95,7 @@ import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.CpShapes
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatBytes
-import cp.player.app.ui.util.resized
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.core.media.MediaType
 import cp.player.core.model.DownloadStatus
 import cp.player.core.model.DownloadTask
@@ -1255,7 +1255,7 @@ private fun TaskCover(coverUrl: String?, mediaType: MediaType, modifier: Modifie
         ) {
             if (!coverUrl.isNullOrBlank()) {
                 AsyncImage(
-                    model = coverUrl.resized(120),
+                    model = rememberCoverImageRequest(coverUrl, targetPx = 128),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,

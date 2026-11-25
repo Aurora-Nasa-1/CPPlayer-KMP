@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
+import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.theme.cpCardSurface
 
 data class TopBarAction(
@@ -128,7 +129,11 @@ fun AppScaffold(
                     scrollBehavior = actualScrollBehavior,
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = actualTopBarContainerColor,
-                        scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
+                        scrolledContainerColor = if (LocalIsDarkTheme.current) {
+                            MaterialTheme.colorScheme.surfaceContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerLowest
+                        },
                     )
                 )
             }

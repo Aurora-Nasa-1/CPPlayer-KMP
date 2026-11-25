@@ -24,6 +24,9 @@ data class ProviderImageResizeRule(
  */
 object CoverUrlResolver {
 
+    val STANDARD_BUCKETS_ASC = intArrayOf(128, 256, 512, 1024, 1440)
+    val STANDARD_BUCKETS_DESC = intArrayOf(1440, 1024, 512, 256, 128)
+
     private val DEFAULT_SIGNATURE_PARAMS = setOf(
         "param",
         "sign",
@@ -130,9 +133,25 @@ object CoverUrlResolver {
     }
 
     private fun appendNeteaseParam(url: String, bucket: Int): String {
-        if (url.contains("param=")) return url
-        val sep = if ('?' in url) '&' else '?'
-        return "${url}${sep}param=${bucket}y${bucket}"
+        val fragmentIdx = url.indexOf('#')
+        val baseAndQuery = if (fragmentIdx >= 0) url.substring(0, fragmentIdx) else url
+        val fragment = if (fragmentIdx >= 0) url.substring(fragmentIdx) else ""
+        val qIdx = baseAndQuery.indexOf('?')
+        if (qIdx < 0) {
+            return "${baseAndQuery}?param=${bucket}y${bucket}$fragment"
+        }
+        val base = baseAndQuery.substring(0, qIdx)
+        val rawQuery = baseAndQuery.substring(qIdx + 1)
+        val kept = ArrayList<String>(4)
+        for (part in rawQuery.split('&')) {
+            if (part.isEmpty()) continue
+            val eqIdx = part.indexOf('=')
+            val key = if (eqIdx >= 0) part.substring(0, eqIdx) else part
+            if (key.equals("param", ignoreCase = true)) continue
+            kept.add(part)
+        }
+        kept.add("param=${bucket}y${bucket}")
+        return "$base?${kept.joinToString("&")}$fragment"
     }
 
     private fun looksLikeNeteaseOrLocalTestCdn(url: String): Boolean {

@@ -80,6 +80,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Placeable
@@ -145,9 +146,11 @@ import cp.player.app.ui.component.songShareText
 import cp.player.app.ui.model.PlaylistDetailScreenModel
 import cp.player.app.ui.model.PlaylistDetailUiState
 import cp.player.app.presentation.playlistdetail.PlaylistDetailContract
+import cp.player.app.ui.util.CoverPrefetcher
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatTimeMs
-import cp.player.app.ui.util.resized
+import cp.player.app.ui.util.rememberCoverImageRequest
+import coil3.compose.LocalPlatformContext
 import cp.player.core.BackendResult
 import cp.player.core.music.CPMediaId
 import cp.player.core.music.PlaylistTracksPage
@@ -232,6 +235,23 @@ fun PlaylistDetailContent(
     LaunchedEffect(playlist.resourceId, isLocalPlaylist) {
         if (isLocalPlaylist) model.loadLocal(playlist, initialOverrideTracks.orEmpty(), loadingOverride)
         else model.load(playlist, s)
+    }
+
+    val platformContext = LocalPlatformContext.current
+    LaunchedEffect(playlist.resourceId, state.summary?.coverUrl, playlist.coverUrl) {
+        val cover = state.summary?.coverUrl ?: playlist.coverUrl
+        CoverPrefetcher.prefetchCover(platformContext, cover, targetPx = 512, writeMemoryCache = true)
+    }
+    LaunchedEffect(playlist.resourceId, state.tracks) {
+        if (state.tracks.isNotEmpty()) {
+            CoverPrefetcher.prefetchCovers(
+                context = platformContext,
+                urls = state.tracks.asSequence().map { it.coverUrl }.asIterable(),
+                targetPx = 128,
+                limit = 12,
+                writeMemoryCache = true,
+            )
+        }
     }
 
     // 曲目就绪后从 autoPlayIndex 开始播放（为 null 时只浏览不播放）。
@@ -1017,38 +1037,45 @@ private fun NarrowLayout(
                         .padding(end = 8.dp)
                         .graphicsLayer { alpha = titleSearchFadeAlpha },
                 ) {
-                    // 封面槽位随封面一起收起，避免折叠后标题左侧残留空白。
+                    // 封面槽位随封面一起收起，但保持 AsyncImage 常驻组合树，避免折叠展开时反复重建重载。
                     Box(
-                        modifier = Modifier.width(70.dp * coverFraction).height(56.dp),
+                        modifier = Modifier.width(70.dp * coverFraction).height(56.dp).clipToBounds(),
                         contentAlignment = Alignment.CenterStart,
                     ) {
-                        if (coverFraction > 0.01f) {
-                            Surface(
-                                modifier = Modifier
-                                    .size(56.dp * coverFraction)
-                                    .graphicsLayer { alpha = coverFraction }
-                                    .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 12.dp),
-                                shape = RoundedCornerShape(12.dp * coverFraction),
-                                color = cpNestedSurface(),
-                                shadowElevation = (2 * coverFraction).dp,
-                            ) {
-                                val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)
-                                if (!summary.coverUrl.isNullOrBlank()) {
-                                    AsyncImage(
-                                        model = summary.coverUrl.resized(200),
-                                        contentDescription = summary.name,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                            .graphicsLayer { alpha = if (hideCover) 0f else 1f },
-                                    )
-                                } else {
-                                    CpCoverPlaceholder(
-                                        modifier = Modifier.fillMaxSize()
-                                            .graphicsLayer { alpha = if (hideCover) 0f else 1f },
-                                        corner = 12.dp,
-                                        animated = false,
-                                    )
+                        val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)
+                        Surface(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .graphicsLayer {
+                                    alpha = coverFraction
+                                    scaleX = coverFraction
+                                    scaleY = coverFraction
+                                    transformOrigin = TransformOrigin(0f, 0.5f)
                                 }
+                                .coverFlightTarget(CoverFlight.TARGET_PLAYLIST_HEADER, 12.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = cpNestedSurface(),
+                            shadowElevation = if (coverFraction > 0.01f) (2 * coverFraction).dp else 0.dp,
+                        ) {
+                            if (!summary.coverUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = rememberCoverImageRequest(
+                                        summary.coverUrl,
+                                        targetSizeDp = 56.dp,
+                                        placeholderBucketPx = 256,
+                                    ),
+                                    contentDescription = summary.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                        .graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                                )
+                            } else {
+                                CpCoverPlaceholder(
+                                    modifier = Modifier.fillMaxSize()
+                                        .graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                                    corner = 12.dp,
+                                    animated = false,
+                                )
                             }
                         }
                     }
@@ -1295,7 +1322,11 @@ private fun WideLayout(
                         val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)
                         if (!summary.coverUrl.isNullOrBlank()) {
                             AsyncImage(
-                                model = summary.coverUrl.resized(600),
+                                model = rememberCoverImageRequest(
+                                    summary.coverUrl,
+                                    targetSizeDp = coverSize,
+                                    placeholderBucketPx = 256,
+                                ),
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()

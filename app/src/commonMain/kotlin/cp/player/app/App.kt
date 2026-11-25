@@ -95,6 +95,7 @@ fun App(
     titleBar: (@Composable (Navigator) -> Unit)? = null,
 ) {
     PlaybackMediaControlsBridge()
+    NextTrackCoverPrefetchEffect()
 
     // 系统通知被点击 → 把目标会话记进 AppModel（**不在这里直接导航**）。
     //
@@ -535,6 +536,32 @@ fun App(
             }
             AppUpdateHost()
         }
+    }
+}
+
+@Composable
+private fun NextTrackCoverPrefetchEffect() {
+    val preloadNext by AppModel.preloadNextFlow.collectAsState()
+    val platformContext = coil3.compose.LocalPlatformContext.current
+    val nextCoverUrl by remember {
+        AppModel.playback.state
+            .map { st -> cp.player.app.ui.util.CoverPrefetcher.resolveNextTrackCoverUrl(st) }
+            .distinctUntilChanged()
+    }.collectAsState(initial = null)
+    androidx.compose.runtime.LaunchedEffect(preloadNext, nextCoverUrl) {
+        if (!preloadNext || nextCoverUrl.isNullOrBlank()) return@LaunchedEffect
+        cp.player.app.ui.util.CoverPrefetcher.prefetchCover(
+            context = platformContext,
+            url = nextCoverUrl,
+            targetPx = 128,
+            writeMemoryCache = true,
+        )
+        cp.player.app.ui.util.CoverPrefetcher.prefetchCover(
+            context = platformContext,
+            url = nextCoverUrl,
+            targetPx = 512,
+            writeMemoryCache = true,
+        )
     }
 }
 

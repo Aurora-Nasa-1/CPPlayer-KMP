@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpSheetInnerSurface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -44,7 +45,7 @@ import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.util.UiEvents
-import cp.player.app.ui.util.resized
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.core.BackendResult
 import cp.player.core.music.PlaylistSummary
 import cp.player.core.music.TrackSummary
@@ -75,13 +76,12 @@ fun PlaylistPickerRow(
         ) {
             Box(
                 Modifier.size(56.dp).clip(MaterialTheme.shapes.medium)
-                    .background(cpSheetInnerSurface()),
+                    .background(cpCardSurface()),
                 contentAlignment = Alignment.Center,
             ) {
                 if (!playlist.coverUrl.isNullOrBlank()) {
-                    // [Bolt] Fetch a resized 150px thumbnail to reduce network traffic when loading picker sheet
                     AsyncImage(
-                        model = playlist.coverUrl.resized(150),
+                        model = rememberCoverImageRequest(playlist.coverUrl, targetSizeDp = 56.dp),
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,

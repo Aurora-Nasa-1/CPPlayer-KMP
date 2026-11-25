@@ -120,10 +120,7 @@ class SurfaceTokensTest {
             l.overlay.luminance() >= l.card.luminance(),
             "浅色浮层不应暗于卡片，实际浮层=${l.overlay.luminance()} 卡=${l.card.luminance()}",
         )
-        assertTrue(
-            l.overlayInner.luminance() < l.overlay.luminance(),
-            "浅色浮层内块应比浮层暗一阶",
-        )
+        assertLighter(l.overlay, l.overlayInner, "浅色：浮层 vs 浮层内块", minDelta = 0.05f)
     }
 
     @Test
@@ -135,10 +132,7 @@ class SurfaceTokensTest {
             "深色内嵌槽应比亮卡暗（凹陷感）",
         )
         assertLighter(l.overlay, l.card, "深色：浮层 vs 卡片")
-        assertTrue(
-            l.overlayInner.luminance() < l.overlay.luminance(),
-            "深色浮层内块应比浮层暗一阶",
-        )
+        assertLighter(l.overlay, l.overlayInner, "深色：浮层 vs 浮层内块", minDelta = 0.008f)
     }
 
     @Test
@@ -174,5 +168,6 @@ class SurfaceTokensTest {
         )
         assertLighter(l.card, l.page, "纯黑：卡片 vs 页面", minDelta = 0.002f)
         assertLighter(l.overlay, l.card, "纯黑：浮层 vs 卡片")
+        assertLighter(l.overlay, l.overlayInner, "纯黑：浮层 vs 浮层内块", minDelta = 0.005f)
     }
 }

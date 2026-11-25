@@ -100,7 +100,7 @@ import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.theme.cpSheetInnerSurface
 import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.ui.util.formatChatTime
-import cp.player.app.ui.util.resized
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.core.music.AlbumSummary
 import cp.player.core.music.CPMediaId
 import cp.player.core.music.COMMENT_MAX_LENGTH
@@ -630,7 +630,7 @@ private fun DynamicImageGrid(
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 row.forEach { url ->
                     AsyncImage(
-                        model = url.resized(640),
+                        model = rememberCoverImageRequest(url, targetPx = 1024, cropSquare = false),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
@@ -673,7 +673,7 @@ private fun DynamicResourceCard(
                 CpCoverPlaceholder(Modifier.fillMaxSize(), corner = 10.dp)
                 if (!post.resourceCoverUrl.isNullOrBlank()) {
                     AsyncImage(
-                        model = post.resourceCoverUrl.resized(160),
+                        model = rememberCoverImageRequest(post.resourceCoverUrl, targetSizeDp = 56.dp),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
@@ -796,7 +796,7 @@ private fun DynamicAvatar(
     ) {
         if (url.isNotBlank()) {
             AsyncImage(
-                model = url.resized(96),
+                model = rememberCoverImageRequest(url, targetSizeDp = size, maxPx = 256),
                 contentDescription = contentDescription,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),

@@ -96,7 +96,7 @@ import cp.player.app.ui.component.PlaylistMenuActions
 import cp.player.app.ui.component.playlistContextMenuItems
 import cp.player.app.ui.component.desktopScrollbarGutter
 import cp.player.app.ui.model.LibraryUiState
-import cp.player.app.ui.util.resized
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.app.ui.wall.PosterWallIcon
 import cp.player.core.music.PlaylistSummary
 
@@ -459,7 +459,7 @@ internal fun DesktopLibraryPlaylist(
             CpCoverPlaceholder(Modifier.fillMaxSize(), corner = 16.dp, animated = false)
             if (!playlist.coverUrl.isNullOrBlank()) {
                 AsyncImage(
-                    model = playlist.coverUrl.resized(400),
+                    model = rememberCoverImageRequest(playlist.coverUrl, targetPx = 512),
                     contentDescription = playlist.name,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
