@@ -188,6 +188,8 @@ private fun openDownloadedInstaller(file: File): Boolean = runCatching {
  */
 actual fun clearImageCache(): Boolean {
     cp.player.app.ui.theme.CoverSeedCache.clear()
+    cp.player.app.ui.theme.CoverFluidPaletteCache.clear()
+    clearDesktopCroppedImageCache()
     return runCatching {
         val loader = coil3.SingletonImageLoader.get(coil3.PlatformContext.INSTANCE)
         loader.memoryCache?.clear()
@@ -197,7 +199,8 @@ actual fun clearImageCache(): Boolean {
 }
 
 actual fun imageCacheSizeBytes(): Long = runCatching {
-    coil3.SingletonImageLoader.get(coil3.PlatformContext.INSTANCE).diskCache?.size ?: -1L
+    val orig = coil3.SingletonImageLoader.get(coil3.PlatformContext.INSTANCE).diskCache?.size ?: 0L
+    orig + desktopCroppedImageCacheSizeBytes()
 }.getOrDefault(-1L)
 
 /**

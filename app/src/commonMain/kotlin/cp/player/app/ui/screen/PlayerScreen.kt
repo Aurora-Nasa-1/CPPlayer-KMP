@@ -142,6 +142,7 @@ import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.next
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.core.music.Comment
 import cp.player.core.playback.LyricsState
@@ -1077,7 +1078,7 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
             ) {
                 if (!track.coverUrl.isNullOrBlank()) {
                     AsyncImage(
-                        model = track.coverUrl,
+                        model = rememberCoverImageRequest(track.coverUrl, targetSizeDp = artSize),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),

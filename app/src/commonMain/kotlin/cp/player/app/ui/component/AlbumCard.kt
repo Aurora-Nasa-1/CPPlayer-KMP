@@ -34,6 +34,7 @@ import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpNestedSurface
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.app.ui.util.resized
 import cp.player.core.music.AlbumSummary
 
@@ -187,7 +188,7 @@ fun AlbumCoverThumb(
         )
         if (!coverUrl.isNullOrBlank()) {
             AsyncImage(
-                model = coverUrl.resized(300),
+                model = rememberCoverImageRequest(coverUrl, targetPx = 256),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,

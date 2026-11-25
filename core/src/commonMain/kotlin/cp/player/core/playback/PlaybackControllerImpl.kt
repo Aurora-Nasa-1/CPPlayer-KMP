@@ -131,23 +131,53 @@ class PlaybackControllerImpl(
 
     private fun observeForLyricPush() {
         val pusher = lyricPusher ?: return
+        var cachedSummary: cp.player.core.music.TrackSummary? = null
+        var cachedSourceId: String? = null
+        var cachedPushTrack: cp.player.core.lyricpush.LyricPushTrack? = null
+        var lastLyrics: List<SyncedLyricLine>? = null
+        var lastLineIndex = Int.MIN_VALUE
+        var lastPositionMs = Long.MIN_VALUE
+        var lastDurationMs = Long.MIN_VALUE
+        var lastPlaying: Boolean? = null
+
         _state
             .onEach { snapshot ->
-                val lyrics = (snapshot.lyrics as? LyricsState.Success)?.lines.orEmpty()
-                val track = snapshot.currentTrack?.let { summary ->
-                    cp.player.core.lyricpush.LyricPushTrack(
-                        id = summary.id,
-                        title = summary.name,
-                        artist = summary.artist,
-                        album = summary.album.orEmpty(),
-                        durationMs = summary.durationMs,
-                        sourceId = snapshot.sourceId,
-                    )
+                val summary = snapshot.currentTrack
+                if (summary !== cachedSummary || snapshot.sourceId != cachedSourceId) {
+                    cachedSummary = summary
+                    cachedSourceId = snapshot.sourceId
+                    cachedPushTrack = summary?.let {
+                        cp.player.core.lyricpush.LyricPushTrack(
+                            id = it.id,
+                            title = it.name,
+                            artist = it.artist,
+                            album = it.album.orEmpty(),
+                            durationMs = it.durationMs,
+                            sourceId = snapshot.sourceId,
+                        )
+                    }
                 }
+                val lyrics = (snapshot.lyrics as? LyricsState.Success)?.lines ?: emptyList()
+                // 队列/收藏/缓冲等无关状态变动、或暂停静止帧不再重复分配 LyricPushFrame。
+                if (lyrics === lastLyrics &&
+                    snapshot.activeLyricIndex == lastLineIndex &&
+                    snapshot.positionMs == lastPositionMs &&
+                    snapshot.durationMs == lastDurationMs &&
+                    snapshot.isPlaying == lastPlaying &&
+                    cachedPushTrack != null
+                ) {
+                    return@onEach
+                }
+                lastLyrics = lyrics
+                lastLineIndex = snapshot.activeLyricIndex
+                lastPositionMs = snapshot.positionMs
+                lastDurationMs = snapshot.durationMs
+                lastPlaying = snapshot.isPlaying
+
                 runCatching {
                     pusher.onFrame(
                         cp.player.core.lyricpush.LyricPushFrame(
-                            track = track,
+                            track = cachedPushTrack,
                             lines = lyrics,
                             lineIndex = snapshot.activeLyricIndex,
                             positionMs = snapshot.positionMs,
@@ -257,7 +287,18 @@ class PlaybackControllerImpl(
             val currentMediaId = queueManager.currentEntry?.mediaId
             if (mediaLoader.shouldIgnoreEnginePosition(currentMediaId)) return@onEach
             fadeController.maybeStartFadeOut(pos, currentDurationMs(), currentMediaId, mediaLoader.engineReady)
-            updateState { it.copy(positionMs = pos, activeLyricIndex = computeLyricIndex(it.lyrics, pos)) }
+            updateState { current ->
+                val nextIndex = PlaybackLyricsLoader.computeLyricIndex(
+                    lyrics = current.lyrics,
+                    pos = pos,
+                    hintIndex = current.activeLyricIndex,
+                )
+                if (current.positionMs == pos && current.activeLyricIndex == nextIndex) {
+                    current
+                } else {
+                    current.copy(positionMs = pos, activeLyricIndex = nextIndex)
+                }
+            }
         }.launchIn(scope)
 
         platform.durationMs.onEach { dur ->
@@ -802,6 +843,13 @@ class PlaybackControllerImpl(
                 sourceId = null,
                 isFavorite = false,
             )
+        }
+    }
+
+    override fun trimInMemoryCaches() {
+        val currentId = queueManager.currentEntry?.mediaId
+        scope.launch {
+            runCatching { lyricsLoader.trimCaches(currentId) }
         }
     }
 

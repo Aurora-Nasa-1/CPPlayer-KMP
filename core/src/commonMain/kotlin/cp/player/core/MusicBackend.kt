@@ -871,7 +871,12 @@ class MusicBackend private constructor(
     /** Exact capabilities of the current SDK session, without manifest UI aliases. */
     suspend fun activeSdkCapabilities(): List<String>? = providerManager.sdkSessions.current()?.capabilities()?.supported
 
-    /** Provider 名称（UI 标题用，无活跃时返回占位串）。 */
+    /** 主动裁剪当前 SDK 会话 Host 中的非热点读缓存，配合托盘/低内存收缩。 */
+    fun trimProviderHostCaches() {
+        providerManager.sdkSessions.trimHostCaches()
+    }
+
+    /** 活跃 Provider 名称（UI 标题用，无活跃时返回占位串）。 */
     fun activeProviderName(): String = providerManager.getCurrentProviderName()
 
     /** Provider 唯一 ID（设置持久化用，无活跃时返回 "default"）。 */

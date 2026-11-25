@@ -46,6 +46,7 @@ actual fun PlatformRenderTuningContent() {
     // 本地态只用于即时反馈；真正的持久化交给 DesktopRenderTuning。
     var backend by remember { mutableStateOf(DesktopRenderTuning.storedBackend()) }
     var vsync by remember { mutableStateOf(DesktopRenderTuning.storedVsyncOverride()) }
+    var msaaMode by remember { mutableStateOf(DesktopRenderTuning.storedMsaaMode()) }
 
     // VRR 逐程序覆盖：默认「固定刷新率」，见 WindowsNvapiVrr。
     var vrrMode by remember { mutableStateOf(WindowsNvapiVrr.storedMode()) }
@@ -130,6 +131,24 @@ actual fun PlatformRenderTuningContent() {
                 }
             }
 
+            SettingsSection("抗锯齿（MSAA）") {
+                DesktopRenderTuning.MsaaMode.entries.forEachIndexed { index, option ->
+                    SettingsClickItem(
+                        title = option.label,
+                        subtitle = option.note,
+                        index = index,
+                        total = DesktopRenderTuning.MsaaMode.entries.size,
+                        onClick = {
+                            msaaMode = option
+                            DesktopRenderTuning.storeMsaaMode(option)
+                        },
+                        trailingContent = {
+                            RadioButton(selected = msaaMode == option, onClick = null)
+                        },
+                    )
+                }
+            }
+
             SettingsSection("VRR / G-SYNC（逐程序）") {
                 WindowsNvapiVrr.Mode.entries.forEachIndexed { index, mode ->
                     SettingsClickItem(
@@ -167,6 +186,11 @@ actual fun PlatformRenderTuningContent() {
                             null -> if (DesktopRenderTuning.isWindows) "未覆盖（平台默认：关闭 VSync）" else "未覆盖（平台默认：Skiko 决定）"
                             else -> "skiko.vsync.enabled=${DesktopRenderTuning.effectiveVsyncOverride()}"
                         },
+                    )
+                    EffectiveLine("硬件 MSAA", DesktopRenderTuning.effectiveMsaaSummary())
+                    EffectiveLine(
+                        "Skia GPU 缓存上限",
+                        "${DesktopRenderTuning.gpuCacheLimitBytes() / (1024L * 1024L)} MB（>5s 闲置自动清理）",
                     )
                     EffectiveLine("VRR（逐程序）", vrrStatus)
                     CpText(

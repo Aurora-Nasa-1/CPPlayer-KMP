@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.app.ui.util.resized
 import kotlin.math.roundToInt
 
@@ -454,7 +455,7 @@ private fun WallCover(url: String?, requestSize: Int, modifier: Modifier) {
     Box(modifier.background(cpNestedSurface())) {
         if (!url.isNullOrBlank()) {
             AsyncImage(
-                model = url.resized(requestSize),
+                model = rememberCoverImageRequest(url, targetPx = requestSize),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,

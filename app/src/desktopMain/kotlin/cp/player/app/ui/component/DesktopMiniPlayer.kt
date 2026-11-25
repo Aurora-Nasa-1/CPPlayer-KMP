@@ -62,6 +62,7 @@ import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.theme.containsKana
 import cp.player.app.ui.util.DesktopShell
 import cp.player.app.ui.util.LyricOffsetManager
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.app.ui.util.resized
 import cp.player.core.playback.LyricsState
 import cp.player.core.playback.PlaybackUiState
@@ -278,7 +279,7 @@ fun DesktopMiniPlayer(
                     ) {
                         if (hasCover) {
                             AsyncImage(
-                                model = coverUrl.resized(240),
+                                model = rememberCoverImageRequest(coverUrl, targetPx = 256),
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize(),

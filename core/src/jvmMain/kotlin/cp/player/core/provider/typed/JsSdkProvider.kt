@@ -49,7 +49,24 @@ class JsSdkProvider(
             js.function<JsObject>("__sdkRequest") { jsValue(request) as JsObject }
             js.function<JsObject>("__sdkContext") {
                 jsValue(mapOf("providerId" to context.providerId, "accountId" to context.accountId,
-                    "settings" to context.settings, "credential" to context.credential)) as JsObject
+                    "settings" to context.settings, "credential" to context.credential,
+                    "hostState" to context.hostState.let {
+                        mapOf(
+                            "inBackgroundTray" to it.inBackgroundTray,
+                            "dataSaver" to it.dataSaver,
+                            "preferredImagePx" to it.preferredImagePx,
+                        )
+                    })) as JsObject
+            }
+            js.function<JsObject>("__sdkHostState") {
+                val hs = context.runtime.hostState()
+                jsValue(
+                    mapOf(
+                        "inBackgroundTray" to hs.inBackgroundTray,
+                        "dataSaver" to hs.dataSaver,
+                        "preferredImagePx" to hs.preferredImagePx,
+                    ),
+                ) as JsObject
             }
             js.asyncFunction<JsObject>("__sdkHttp") { args ->
                 jsValue(context.runtime.http(HttpRequest.fromValues(valueObject(args.single()))).values()) as JsObject

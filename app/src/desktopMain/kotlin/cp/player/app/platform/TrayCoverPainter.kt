@@ -86,6 +86,15 @@ internal object TrayCoverPainter {
     private val cache = LinkedHashMap<String, BitmapPainter>()
     private val inFlight = HashSet<String>()
 
+    /** 保留最近 1 条托盘封面，释放其余位图缓存以配合最小化到托盘后的内存压缩。 */
+    fun trimToCurrent() {
+        synchronized(lock) {
+            while (cache.size > 1) {
+                cache.remove(cache.keys.first())
+            }
+        }
+    }
+
     /**
      * 只承载一张已解码位图的 `Painter`。
      *

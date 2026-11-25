@@ -796,7 +796,8 @@ nucleus {
             // 静态分析看不见，由插件补 public no-arg <init> 注册。
             detectOrphanProjectClasses.set(true)
             // 这是成品运行时 Java heap 上限（Nucleus 映射为 Native Image runtime 参数），不限制构建器 -Xmx。
-            maxHeapSize.set("160m")
+            // 配合存活集压缩（SwrCache / 歌词缓存 / 本地封面流式解析）与托盘隐藏期内存裁剪，压至 100m。
+            maxHeapSize.set("100m")
             val pgoProfile = layout.projectDirectory.file("graalvm/pgo/default.iprof")
             pgo {
                 // 保留 runWithPgoInstrument 训练任务；Nucleus 仅在 profile 文件存在时给正式构建传 --pgo。
@@ -840,11 +841,10 @@ nucleus {
                 // Native Image 的 Serial GC 只有 STW 的 minor / major 两种停顿：
                 // 年轻代越大，单次 minor 的复制量越大；120/144Hz 的帧预算只有
                 // 8.3/6.9ms，超过预算就是肉眼可见的掉帧。
-                // 32m 年轻代给图片解码、Compose layout 和短时请求对象更多缓冲；
-                // 老年代仍有 ~128m，相对 55~60m 的存活集有足够晋升余量，
-                // 减少必须做整堆 compaction 的 Full GC。`-Xmx` 仍由上面的
-                // `maxHeapSize=160m` 写进镜像（Nucleus -> -R:MaxHeapSize=160m）。
-                "-R:MaxNewSize=32m",
+                // 16m 年轻代配合 100m 总堆上限，给老年代留出 ~84m 空间容纳压缩后的存活集，
+                // 减少必须做整堆 compaction 的 Full GC；同时短命年轻代让单次 minor STW 更可控。
+                // `-Xmx` 仍由上面的 `maxHeapSize=100m` 写进镜像（Nucleus -> -R:MaxHeapSize=100m）。
+                "-R:MaxNewSize=16m",
                 // 显式钉住 25.3 的默认策略 Adaptive2，避免升级 GraalVM 时
                 // 默认 collector 策略漂移导致停顿曲线悄悄变化。
                 "-R:InitialCollectionPolicy=Adaptive2",

@@ -122,10 +122,19 @@ internal fun PosterWallCanvas(
         derivedStateOf { if (remoteEnabled && hasFocus) activeSelection()?.key else null }
     }.value
 
-    val foreground = if (!geometry.stacked) emptySet() else visible.groupBy(geometry::stackGroupKey).values.map { group ->
-        (group.firstOrNull { remoteEnabled && hasFocus && it.key == selection?.key }
-            ?: group.maxBy { geometry.depth(it.index) }).key
-    }.toSet()
+    val foreground = remember(items, geometry, remoteEnabled) {
+        derivedStateOf {
+            if (!geometry.stacked) {
+                emptySet()
+            } else {
+                val activeFocusKey = if (remoteEnabled && hasFocus) selection?.key else null
+                visible.groupBy(geometry::stackGroupKey).values.map { group ->
+                    (group.firstOrNull { activeFocusKey != null && it.key == activeFocusKey }
+                        ?: group.maxBy { geometry.depth(it.index) }).key
+                }.toSet()
+            }
+        }
+    }.value
 
     fun rotated(offset: Offset, degrees: Float): Offset {
         val radians = degrees * Math.PI.toFloat() / 180f
@@ -210,7 +219,11 @@ internal fun PosterWallCanvas(
                     val next = nextPosterPlacement(from, geometry, direction) ?: return@onPreviewKeyEvent false
                     selection = state.reveal(next, geometry)
                     true
-                } else if (event.key in listOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.Menu)) {
+                } else if (event.key == Key.DirectionCenter ||
+                    event.key == Key.Enter ||
+                    event.key == Key.NumPadEnter ||
+                    event.key == Key.Menu
+                ) {
                     val selected = activeSelection() ?: return@onPreviewKeyEvent false
                     if (event.type == KeyEventType.KeyDown) {
                         confirmHeld = event.isCtrlPressed || event.isAltPressed

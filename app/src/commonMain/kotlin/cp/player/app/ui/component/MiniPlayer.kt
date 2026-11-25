@@ -77,6 +77,7 @@ import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.app.ui.util.LyricOffsetManager
 import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.ui.util.next
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.app.ui.util.resized
 import cp.player.core.music.TrackSummary
 import cp.player.core.playback.LyricsState
@@ -867,9 +868,9 @@ private fun SharedTransitionScope.MiniCover(
             .graphicsLayer { alpha = if (hideCover) 0f else 1f },
     ) {
         if (!track.coverUrl.isNullOrBlank()) {
-            // 用 150px 缩略图，省内存与带宽。
+            // 按 128px 规范分桶，省内存与带宽，并直接命中桌面裁剪缩略图盘缓存。
             AsyncImage(
-                model = track.coverUrl.resized(150),
+                model = rememberCoverImageRequest(track.coverUrl, targetPx = 128),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize()
                     .sharedBounds(

@@ -227,6 +227,8 @@ data class ModuleManifest(
      * 声明后前端根据此列表渲染当前音源档位并实现跨音源自动保持与平滑映射。
      */
     val qualityOptions: List<ProviderQualityOption>? = null,
+    /** 可选的多档封面尺寸解析与缓存键清洗规则，缺省由宿主自动按域名/本地降采样处理。 */
+    val imageResize: ProviderImageResizeRule? = null,
     /** Optional custom adapter class; omitted when entryPoint is a native SDK library. */
     val nativeFactoryClass: String? = null,
 ) {

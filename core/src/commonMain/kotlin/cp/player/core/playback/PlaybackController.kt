@@ -219,6 +219,9 @@ interface PlaybackController {
     /** 重载/热切换底层播放引擎（在用户更改音频内核设置后调用）。默认空实现。 */
     fun reloadEngine() {}
 
+    /** 后台/低内存时裁剪非活跃缓存（歌词缓存等），默认空实现。 */
+    fun trimInMemoryCaches() {}
+
     companion object {
         /** [setSleepTimer] 特殊值：播完当前曲目后暂停。 */
         const val SLEEP_AFTER_TRACK = 0

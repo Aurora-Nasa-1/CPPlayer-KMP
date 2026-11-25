@@ -17,6 +17,7 @@ class SdkBackendProvider(
     override val sdkAllowedOrigins: Set<String> = emptySet(),
     override val capabilities: List<String>? = emptyList(),
     override val defaultCountryCode: String? = null,
+    override val imageResizeRule: ProviderImageResizeRule? = null,
 ) : BackendProvider {
     private val listeners = mutableSetOf<() -> Unit>()
     private var disposed = false

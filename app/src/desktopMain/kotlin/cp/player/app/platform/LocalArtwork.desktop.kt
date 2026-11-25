@@ -116,20 +116,28 @@ internal object LocalArtwork {
         val flags = head[5].toInt() and 0xFF
         val tagSize = syncsafe(head, 6)
         if (tagSize <= 0) return null
-        val buffer = ByteArray(minOf(tagSize.toLong(), MAX_ID3_BYTES).toInt())
-        if (readFully(raf, 10, buffer) != buffer.size) return null
+        val limit = 10L + minOf(tagSize.toLong(), MAX_ID3_BYTES)
 
-        var pos = 0
-        if (flags and 0x40 != 0) { // 扩展头：v2.4 尺寸含自身（syncsafe），v2.3 不含
-            pos += if (version >= 4) syncsafe(buffer, 0) else bigEndian32(buffer, 0) + 4
+        var pos = 10L
+        if (flags and 0x40 != 0) {
+            val extHead = ByteArray(4)
+            if (pos + 4 > limit || readFully(raf, pos, extHead) != 4) return null
+            pos += if (version >= 4) syncsafe(extHead, 0).toLong() else (bigEndian32(extHead, 0).toLong() and 0xFFFFFFFFL) + 4L
         }
-        while (pos + 10 <= buffer.size) {
-            val id = String(buffer, pos, 4, Charsets.ISO_8859_1)
+        val frameHead = ByteArray(10)
+        while (pos + 10L <= limit) {
+            if (readFully(raf, pos, frameHead) != frameHead.size) break
+            val id = String(frameHead, 0, 4, Charsets.ISO_8859_1)
             if (id[0] !in 'A'..'Z') break // padding
-            val frameSize = if (version >= 4) syncsafe(buffer, pos + 4) else bigEndian32(buffer, pos + 4)
-            if (frameSize <= 0 || pos + 10 + frameSize > buffer.size) break
-            if (id == "APIC") return parseApic(buffer, pos + 10, frameSize)
-            pos += 10 + frameSize
+            val frameSize = if (version >= 4) syncsafe(frameHead, 4) else bigEndian32(frameHead, 4)
+            if (frameSize <= 0 || pos + 10L + frameSize > limit) break
+            if (id == "APIC") {
+                if (frameSize > MAX_COVER_BYTES + 4096) return null
+                val apic = ByteArray(frameSize)
+                if (readFully(raf, pos + 10L, apic) != apic.size) return null
+                return parseApic(apic, 0, frameSize)
+            }
+            pos += 10L + frameSize
         }
         return null
     }
@@ -214,53 +222,32 @@ internal object LocalArtwork {
             String(header, 0, 4, Charsets.US_ASCII) in setOf("MOVI", "moov", "wide", "free", "skip")
 
     private fun fromMp4(raf: RandomAccessFile): Pair<String, ByteArray>? {
-        val moovOffset = findAtom(raf, raf.length(), "moov", 0L) ?: return null
-        val sizeHeader = ByteArray(8)
-        if (readFully(raf, moovOffset, sizeHeader) != sizeHeader.size) return null
-        val moovSize = bigEndian32(sizeHeader, 0).toLong() and 0xFFFFFFFFL
-        if (moovSize <= 8 || moovSize > MAX_MOOV_BYTES) return null
-        val moov = ByteArray(moovSize.toInt())
-        if (readFully(raf, moovOffset, moov) != moov.size) return null
-        return findCoverInMoov(moov)
+        val moov = findAtomRange(raf, 0L, raf.length(), "moov") ?: return null
+        if (moov.second - moov.first > MAX_MOOV_BYTES) return null
+        val udta = findAtomRange(raf, moov.first, moov.second, "udta") ?: return null
+        val meta = findAtomRange(raf, udta.first, udta.second, "meta") ?: return null
+        val ilst = findAtomRange(raf, meta.first + 4L, meta.second, "ilst") ?: return null
+        val covr = findAtomRange(raf, ilst.first, ilst.second, "covr") ?: return null
+        val data = findAtomRange(raf, covr.first, covr.second, "data") ?: return null
+        val payloadStart = data.first + 8L
+        val payloadLen = data.second - payloadStart
+        if (payloadLen <= 0L || payloadLen > MAX_COVER_BYTES) return null
+        val bytes = ByteArray(payloadLen.toInt())
+        if (readFully(raf, payloadStart, bytes) != bytes.size) return null
+        return image(bytes, null)
     }
 
-    /** moov → udta → meta（自身带 4B 版本/标志）→ ilst → covr → data(16B 头) 。 */
-    private fun findCoverInMoov(moov: ByteArray): Pair<String, ByteArray>? {
-        val udta = childAtom(moov, 8, moov.size, "udta") ?: return null
-        val meta = childAtom(moov, udta.first + 8, udta.second, "meta") ?: return null
-        val ilst = childAtom(moov, meta.first + 12, meta.second, "ilst") ?: return null
-        val covr = childAtom(moov, ilst.first + 8, ilst.second, "covr") ?: return null
-        val data = childAtom(moov, covr.first + 8, covr.second, "data") ?: return null
-        val payloadStart = data.first + 16 // 8B 原子头 + 4B 版本/标志 + 4B locale
-        val payloadEnd = data.second
-        if (payloadStart >= payloadEnd) return null
-        return image(moov.copyOfRange(payloadStart, payloadEnd), null) ?: return null
-    }
-
-    /** 在 [from, until) 内找第一个类型为 [name] 的直接子原子，返回 (内容起点, 内容终点)。 */
-    private fun childAtom(data: ByteArray, from: Int, until: Int, name: String): Pair<Int, Int>? {
-        var pos = from
-        while (pos + 8 <= until) {
-            val size = bigEndian32(data, pos).toLong() and 0xFFFFFFFFL
-            if (size < 8) return null
-            val type = String(data, pos + 4, 4, Charsets.US_ASCII)
-            val contentStart = pos + 8
-            val contentEnd = minOf(pos + size, until.toLong()).toInt()
-            if (type == name) return contentStart to contentEnd
-            pos = contentEnd
-        }
-        return null
-    }
-
-    private fun findAtom(raf: RandomAccessFile, limit: Long, name: String, from: Long): Long? {
+    private fun findAtomRange(raf: RandomAccessFile, from: Long, until: Long, name: String): Pair<Long, Long>? {
         var pos = from
         val head = ByteArray(8)
-        while (pos + 8 <= limit) {
+        var guard = 0
+        while (pos + 8L <= until && guard++ < 256) {
             if (readFully(raf, pos, head) != head.size) return null
             val size = bigEndian32(head, 0).toLong() and 0xFFFFFFFFL
-            if (size < 8) return null
-            if (String(head, 4, 4, Charsets.US_ASCII) == name) return pos
-            pos += size
+            if (size < 8L) return null
+            val end = minOf(pos + size, until)
+            if (String(head, 4, 4, Charsets.US_ASCII) == name) return (pos + 8L) to end
+            pos = end
         }
         return null
     }

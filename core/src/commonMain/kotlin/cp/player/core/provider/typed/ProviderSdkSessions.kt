@@ -1,6 +1,7 @@
 package cp.player.core.provider.typed
 
 import cp.player.core.provider.BackendProvider
+import cp.player.core.provider.HostTrafficPolicy
 import cp.player.sdk.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
@@ -13,8 +14,14 @@ internal interface ManagedProviderRuntime : ProviderRuntime {
 }
 
 internal expect fun createSdkRuntime(allowedOrigins: Set<String>): ManagedProviderRuntime
+internal expect fun createScopedSdkRuntime(allowedOrigins: Set<String>, cacheScopeKey: String): ManagedProviderRuntime
 
-private class SdkRuntimeFactory(val create: (Set<String>) -> ManagedProviderRuntime)
+private class SdkRuntimeFactory(
+    val customCreate: ((Set<String>) -> ManagedProviderRuntime)? = null,
+) {
+    fun create(allowedOrigins: Set<String>, cacheScopeKey: String): ManagedProviderRuntime =
+        customCreate?.invoke(allowedOrigins) ?: createScopedSdkRuntime(allowedOrigins, cacheScopeKey)
+}
 
 /**
  * The existing registry owns metadata; this owns typed account-session instances.
@@ -30,7 +37,7 @@ class ProviderSdkSessions private constructor(
         active: () -> BackendProvider?,
         cookie: (String, String) -> String?,
         credentialVersion: (String, String) -> Long = { _, _ -> 0 },
-    ) : this(active, cookie, credentialVersion, SdkRuntimeFactory(::createSdkRuntime))
+    ) : this(active, cookie, credentialVersion, SdkRuntimeFactory())
 
     internal constructor(
         active: () -> BackendProvider?,
@@ -96,7 +103,7 @@ class ProviderSdkSessions private constructor(
         owner = provider
         if (provider == null || provider.contract != "kmp-sdk-v1") return@withLock null
         val key = ProviderSessionKey(provider.id, account, generation)
-        val runtime = runtimeFactory.create(provider.sdkAllowedOrigins)
+        val runtime = runtimeFactory.create(provider.sdkAllowedOrigins, "${provider.id}:$account:$credentialEpoch")
         val resourceLock = Any()
         var resourcesClosed = false
         var implementation: MusicProvider? = null
@@ -138,7 +145,13 @@ class ProviderSdkSessions private constructor(
             val accepted = synchronized(this) {
                 if (closed || !created.isActive || revision != generation ||
                     (accounts[provider.id] ?: "default") != account || active() !== provider) false
-                else { host = created; true }
+                else {
+                    host = created
+                    HostTrafficPolicy.setActiveProviderImagePolicy(provider.imageResizeRule) { raw, px ->
+                        sessionProvider.resolveCoverUrl(raw, px)
+                    }
+                    true
+                }
             }
             if (!accepted) {
                 val failure = CancellationException("Session changed during creation")
@@ -163,6 +176,10 @@ class ProviderSdkSessions private constructor(
         }
         retirement.coroutineContext.job.children.toList().joinAll()
         retirement.cancel()
+    }
+
+    fun trimHostCaches() {
+        synchronized(this) { host }?.trimCache()
     }
 
     val selectedAccountId: String get() = synchronized(this) { accounts[active()?.id] ?: "default" }

@@ -182,8 +182,10 @@ internal class TaoSceneBundle(
         nanoTime: Long,
         beforeDraw: ((Canvas) -> Unit)? = null,
     ) {
-        if (closed.get()) return
+        if (closed.get() || cp.player.app.ui.util.DesktopShell.isWindowHidden) return
+        cp.player.app.platform.DesktopSkiaLifecycle.registerFrameRequester(requestFrame)
         CpRenderProbe.tick()
+        val hadVisualWork = visualDirty.get()
         var swallowed = true
         exceptionHandler.catchExceptions {
             // Closed by its own recomposition: nothing was drawn, nothing to account for 鈥?the
@@ -196,6 +198,7 @@ internal class TaoSceneBundle(
             if (damageTracker.afterDraw()) requestFrame()
             renderOverlay?.invoke(canvas)
             edtGuard.afterFrame()
+            cp.player.app.platform.DesktopSkiaLifecycle.onAfterFrame(canvas, hadVisualWork)
             swallowed = false
         }
         // The handler chose to continue: this frame's recording is incomplete,

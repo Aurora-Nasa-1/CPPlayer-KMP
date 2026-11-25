@@ -2,6 +2,7 @@ package cp.player.app.repository
 
 import cp.player.core.BackendResult
 import cp.player.core.music.MusicResult
+import cp.player.core.provider.HostTrafficPolicy
 import cp.player.core.util.currentTimeMillis
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -59,19 +60,22 @@ internal class SwrCache<T : Any>(
             val age = nowMs() - cached.fetchedAt
             if (age < freshTtlMs) return BackendResult.Success(cached.value)
             if (age < staleTtlMs) {
-                // 旧数据先上屏；若失效恰好发生在 launch 前，expectedGeneration 会阻止旧刷新启动。
-                scope.launch {
-                    val result = try {
-                        fetchAndStore(key, fetch, shouldCache, expectedGeneration = snapshot.second)
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Throwable) {
-                        null
-                    }
-                    if (result != null) {
-                        mutex.withLock {
-                            if (generation == snapshot.second) {
-                                runCatching { onRefresh?.invoke(result) }
+                // 托盘后台 / 省流 / 离线时直接沿用 stale 缓存，不发后台静默换新请求。
+                if (HostTrafficPolicy.isBackgroundRefreshAllowed()) {
+                    // 旧数据先上屏；若失效恰好发生在 launch 前，expectedGeneration 会阻止旧刷新启动。
+                    scope.launch {
+                        val result = try {
+                            fetchAndStore(key, fetch, shouldCache, expectedGeneration = snapshot.second)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        if (result != null) {
+                            mutex.withLock {
+                                if (generation == snapshot.second) {
+                                    runCatching { onRefresh?.invoke(result) }
+                                }
                             }
                         }
                     }
@@ -93,6 +97,24 @@ internal class SwrCache<T : Any>(
             generation++
             entries.keys.filter(predicate).forEach(entries::remove)
             inflight.keys.filter(predicate).forEach(inflight::remove)
+        }
+    }
+
+    /** 清理已超过 stale 窗口的条目，并在超过 [maxKeep] 时按 LRU 裁剪，压缩常驻存活集。 */
+    suspend fun trimTo(maxKeep: Int) {
+        val now = nowMs()
+        mutex.withLock {
+            val iter = entries.entries.iterator()
+            while (iter.hasNext()) {
+                val entry = iter.next().value
+                if (now - entry.fetchedAt >= staleTtlMs) {
+                    iter.remove()
+                }
+            }
+            val limit = maxKeep.coerceAtLeast(0)
+            while (entries.size > limit) {
+                entries.remove(entries.keys.first())
+            }
         }
     }
 

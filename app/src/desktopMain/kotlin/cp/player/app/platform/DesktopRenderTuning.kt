@@ -57,6 +57,7 @@ internal object DesktopRenderTuning {
     /** 持久化键（写入 `~/.cpplayer/cp_player_prefs.properties`）。 */
     const val KEY_BACKEND = "desktop_render_api"
     const val KEY_VSYNC = "desktop_vsync_override"
+    const val KEY_MSAA = "desktop_msaa_mode"
 
     /** 记录「上次启动因某个后端起不来而被自动回退」，供设置页提示用户。 */
     const val KEY_LAST_REVERT = "desktop_render_api_last_revert"
@@ -90,6 +91,15 @@ internal object DesktopRenderTuning {
     /** Skiko 自己认的属性名。 */
     private const val PROP_RENDER_API = "skiko.renderApi"
     private const val PROP_VSYNC = "skiko.vsync.enabled"
+    private const val PROP_GPU_RESOURCE_CACHE_LIMIT = "skiko.gpu.resourceCacheLimit"
+    private const val PROP_MSAA = "skiko.rendering.msaa"
+    private const val OVERRIDE_MSAA = "cp.player.msaa"
+    private const val PROP_SKIA_GPU_CACHE_MB = "cp.skia.gpuCacheMb"
+
+    private const val DEFAULT_GPU_CACHE_MB = 32L
+    private const val HIGH_RES_GPU_CACHE_MB = 48L
+    private const val MIN_GPU_CACHE_MB = 16L
+    private const val MAX_GPU_CACHE_MB = 128L
 
     /** CMP 1.13+ 同步窗口实时缩放属性名（Skiko SKIKO-1196）。 */
     const val PROP_WINDOWS_SYNC_LIVE_RESIZE = "skiko.rendering.windows.direct3DSynchronousLiveResize"
@@ -143,6 +153,26 @@ internal object DesktopRenderTuning {
         }
     }
 
+    enum class MsaaMode(val label: String, val note: String) {
+        AUTO(
+            "自动（2K/4K 关闭）",
+            "在 ≥2560×1440 高分屏上自动关闭硬件 MSAA，节省显存与带宽；1080p 保持默认。",
+        ),
+        DISABLED(
+            "始终关闭 MSAA",
+            "强制 sampleCount=0，仅保留 Skia 解析抗锯齿（Analytic AA）。",
+        ),
+        ENABLED(
+            "保留默认 MSAA",
+            "不主动关闭 MSAA，交给 Skiko/驱动默认配置。",
+        );
+
+        companion object {
+            fun fromStorage(raw: String?): MsaaMode =
+                entries.firstOrNull { it.name == raw } ?: AUTO
+        }
+    }
+
     /**
      * 本次运行后端取值的实际来源。
      *
@@ -165,6 +195,9 @@ internal object DesktopRenderTuning {
 
     @Volatile
     private var appliedBackend: Backend? = null
+
+    @Volatile
+    private var appliedMsaaDisabled: Boolean = false
 
     private val prefs by lazy { defaultSettingsStorage() }
 
@@ -214,6 +247,34 @@ internal object DesktopRenderTuning {
 
     fun storeVsyncOverride(value: Boolean?) {
         if (value == null) prefs.remove(KEY_VSYNC) else prefs.putString(KEY_VSYNC, value.toString())
+    }
+
+    fun storedMsaaMode(): MsaaMode = MsaaMode.fromStorage(prefs.getString(KEY_MSAA))
+
+    fun storeMsaaMode(mode: MsaaMode) {
+        prefs.putString(KEY_MSAA, mode.name)
+    }
+
+    /** 本次运行是否应关闭硬件 MSAA（2K/4K 默认关闭，或由设置/启动参数覆盖）。 */
+    fun isMsaaDisabled(): Boolean = appliedMsaaDisabled
+
+    /** 收紧后的 Skia DirectContext GPU 资源缓存上限（字节）。 */
+    fun gpuCacheLimitBytes(): Long {
+        val overrideMb = System.getProperty(PROP_SKIA_GPU_CACHE_MB)
+            ?.toLongOrNull()
+            ?.coerceIn(MIN_GPU_CACHE_MB, MAX_GPU_CACHE_MB)
+        val mb = overrideMb ?: if (TaoPrimaryDisplay.isHighResolutionDisplay()) {
+            HIGH_RES_GPU_CACHE_MB
+        } else {
+            DEFAULT_GPU_CACHE_MB
+        }
+        return mb * 1024L * 1024L
+    }
+
+    fun effectiveMsaaSummary(): String = when {
+        appliedMsaaDisabled && storedMsaaMode() == MsaaMode.AUTO -> "已关闭（2K/4K 自动策略）"
+        appliedMsaaDisabled -> "已关闭（强制）"
+        else -> "默认（未关闭）"
     }
 
     /** 上次被自动回退掉的后端；`null` 表示没有发生过。 */
@@ -458,6 +519,23 @@ internal object DesktopRenderTuning {
             }
         }
 
+        // ---- Skia DirectContext 资源缓存上限收紧 & 2K/4K 关闭 MSAA ----
+        val gpuCacheBytes = gpuCacheLimitBytes()
+        if (System.getProperty(PROP_GPU_RESOURCE_CACHE_LIMIT) == null) {
+            System.setProperty(PROP_GPU_RESOURCE_CACHE_LIMIT, gpuCacheBytes.toString())
+        }
+        val msaaOverride = System.getProperty(OVERRIDE_MSAA)?.toBooleanStrictOrNull()
+        val highRes = TaoPrimaryDisplay.isHighResolutionDisplay()
+        appliedMsaaDisabled = when {
+            msaaOverride != null -> !msaaOverride
+            storedMsaaMode() == MsaaMode.DISABLED -> true
+            storedMsaaMode() == MsaaMode.ENABLED -> false
+            else -> highRes
+        }
+        if (appliedMsaaDisabled && System.getProperty(PROP_MSAA) == null) {
+            System.setProperty(PROP_MSAA, "false")
+        }
+
         val sourceLabel = when (source) {
             BackendSource.EXTERNAL -> "外部启动参数（不干预）"
             BackendSource.OVERRIDE -> "启动参数/环境变量"
@@ -486,6 +564,7 @@ internal object DesktopRenderTuning {
                     },
                 )
                 appendLine("[RenderTuning] 同步窗口缩放 (Live Resize)：$liveResizeStatus")
+                appendLine("[RenderTuning] Skia GPU 缓存上限：${gpuCacheBytes / (1024L * 1024L)}MB | 硬件 MSAA：${effectiveMsaaSummary()}")
                 append("[RenderTuning] 安全模式：只有同一后端连续 $FAILURE_THRESHOLD 次未能出帧才回退；单次异常退出不切换。")
                 append("手工干预：-D$OVERRIDE_BACKEND=AUTO，或删除 ${storageHint()} 中的 $KEY_BACKEND / $KEY_VSYNC 项。")
             },

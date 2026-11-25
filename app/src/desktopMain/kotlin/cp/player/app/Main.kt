@@ -38,6 +38,7 @@ import cp.player.app.platform.AppTray
 import cp.player.app.platform.DesktopBackDispatcher
 import cp.player.app.platform.DesktopCloseBehavior
 import cp.player.app.platform.DesktopRenderTuning
+import cp.player.app.platform.DesktopSkiaLifecycle
 import cp.player.app.platform.DesktopTrayState
 import cp.player.app.platform.desktopTraySupported
 import cp.player.app.platform.TaoPrimaryDisplay
@@ -266,6 +267,7 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                 runCatching { w.toFront() }
             }
             DesktopShell.isWindowHidden = false
+            DesktopSkiaLifecycle.onRestoreFromTray(nucleusWindow = windowRef.value)
         }
 
         // 隐藏到托盘。⚠️ 没有托盘实现时必须**退回真退出** —— 否则窗口藏了、又没有图标能
@@ -276,20 +278,10 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                 // 不可见、渲染循环还在按 VSync 空转。顺序反过来会多出若干帧的空转。
                 DesktopShell.isWindowHidden = true
                 windowRef.value?.let { w ->
-                    // 先最小化、再 hide()。
-                    //
-                    // 依据：Tao 的 `hide()` 只调 `nativeSetVisible(false)`，而 Nucleus
-                    // `TaoComposeSceneHost.isOutOfSight()` 只看
-                    // `TaoWindow.isMinimized || occluded` ⇒ 单纯 `hide()` 之后
-                    // `renderFrameSuspending` 不会提前返回，仍会整帧渲染；
-                    // `onMinimizedChanged(true)` 里的 `purgeGpuResourceCacheAtRest()`
-                    // 也不会被调用。补一次 `setMinimized(true)` 才进入这条早退分支。
-                    //
-                    // ⚠️ 最终的可视状态（任务栏是否残留图标）需要实机核对；
-                    // 若出现「最小化到托盘却还在任务栏」就调换这两行顺序再测。
                     runCatching { w.setMinimized(true) }
                     runCatching { w.hide() }
                 }
+                DesktopSkiaLifecycle.onMinimizeToTray(nucleusWindow = windowRef.value)
             } else {
                 println("[CPPlayer] 本机没有系统托盘，无法最小化到托盘，改为退出")
                 exitApplication()
@@ -465,6 +457,7 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
             LaunchedEffect(nucleusWindow) {
                 windowRef.value = nucleusWindow
                 WindowsSmtcControls.primaryWindowHandle = taoWindow.nativeHandle
+                DesktopSkiaLifecycle.attachWindow(taoWindow, nucleusWindow)
             }
 
             if (isMiniMode) {

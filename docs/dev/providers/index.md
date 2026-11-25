@@ -32,6 +32,7 @@ CPPlayer 自身不含在线曲库。内容全部由 Provider 提供：它实现�
 | 生成模板 / 打包 / 一致性检查 | [QUICKSTART 2.1](QUICKSTART.md#21-从模板生成) → [provider-contract/README](../../../provider-contract/README.md) |
 | 查签名与字段 | [SDK_OPERATIONS](SDK_OPERATIONS.md)、[SDK_TYPES](SDK_TYPES.md) |
 | 按业务域实现 | [WORKFLOWS](WORKFLOWS.md) |
+| 可选省流、缓存配合与多档封面 | [OPTIONAL_CACHE_AND_IMAGES](OPTIONAL_CACHE_AND_IMAGES.md) |
 | DRM 真机 / 真凭据验收 | [DRM_VERIFICATION](DRM_VERIFICATION.md) |
 | 发布到商店 | [MANIFEST 第 6 节](MANIFEST.md#6-商店仓库分发) |
 | 改 SDK 本身 | [provider-contract/README](../../../provider-contract/README.md) |
@@ -46,6 +47,7 @@ CPPlayer 自身不含在线曲库。内容全部由 Provider 提供：它实现�
 | [JS](JS.md) | `globalThis.provider`、`context` 能力、TS 类型与打包 | JS / TS 作者 |
 | [NATIVE](NATIVE.md) | JNI 符号、Wire 字节格式、C ABI、双导出 | 原生作者 |
 | [WORKFLOWS](WORKFLOWS.md) | 搜索、播放、评论、一起听、MV/DJ、上传、登录 | 全部作者 |
+| [OPTIONAL_CACHE_AND_IMAGES](OPTIONAL_CACHE_AND_IMAGES.md) | 可选宿主省流状态同步、`imageResize` 声明、宿主机透明缓存机制 | 全部作者 |
 | [DRM_VERIFICATION](DRM_VERIFICATION.md) | Widevine / FairPlay 真实解密链路验收、平台差异、证据模板 | 有 DRM 音源的作者、维护者 |
 | [SDK_OPERATIONS](SDK_OPERATIONS.md) | 164 个业务操作的 tag、能力名、请求/响应 | 参考 |
 | [SDK_TYPES](SDK_TYPES.md) | 162 个 DTO 的字段、类型、默认值 | 参考 |
@@ -74,5 +76,6 @@ CPPlayer 自身不含在线曲库。内容全部由 Provider 提供：它实现�
 ## 相关
 
 - 架构与源集：[../ARCHITECTURE.md](../ARCHITECTURE.md)
+- 全链路缓存与低内存图片管线：[../IMAGE_AND_CACHE_PIPELINE.md](../IMAGE_AND_CACHE_PIPELINE.md)
 - 合同生成与校验：[../../../provider-contract/README.md](../../../provider-contract/README.md)
 - SDK 源码说明：[../../../provider-sdk-kmp/README.md](../../../provider-sdk-kmp/README.md)

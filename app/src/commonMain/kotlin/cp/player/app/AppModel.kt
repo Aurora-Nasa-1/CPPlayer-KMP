@@ -288,6 +288,17 @@ object AppModel {
     val musicRepository: MusicRepository get() = musicRepositoryProvider.get()
 
     /**
+     * 后台/最小化到托盘时主动压缩应用级内存缓存，释放非活跃列表/歌单/歌词缓存以配合低堆运行。
+     */
+    fun trimMemoryForBackground() {
+        runCatching { playback.trimInMemoryCaches() }
+        runCatching { backend.trimProviderHostCaches() }
+        modelScope.launch {
+            runCatching { musicRepository.trimReadCachesForLowMemory() }
+        }
+    }
+
+    /**
      * 私信 / 联系人门面。
      *
      * 每次访问新建 —— 它只是统一音源之上的一层**无状态**映射包装；

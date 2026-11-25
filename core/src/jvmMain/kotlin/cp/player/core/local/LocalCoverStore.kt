@@ -150,21 +150,29 @@ internal class LocalCoverStore(private val cacheDir: File) {
         val flags = head[5].toInt() and 0xFF
         val tagSize = syncsafe(head, 6)
         if (tagSize <= 0) return null
-        val buffer = ByteArray(minOf(tagSize.toLong(), MAX_ID3_BYTES).toInt())
-        if (readFully(raf, 10, buffer) != buffer.size) return null
+        val limit = 10L + minOf(tagSize.toLong(), MAX_ID3_BYTES)
 
-        var pos = 0
-        if (flags and 0x40 != 0) { // 扩展头：v2.4 尺寸含自身（syncsafe），v2.3 不含
-            if (pos + 4 > buffer.size) return null
-            pos += if (version >= 4) syncsafe(buffer, 0) else be32(buffer, 0) + 4
+        var pos = 10L
+        if (flags and 0x40 != 0) {
+            // 扩展头：按 4 字节头直接流式跳过，不整块读入 8MB 缓冲。
+            val extHead = ByteArray(4)
+            if (pos + 4 > limit || readFully(raf, pos, extHead) != 4) return null
+            pos += if (version >= 4) syncsafe(extHead, 0).toLong() else (be32(extHead, 0).toLong() and 0xFFFFFFFFL) + 4L
         }
-        while (pos + 10 <= buffer.size) {
-            val id = readAscii(buffer, pos, 4) ?: break
+        val frameHead = ByteArray(10)
+        while (pos + 10L <= limit) {
+            if (readFully(raf, pos, frameHead) != frameHead.size) break
+            val id = readAscii(frameHead, 0, 4) ?: break
             if (id.isEmpty() || id[0] !in 'A'..'Z') break // padding
-            val frameSize = if (version >= 4) syncsafe(buffer, pos + 4) else be32(buffer, pos + 4)
-            if (frameSize <= 0 || pos + 10 + frameSize > buffer.size) break
-            if (id == "APIC") return parseApic(buffer, pos + 10, frameSize)
-            pos += 10 + frameSize
+            val frameSize = if (version >= 4) syncsafe(frameHead, 4) else be32(frameHead, 4)
+            if (frameSize <= 0 || pos + 10L + frameSize > limit) break
+            if (id == "APIC") {
+                if (frameSize > MAX_COVER_BYTES + 4096) return null
+                val apic = ByteArray(frameSize)
+                if (readFully(raf, pos + 10L, apic) != apic.size) return null
+                return parseApic(apic, 0, frameSize)
+            }
+            pos += 10L + frameSize
         }
         return null
     }
@@ -262,50 +270,41 @@ internal class LocalCoverStore(private val cacheDir: File) {
     // ---------- MP4 / M4A ----------
 
     private fun fromMp4(raf: RandomAccessFile): Pair<String, ByteArray>? {
-        val moovOffset = findTopAtom(raf, "moov") ?: return null
-        val sizeHeader = ByteArray(8)
-        if (readFully(raf, moovOffset, sizeHeader) != sizeHeader.size) return null
-        val moovSize = be32(sizeHeader, 0).toLong() and 0xFFFFFFFFL
-        if (moovSize <= 8 || moovSize > MAX_MOOV_BYTES) return null
-        val moov = ByteArray(moovSize.toInt())
-        if (readFully(raf, moovOffset, moov) != moov.size) return null
-        val udta = childAtom(moov, 8, moov.size, "udta") ?: return null
-        val meta = childAtom(moov, udta.first, udta.second, "meta") ?: return null
-        val ilst = childAtom(moov, meta.first + 12, meta.second, "ilst") ?: return null
-        val covr = childAtom(moov, ilst.first, ilst.second, "covr") ?: return null
-        val data = childAtom(moov, covr.first, covr.second, "data") ?: return null
-        // data 原子：8B 头 + 4B 版本/标志 + 4B locale
-        val payloadStart = data.first + 16
-        if (payloadStart >= data.second) return null
-        return image(moov.copyOfRange(payloadStart, data.second), null)
+        val moov = findAtomRange(raf, 0L, raf.length(), "moov") ?: return null
+        if (moov.second - moov.first > MAX_MOOV_BYTES) return null
+        // 流式下钻原子树，只读最终 covr/data 负载，避免在 -Xmx100m 下分配整块 moov 字节数组。
+        val udta = findAtomRange(raf, moov.first, moov.second, "udta") ?: return null
+        val meta = findAtomRange(raf, udta.first, udta.second, "meta") ?: return null
+        val ilst = findAtomRange(raf, meta.first + 4L, meta.second, "ilst") ?: return null
+        val covr = findAtomRange(raf, ilst.first, ilst.second, "covr") ?: return null
+        val data = findAtomRange(raf, covr.first, covr.second, "data") ?: return null
+        // data 原子内容：4B 版本/标志 + 4B locale（加上前面已越过的 8B 原子头，共 16B）
+        val payloadStart = data.first + 8L
+        val payloadLen = data.second - payloadStart
+        if (payloadLen <= 0L || payloadLen > MAX_COVER_BYTES) return null
+        val bytes = ByteArray(payloadLen.toInt())
+        if (readFully(raf, payloadStart, bytes) != bytes.size) return null
+        return image(bytes, null)
     }
 
-    private fun findTopAtom(raf: RandomAccessFile, name: String): Long? {
-        var pos = 0L
+    private fun findAtomRange(
+        raf: RandomAccessFile,
+        from: Long,
+        until: Long,
+        name: String,
+    ): Pair<Long, Long>? {
+        var pos = from
         val head = ByteArray(8)
-        val limit = raf.length()
         var guard = 0
-        while (pos + 8 <= limit && guard++ < 64) {
+        while (pos + 8L <= until && guard++ < 256) {
             if (readFully(raf, pos, head) != head.size) return null
             val size = be32(head, 0).toLong() and 0xFFFFFFFFL
-            if (size < 8) return null
-            if (readAscii(head, 4, 4) == name) return pos
-            pos += size
-        }
-        return null
-    }
-
-    private fun childAtom(data: ByteArray, from: Int, until: Int, name: String): Pair<Int, Int>? {
-        var pos = from
-        var guard = 0
-        while (pos + 8 <= until && guard++ < 256) {
-            val size = be32(data, pos).toLong() and 0xFFFFFFFFL
-            if (size < 8) return null
-            val type = readAscii(data, pos + 4, 4) ?: return null
-            val contentStart = pos + 8
-            val contentEnd = minOf(pos + size, until.toLong()).toInt()
-            if (type == name) return contentStart to contentEnd
-            pos = contentEnd
+            if (size < 8L) return null
+            val end = minOf(pos + size, until)
+            if (readAscii(head, 4, 4) == name) {
+                return (pos + 8L) to end
+            }
+            pos = end
         }
         return null
     }

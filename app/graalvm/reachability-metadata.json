@@ -42,6 +42,18 @@
       "allDeclaredConstructors": true,
       "allDeclaredMethods": true,
       "allDeclaredFields": true
+    },
+    {
+      "type": "org.jetbrains.skia.DirectContext",
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "org.jetbrains.skia.Graphics",
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "org.jetbrains.skia.Canvas",
+      "allDeclaredMethods": true
     }
   ],
   "resources": [

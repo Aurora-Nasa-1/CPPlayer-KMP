@@ -580,9 +580,24 @@ object DesktopHiResEngine {
     }
 
     private fun extractJsonString(json: String, key: String): String? {
-        val pattern = "\"$key\"\\s*:\\s*\"((?:\\\\\"|[^\"])*)\"".toRegex()
-        val raw = pattern.find(json)?.groupValues?.get(1) ?: return null
-        return unescapeJson(raw)
+        val valueStart = findJsonValueStart(json, key)
+        if (valueStart < 0 || json[valueStart] != '"') return null
+        var i = valueStart + 1
+        var hasEscape = false
+        while (i < json.length) {
+            val c = json[i]
+            if (c == '\\') {
+                hasEscape = true
+                i += 2
+                continue
+            }
+            if (c == '"') {
+                val raw = json.substring(valueStart + 1, i)
+                return if (hasEscape) unescapeJson(raw) else raw
+            }
+            i++
+        }
+        return null
     }
 
     private fun unescapeJson(raw: String): String {
@@ -627,14 +642,38 @@ object DesktopHiResEngine {
         return sb.toString()
     }
 
-    private fun extractJsonDouble(json: String, key: String): Double? {
-        val pattern = "\"$key\"\\s*:\\s*([0-9.]+)".toRegex()
-        return pattern.find(json)?.groupValues?.get(1)?.toDoubleOrNull()
-    }
+    private fun extractJsonDouble(json: String, key: String): Double? =
+        jsonNumber(json, key)
 
     private fun extractJsonInt(json: String, key: String): Int? {
-        val pattern = "\"$key\"\\s*:\\s*([0-9]+)".toRegex()
-        return pattern.find(json)?.groupValues?.get(1)?.toIntOrNull()
+        val valueStart = findJsonValueStart(json, key)
+        if (valueStart < 0) return null
+        var i = valueStart
+        var neg = false
+        if (i < json.length && json[i] == '-') {
+            neg = true
+            i++
+        }
+        val digitStart = i
+        var acc = 0L
+        while (i < json.length) {
+            val d = json[i] - '0'
+            if (d !in 0..9) break
+            acc = acc * 10L + d
+            if (acc > Int.MAX_VALUE.toLong() + 1L) {
+                return json.substring(valueStart, scanDigitsEnd(json, i)).toIntOrNull()
+            }
+            i++
+        }
+        if (i == digitStart) return null
+        val signed = if (neg) -acc else acc
+        return if (signed in Int.MIN_VALUE..Int.MAX_VALUE) signed.toInt() else null
+    }
+
+    private fun scanDigitsEnd(json: String, from: Int): Int {
+        var i = from
+        while (i < json.length && json[i] in '0'..'9') i++
+        return i
     }
 
     /**
@@ -895,12 +934,72 @@ internal fun parseDesktopProgressJson(json: String): DesktopAudioEvent.Progress?
     )
 }
 
-/** 提取 `"key": <number>` 的数值；缺失 / `null` / 非数值都返回 null。 */
+/**
+ * 零正则定位 `"key": <value>` 的值起始字符下标，找不到或紧跟非冒号则继续向后扫描。
+ */
+internal fun findJsonValueStart(json: String, key: String): Int {
+    if (key.isEmpty()) return -1
+    var searchFrom = 0
+    val len = json.length
+    val keyLen = key.length
+    while (searchFrom < len) {
+        val hit = json.indexOf(key, startIndex = searchFrom)
+        if (hit < 0) return -1
+        val closeQuote = hit + keyLen
+        if (hit >= 1 && closeQuote < len && json[hit - 1] == '"' && json[closeQuote] == '"') {
+            var bs = 0
+            var p = hit - 2
+            while (p >= 0 && json[p] == '\\') {
+                bs++
+                p--
+            }
+            if ((bs and 1) == 0) {
+                var cursor = closeQuote + 1
+                while (cursor < len && json[cursor].isJsonWs()) cursor++
+                if (cursor < len && json[cursor] == ':') {
+                    cursor++
+                    while (cursor < len && json[cursor].isJsonWs()) cursor++
+                    return if (cursor < len) cursor else -1
+                }
+            }
+        }
+        searchFrom = hit + 1
+    }
+    return -1
+}
+
+private fun Char.isJsonWs(): Boolean =
+    this == ' ' || this == '\t' || this == '\n' || this == '\r'
+
+/** 提取 `"key": <number>` 的数值；缺失 / `null` / 非数值都返回 null（零 Regex 分配）。 */
 private fun jsonNumber(json: String, key: String): Double? {
-    val number = "-?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-9]+)?"
-    return Regex("\"$key\"\\s*:\\s*($number)")
-        .find(json)
-        ?.groupValues
-        ?.get(1)
-        ?.toDoubleOrNull()
+    val start = findJsonValueStart(json, key)
+    if (start < 0) return null
+    val len = json.length
+    var i = start
+    if (i < len && json[i] == '-') i++
+    val intStart = i
+    while (i < len && json[i] in '0'..'9') i++
+    val hasIntDigits = i > intStart
+    var hasFracDigits = false
+    if (i < len && json[i] == '.') {
+        i++
+        val fracStart = i
+        while (i < len && json[i] in '0'..'9') i++
+        hasFracDigits = i > fracStart
+    }
+    if (!hasIntDigits && !hasFracDigits) return null
+    if (i < len && (json[i] == 'e' || json[i] == 'E')) {
+        val expMark = i
+        var j = i + 1
+        if (j < len && (json[j] == '+' || json[j] == '-')) j++
+        val expDigitsStart = j
+        while (j < len && json[j] in '0'..'9') j++
+        if (j > expDigitsStart) {
+            i = j
+        } else {
+            i = expMark
+        }
+    }
+    return json.substring(start, i).toDoubleOrNull()
 }

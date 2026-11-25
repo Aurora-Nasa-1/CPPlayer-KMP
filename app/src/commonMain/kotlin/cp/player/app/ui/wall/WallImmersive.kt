@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.util.formatTimeMs
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.app.ui.util.resized
 import cp.player.core.playback.PlaybackUiState
 
@@ -114,7 +115,7 @@ fun WallImmersive(
         // 而且"模糊"本身就掩盖了低分辨率。
         if (!track.coverUrl.isNullOrBlank()) {
             AsyncImage(
-                model = track.coverUrl.resized(256),
+                model = rememberCoverImageRequest(track.coverUrl, targetPx = 256),
                 contentDescription = null,
                 modifier = Modifier
                     .fillMaxSize()
@@ -176,7 +177,7 @@ fun WallImmersive(
                     ) {
                         if (!track.coverUrl.isNullOrBlank()) {
                             AsyncImage(
-                                model = track.coverUrl.resized(coverRequest),
+                                model = rememberCoverImageRequest(track.coverUrl, targetPx = coverRequest),
                                 contentDescription = null,
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop,
@@ -262,7 +263,7 @@ fun WallImmersive(
                                 ) {
                                     if (!item.coverUrl.isNullOrBlank()) {
                                         AsyncImage(
-                                            model = item.coverUrl.resized(128),
+                                            model = rememberCoverImageRequest(item.coverUrl, targetPx = 128),
                                             contentDescription = null,
                                             modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0.55f },
                                             contentScale = ContentScale.Crop,

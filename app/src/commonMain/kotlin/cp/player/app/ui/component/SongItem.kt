@@ -43,6 +43,7 @@ import cp.player.app.ui.anim.coverFlightSource
 import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.LocalIsDarkTheme
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.app.ui.util.resized
 import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -192,7 +193,7 @@ fun SongItem(
                         ) {
                             if (!track.coverUrl.isNullOrBlank()) {
                                 AsyncImage(
-                                    model = track.coverUrl.resized(180),
+                                    model = rememberCoverImageRequest(track.coverUrl, targetSizeDp = 52.dp),
                                     contentDescription = null,
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop,

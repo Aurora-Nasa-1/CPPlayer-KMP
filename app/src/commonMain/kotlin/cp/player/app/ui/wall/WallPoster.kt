@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.app.ui.util.resized
 import kotlin.math.roundToInt
 
@@ -132,8 +133,8 @@ internal fun WallPosterOverlay(
             Box(Modifier.fillMaxSize().background(cpNestedSurface()))
             if (!item.coverUrl.isNullOrBlank()) {
                 AsyncImage(
-                    // 按卡片**实际像素**取图：固定 900 在大窗口下会被拉到 1300+ 而发糊。
-                    model = item.coverUrl.resized(wallCoverRequestSize(maxOf(w, h))),
+                    // 按卡片**实际像素**取图并显式约束内存解码尺寸。
+                    model = rememberCoverImageRequest(item.coverUrl, targetPx = wallCoverRequestSize(maxOf(w, h))),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,

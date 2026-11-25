@@ -4,23 +4,22 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asComposeImageBitmap
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
-import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.toBitmap
+import cp.player.app.ui.util.buildCoverImageRequest
 
 /**
- * 桌面侧实现。
- *
- * `PlatformContext.INSTANCE` 是 Coil 3 在非 Android 平台上的平台上下文单例；
- * `coil3.toBitmap()` 在 JVM 上返回 `org.jetbrains.skia.Bitmap`，
- * 再经 `asComposeImageBitmap()` 转成 Compose 的 `ImageBitmap`。
+ * 桌面侧实现：使用 READ_ONLY 内存缓存策略 + 收敛分桶，避免取色位图额外占用 Coil MemoryCache。
  */
 internal actual suspend fun loadCoverBitmap(model: String, sizePx: Int): ImageBitmap? {
     val ctx = PlatformContext.INSTANCE
-    val request = ImageRequest.Builder(ctx)
-        .data(model)
-        .size(sizePx)
-        .build()
+    val request = buildCoverImageRequest(
+        context = ctx,
+        url = model,
+        targetPx = sizePx,
+        cropSquare = true,
+        memoryCacheWrite = false,
+    ) ?: return null
     val result = runCatching { SingletonImageLoader.get(ctx).execute(request) }.getOrNull()
     val image = (result as? SuccessResult)?.image ?: return null
     return runCatching { image.toBitmap().asComposeImageBitmap() }.getOrNull()

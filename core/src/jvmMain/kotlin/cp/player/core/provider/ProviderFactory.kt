@@ -35,6 +35,7 @@ actual object ProviderFactory {
             sdkAllowedOrigins = manifest.sdkOrigins.toSet(),
             capabilities = manifest.knownCapabilities,
             defaultCountryCode = manifest.resolvedDefaultCountryCode,
+            imageResizeRule = manifest.imageResize,
         )
     }
 }

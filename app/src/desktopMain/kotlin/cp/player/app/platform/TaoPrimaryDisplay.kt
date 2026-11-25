@@ -64,4 +64,33 @@ internal object TaoPrimaryDisplay {
             }
         }.getOrNull()
     }
+
+    private const val SM_CXSCREEN = 0
+    private const val SM_CYSCREEN = 1
+
+    /**
+     * 主显示器物理像素分辨率；非 Windows 或查询失败返回 null。
+     */
+    fun physicalScreenSizePx(): Pair<Int, Int>? {
+        if (!System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)) return null
+        return runCatching {
+            Arena.ofConfined().use { arena ->
+                val linker = Linker.nativeLinker()
+                val user32 = SymbolLookup.libraryLookup("user32", arena)
+                val getSystemMetrics = linker.downcallHandle(
+                    user32.find("GetSystemMetrics").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT),
+                )
+                val w = getSystemMetrics.invokeWithArguments(SM_CXSCREEN) as Int
+                val h = getSystemMetrics.invokeWithArguments(SM_CYSCREEN) as Int
+                if (w > 0 && h > 0) w to h else null
+            }
+        }.getOrNull()
+    }
+
+    /** 是否为 2K（≥2560×1440）或 4K 等高分屏。 */
+    fun isHighResolutionDisplay(): Boolean {
+        val (w, h) = physicalScreenSizePx() ?: return false
+        return maxOf(w, h) >= 2560 || minOf(w, h) >= 1440
+    }
 }

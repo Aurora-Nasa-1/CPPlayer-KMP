@@ -139,6 +139,7 @@ import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.navigation.LocalAppNavigator
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.app.ui.util.resized
 import cp.player.core.music.ArtistSummary
 import cp.player.core.music.CPMediaId
@@ -1577,9 +1578,9 @@ internal fun Artwork(
     if (!url.isNullOrBlank()) {
         val targetPx = with(LocalDensity.current) { targetSize.toPx() }
             .toInt()
-            .coerceIn(160, 720)
+            .coerceIn(160, 1024)
         AsyncImage(
-            model = url.resized(targetPx),
+            model = rememberCoverImageRequest(url, targetPx = targetPx),
             contentDescription = null,
             modifier = modifier,
             contentScale = ContentScale.Crop,

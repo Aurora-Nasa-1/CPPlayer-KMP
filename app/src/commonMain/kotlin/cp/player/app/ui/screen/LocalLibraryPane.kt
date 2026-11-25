@@ -83,6 +83,7 @@ import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.core.screen.Screen
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.rememberDirectoryPicker
@@ -2828,7 +2829,7 @@ private fun LocalCover(
         }
         if (!coverUri.isNullOrBlank()) {
             AsyncImage(
-                model = coverUri.resized(240),
+                model = rememberCoverImageRequest(coverUri, targetPx = 256),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,

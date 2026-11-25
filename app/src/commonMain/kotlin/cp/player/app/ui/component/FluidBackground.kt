@@ -10,14 +10,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.FloatState
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
@@ -34,6 +32,8 @@ import androidx.compose.ui.graphics.MeshGradientScope
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.Density
@@ -174,23 +174,105 @@ internal fun shouldPauseFluidBackgroundDuringNavigation(transitionIsRunning: Boo
     transitionIsRunning
 
 /**
- * 跨所有渲染梯队统一消费的流体光团物理快照。
+ * 跨所有渲染梯队统一消费的流体光团物理快照（原地更新，核心渲染循环 0 分配）。
  */
-data class FluidBlobState(
-    val center: Offset,
-    val color: Color,
-    val reach: Float,
-    val intensity: Float,
-)
+class FluidBlobState(
+    var centerX: Float = 0.5f,
+    var centerY: Float = 0.5f,
+    var color: Color = Color.Black,
+    var reach: Float = 1f,
+    var intensity: Float = 1f,
+) {
+    val center: Offset get() = Offset(centerX, centerY)
+}
 
 /**
- * 跨所有渲染梯队统一消费的流体帧模型。
+ * 跨所有渲染梯队统一消费的流体帧模型（原地更新，核心渲染循环 0 分配）。
  */
-data class FluidSceneModel(
-    val baseColor: Color,
+class FluidSceneModel(
+    var baseColor: Color,
     val blobs: List<FluidBlobState>,
-    val time: Float,
+    var time: Float,
 )
+
+@Stable
+private class LiveFluidSceneState(
+    private val timeState: FloatState,
+    private val paletteProgressState: State<Float>,
+    initialPalette: List<Color>,
+    var isDark: Boolean,
+    var pureBlack: Boolean,
+    var scale: Float,
+) : State<FluidSceneModel> {
+    var fromPalette: List<Color> = initialPalette
+    var toPalette: List<Color> = initialPalette
+
+    private val workingBlobs = listOf(
+        FluidBlobState(),
+        FluidBlobState(),
+        FluidBlobState(),
+    )
+    private val scene = FluidSceneModel(
+        baseColor = Color.Black,
+        blobs = workingBlobs,
+        time = 0f,
+    )
+
+    override val value: FluidSceneModel
+        get() {
+            // 在 Draw 阶段读取 Snapshot 状态，确保每帧按 VSync 重绘且不触发重组，同时零对象分配。
+            val t = timeState.floatValue
+            val fraction = paletteProgressState.value
+            val from = fromPalette
+            val to = toPalette
+
+            val baseSource = resolveBlendedPaletteColor(from, to, fraction, 3)
+            scene.baseColor = if (isDark && pureBlack) Color.Black else baseSource
+            scene.time = t
+
+            // 利萨茹双轴游走：0.31/0.23/0.37 与 0.47/0.39/0.29 互质，组合周期以十分钟计。
+            val baseReach = (1.5f / scale.coerceAtLeast(0.1f)).coerceIn(0.45f, 1.2f)
+            for (i in 0..2) {
+                val blob = workingBlobs[i]
+                blob.centerX = (0.5f + sin(t * FluidBlobFreqX[i] + FluidBlobPhaseX[i]) * 0.27f)
+                    .coerceIn(0.08f, 0.92f)
+                blob.centerY = (0.5f + cos(t * FluidBlobFreqY[i] + FluidBlobPhaseY[i]) * 0.23f)
+                    .coerceIn(0.08f, 0.92f)
+                val breath = 0.94f + sin(t * 0.53f + FluidBlobPhaseX[i]) * 0.08f
+                blob.color = resolveBlendedPaletteColor(from, to, fraction, i)
+                blob.reach = baseReach * breath
+                blob.intensity = breath
+            }
+            return scene
+        }
+
+    fun currentBlendedPaletteSnapshot(): List<Color> {
+        val fraction = paletteProgressState.value
+        val from = fromPalette
+        val to = toPalette
+        if (fraction <= 0f) return from
+        if (fraction >= 1f) return to
+        val size = maxOf(from.size, to.size)
+        return List(size) { i -> resolveBlendedPaletteColor(from, to, fraction, i) }
+    }
+}
+
+private fun resolveBlendedPaletteColor(
+    from: List<Color>,
+    to: List<Color>,
+    fraction: Float,
+    index: Int,
+): Color {
+    if (fraction <= 0f) {
+        return from.getOrNull(index) ?: from.lastOrNull() ?: to.getOrNull(index) ?: Color.Transparent
+    }
+    if (fraction >= 1f) {
+        return to.getOrNull(index) ?: to.lastOrNull() ?: from.getOrNull(index) ?: Color.Transparent
+    }
+    val a = from.getOrNull(index) ?: from.lastOrNull() ?: to.getOrNull(index) ?: Color.Transparent
+    val b = to.getOrNull(index) ?: to.lastOrNull() ?: a
+    return lerp(a, b, fraction)
+}
 
 /**
  * 统一输入模型计算引擎：执行色彩清洗、彩度补偿、切歌过渡、播放物理惯性与利萨茹混沌游走。
@@ -209,18 +291,26 @@ private fun rememberFluidSceneModel(
         sanitizeAndBoostPalette(targetPalette, primary, isDark)
     }
 
-    // 2. 切歌色彩连续过渡：先把目标换成新色板，再从头播放进度。
-    //    旧实现把「目标」也设成旧色板，750ms 内 from == to，插值恒等，
-    //    动画结束才更新目标 ⇒ 观感是延迟后硬切。
-    var fromPalette by remember { mutableStateOf(sanitized) }
-    var toPalette by remember { mutableStateOf(sanitized) }
     val paletteProgress = remember { Animatable(1f) }
+    val sceneState = remember(time) {
+        LiveFluidSceneState(
+            timeState = time,
+            paletteProgressState = paletteProgress.asState(),
+            initialPalette = sanitized,
+            isDark = isDark,
+            pureBlack = pureBlack,
+            scale = scale,
+        )
+    }
+    sceneState.isDark = isDark
+    sceneState.pureBlack = pureBlack
+    sceneState.scale = scale
 
+    // 2. 切歌色彩连续过渡：从当前可见色接住，快速连切不跳变。
     LaunchedEffect(sanitized) {
-        if (toPalette == sanitized) return@LaunchedEffect
-        // 从当前可见色接住：快速连切时不会跳回上一段的起点。
-        fromPalette = blendPalette(fromPalette, toPalette, paletteProgress.value)
-        toPalette = sanitized
+        if (sceneState.toPalette == sanitized) return@LaunchedEffect
+        sceneState.fromPalette = sceneState.currentBlendedPaletteSnapshot()
+        sceneState.toPalette = sanitized
         paletteProgress.snapTo(0f)
         paletteProgress.animateTo(
             targetValue = 1f,
@@ -228,59 +318,7 @@ private fun rememberFluidSceneModel(
         )
     }
 
-    val activePalette = remember {
-        derivedStateOf { blendPalette(fromPalette, toPalette, paletteProgress.value) }
-    }
-
-    // Defer animation reads to drawing so fluid motion does not recompose the player.
-    return remember(time, isDark, pureBlack, scale) {
-        derivedStateOf {
-            val t = time.floatValue
-            val colors = activePalette.value
-            val rawBase = if (isDark && pureBlack) Color.Black else colors.last()
-
-            // 4. 利萨茹双轴游走：0.31/0.23/0.37 与 0.47/0.39/0.29 互质，
-            //    组合周期以十分钟计，短时观感不会看到闭合轨迹。
-
-            val baseReach = (1.5f / scale.coerceAtLeast(0.1f)).coerceIn(0.45f, 1.2f)
-
-            val blobs = List(3) { i ->
-                val cx = (0.5f + sin(t * FluidBlobFreqX[i] + FluidBlobPhaseX[i]) * 0.27f)
-                    .coerceIn(0.08f, 0.92f)
-                val cy = (0.5f + cos(t * FluidBlobFreqY[i] + FluidBlobPhaseY[i]) * 0.23f)
-                    .coerceIn(0.08f, 0.92f)
-                val breath = 0.94f + sin(t * 0.53f + FluidBlobPhaseX[i]) * 0.08f
-                FluidBlobState(
-                    center = Offset(cx, cy),
-                    color = colors[i],
-                    reach = baseReach * breath,
-                    intensity = breath,
-                )
-            }
-
-            FluidSceneModel(
-                baseColor = rawBase,
-                blobs = blobs,
-                time = t,
-            )
-        }
-    }
-}
-
-/**
- * 按比例混合两套色板。
- *
- * 尺寸不一致时以较长的一侧为准，缺失项沿用自身末位色，避免切歌瞬间某一格闪黑。
- */
-private fun blendPalette(from: List<Color>, to: List<Color>, fraction: Float): List<Color> {
-    if (fraction <= 0f) return from
-    if (fraction >= 1f) return to
-    val size = maxOf(from.size, to.size)
-    return List(size) { i ->
-        val a = from.getOrNull(i) ?: from.lastOrNull() ?: to.getOrNull(i) ?: Color.Transparent
-        val b = to.getOrNull(i) ?: to.lastOrNull() ?: a
-        lerp(a, b, fraction)
-    }
+    return sceneState
 }
 
 /**
@@ -514,13 +552,14 @@ private class FluidMeshLodBuffer {
 }
 
 /**
- * Tier 3: 基于 Compose Canvas 多光团有机径向弥散渲染器 (全版本兼容)。
+ * Tier 3: 基于 Compose Canvas 多光团有机径向弥散渲染器 (全版本兼容，缓存单位径向 Brush 实现 0 分配)。
  */
 @Composable
 internal fun Modifier.cpCanvasBlobFluidBackground(
     sceneModel: State<FluidSceneModel>,
     fallback: Brush,
 ): Modifier {
+    val brushCache = remember { CanvasBlobBrushCache() }
     return this.drawBehind {
         val w = size.width
         val h = size.height
@@ -533,28 +572,51 @@ internal fun Modifier.cpCanvasBlobFluidBackground(
         val model = sceneModel.value
         drawRect(model.baseColor)
 
-        // 2. 依次绘制 3 个漂移光团
+        // 2. 依次绘制 3 个漂移光团（色值未变时直接复用 100px 单位径向 Brush，仅通过平移缩放绘制）
         val maxDim = maxOf(w, h)
-        model.blobs.forEach { blob ->
-            val center = Offset(blob.center.x * w, blob.center.y * h)
+        val blobs = model.blobs
+        for (i in 0 until blobs.size) {
+            val blob = blobs[i]
+            val cx = blob.center.x * w
+            val cy = blob.center.y * h
             val radius = maxDim * blob.reach
+            val unitScale = radius / CanvasBlobUnitRadius
+            val radialBrush = brushCache.obtain(i, blob.color)
 
-            val radialBrush = Brush.radialGradient(
-                0.0f to blob.color.copy(alpha = 0.82f * blob.intensity),
-                0.38f to blob.color.copy(alpha = 0.48f * blob.intensity),
-                0.72f to blob.color.copy(alpha = 0.16f * blob.intensity),
-                1.0f to Color.Transparent,
-                center = center,
-                radius = radius,
-            )
-
-            drawCircle(
-                brush = radialBrush,
-                radius = radius,
-                center = center,
-                blendMode = BlendMode.Screen,
-            )
+            translate(left = cx, top = cy) {
+                scale(scaleX = unitScale, scaleY = unitScale, pivot = Offset.Zero) {
+                    drawCircle(
+                        brush = radialBrush,
+                        radius = CanvasBlobUnitRadius,
+                        center = Offset.Zero,
+                        alpha = blob.intensity.coerceIn(0f, 1f),
+                        blendMode = BlendMode.Screen,
+                    )
+                }
+            }
         }
+    }
+}
+
+private const val CanvasBlobUnitRadius = 100f
+
+private class CanvasBlobBrushCache {
+    private val lastColors = arrayOf(Color.Unspecified, Color.Unspecified, Color.Unspecified)
+    private val brushes = arrayOfNulls<Brush>(3)
+
+    fun obtain(slot: Int, color: Color): Brush {
+        val idx = slot.coerceIn(0, 2)
+        val cached = brushes[idx]
+        if (cached != null && lastColors[idx] == color) return cached
+        lastColors[idx] = color
+        return Brush.radialGradient(
+            0.0f to color.copy(alpha = 0.82f),
+            0.38f to color.copy(alpha = 0.48f),
+            0.72f to color.copy(alpha = 0.16f),
+            1.0f to Color.Transparent,
+            center = Offset.Zero,
+            radius = CanvasBlobUnitRadius,
+        ).also { brushes[idx] = it }
     }
 }
 
@@ -584,7 +646,8 @@ private fun MeshGradientScope.configureFluidMeshWithModel(
                 .coerceIn(0f, 1f)
 
             var vertexColor = base
-            blobs.forEach { blob ->
+            for (i in 0 until blobs.size) {
+                val blob = blobs[i]
                 val dx = (x - blob.center.x) / blob.reach
                 val dy = (y - blob.center.y) / blob.reach
                 val distance = sqrt(dx * dx + dy * dy)

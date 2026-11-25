@@ -41,15 +41,28 @@ private object MusicReadCaches {
     private const val FRESH = 60_000L
     private const val STALE = 10 * 60_000L
 
-    val tracks = SwrCache<List<TrackSummary>>(FRESH, STALE, maxEntries = 64)
-    val playlists = SwrCache<List<PlaylistSummary>>(FRESH, STALE, maxEntries = 64)
-    val banners = SwrCache<List<BannerItem>>(FRESH, STALE, maxEntries = 16)
-    val rankings = SwrCache<List<RankingSummary>>(FRESH, STALE, maxEntries = 16)
-    val albums = SwrCache<List<AlbumSummary>>(FRESH, STALE, maxEntries = 32)
-    val artists = SwrCache<List<ArtistSummary>>(FRESH, STALE, maxEntries = 32)
-    val searches = SwrCache<SearchResult>(15_000L, 5 * 60_000L, maxEntries = 128)
-    val similarSongs = SwrCache<List<TrackSummary>>(60_000L, 15 * 60_000L, maxEntries = 64)
-    val profiles = SwrCache<ProfileBundle>(30_000L, 5 * 60_000L, maxEntries = 64)
+    // 收紧应用级 SWR 缓存条目上限，配合 Native Image -Xmx100m 压低老年代存活集。
+    val tracks = SwrCache<List<TrackSummary>>(FRESH, STALE, maxEntries = 24)
+    val playlists = SwrCache<List<PlaylistSummary>>(FRESH, STALE, maxEntries = 24)
+    val banners = SwrCache<List<BannerItem>>(FRESH, STALE, maxEntries = 8)
+    val rankings = SwrCache<List<RankingSummary>>(FRESH, STALE, maxEntries = 8)
+    val albums = SwrCache<List<AlbumSummary>>(FRESH, STALE, maxEntries = 16)
+    val artists = SwrCache<List<ArtistSummary>>(FRESH, STALE, maxEntries = 16)
+    val searches = SwrCache<SearchResult>(15_000L, 5 * 60_000L, maxEntries = 32)
+    val similarSongs = SwrCache<List<TrackSummary>>(60_000L, 15 * 60_000L, maxEntries = 16)
+    val profiles = SwrCache<ProfileBundle>(30_000L, 5 * 60_000L, maxEntries = 24)
+
+    suspend fun trimForLowMemory() {
+        tracks.trimTo(4)
+        playlists.trimTo(4)
+        banners.trimTo(2)
+        rankings.trimTo(2)
+        albums.trimTo(4)
+        artists.trimTo(4)
+        searches.trimTo(4)
+        similarSongs.trimTo(2)
+        profiles.trimTo(4)
+    }
 }
 
 /**
@@ -81,6 +94,14 @@ class MusicRepository(
         const val FIRST_PLAYLIST_PAGE_SIZE = 300
     }
 
+    /** 释放全局 SWR 读缓存中的闲置条目，供隐藏到托盘或内存紧张时调用。 */
+    internal suspend fun trimReadCachesForLowMemory() {
+        MusicReadCaches.trimForLowMemory()
+        playlistDetailCache.trimTo(4)
+        playlistTracksCache.trimTo(4)
+        cloudTracksCache.trimTo(2)
+    }
+
     private fun currentProviderId(): String = sessionContext?.activeProviderId() ?: AppModel.activeProviderId()
     private fun currentUid(providerId: String): String? = sessionContext?.activeUid(providerId)
         ?: runCatching { cp.player.app.auth.AccountStore.activeUid(providerId) }.getOrNull()
@@ -107,10 +128,12 @@ class MusicRepository(
     private val playlistDetailCache = SwrCache<PlaylistDetail>(
         PLAYLIST_CACHE_FRESH_TTL_MS,
         PLAYLIST_CACHE_STALE_TTL_MS,
+        maxEntries = 24,
     )
     private val playlistTracksCache = SwrCache<PlaylistTracksPage>(
         PLAYLIST_CACHE_FRESH_TTL_MS,
         PLAYLIST_CACHE_STALE_TTL_MS,
+        maxEntries = 24,
     )
     /**
      * 云盘曲目分页缓存。
@@ -123,7 +146,7 @@ class MusicRepository(
     private val cloudTracksCache = SwrCache<PlaylistTracksPage>(
         PLAYLIST_CACHE_FRESH_TTL_MS,
         PLAYLIST_CACHE_STALE_TTL_MS,
-        maxEntries = 16,
+        maxEntries = 8,
     )
 
     private fun playlistCacheContext(providerId: String): PlaylistCacheContext {

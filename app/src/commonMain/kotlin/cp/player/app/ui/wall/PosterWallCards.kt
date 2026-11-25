@@ -76,6 +76,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.cpPressScale
+import cp.player.app.ui.util.rememberCoverImageRequest
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import cp.player.app.ui.component.CpText
@@ -163,7 +164,7 @@ internal fun PosterArtwork(
     ) {
         if (!song.coverUrl.isNullOrBlank()) {
             AsyncImage(
-                model = song.coverUrl,
+                model = rememberCoverImageRequest(song.coverUrl, targetPx = sizePx),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()

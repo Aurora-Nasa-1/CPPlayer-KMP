@@ -39,18 +39,18 @@ internal class PlaybackLyricsLoader(
         }
 
     private val lyricsCache = object : LinkedHashMap<String, Pair<LyricsState, LyricsInfo?>>(
-        /* initialCapacity = */ 16, /* loadFactor = */ 0.75f, /* accessOrder = */ true,
+        /* initialCapacity = */ 6, /* loadFactor = */ 0.75f, /* accessOrder = */ true,
     ) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<LyricsState, LyricsInfo?>>): Boolean =
-            size > 16
+            size > 6
     }
 
     private val karaokeCacheMutex = Mutex()
     private val karaokeCache = object : LinkedHashMap<String, List<SyncedLyricLine>>(
-        /* initialCapacity = */ 8, /* loadFactor = */ 0.75f, /* accessOrder = */ true,
+        /* initialCapacity = */ 4, /* loadFactor = */ 0.75f, /* accessOrder = */ true,
     ) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<SyncedLyricLine>>): Boolean =
-            size > 8
+            size > 4
     }
 
     /**
@@ -80,6 +80,24 @@ internal class PlaybackLyricsLoader(
                 lyricsCache.clear()
             } else {
                 lyricsCache.remove(mediaId)
+            }
+        }
+    }
+
+    /** 仅保留当前正在播放的 [activeMediaId] 歌词，裁剪其余缓存条目以压缩常驻存活集。 */
+    suspend fun trimCaches(activeMediaId: String? = null) {
+        synchronized(lyricsCache) {
+            if (activeMediaId == null) {
+                lyricsCache.clear()
+            } else {
+                val active = lyricsCache[activeMediaId]
+                lyricsCache.clear()
+                if (active != null) lyricsCache[activeMediaId] = active
+            }
+        }
+        karaokeCacheMutex.withLock {
+            while (karaokeCache.size > 1) {
+                karaokeCache.remove(karaokeCache.keys.first())
             }
         }
     }
@@ -285,13 +303,20 @@ internal class PlaybackLyricsLoader(
         /**
          * 计算当前播放毫秒位置对应的歌词行下标。
          *
-         * 采用二分查找 (O(log n))，在频繁的位置轮询（每秒多次）下保证极低 CPU 开销。
+         * 顺序播放时优先以 [hintIndex] 做 O(1) 邻近命中（同一行或刚进下一行），
+         * 未命中时退回二分查找 (O(log n))，降低高频位置轮询的 CPU 与分支开销。
          */
-        fun computeLyricIndex(lyrics: LyricsState, pos: Long): Int {
+        fun computeLyricIndex(lyrics: LyricsState, pos: Long, hintIndex: Int = -1): Int {
             val lines = (lyrics as? LyricsState.Success)?.lines ?: return -1
             if (lines.isEmpty()) return -1
+            val lastIdx = lines.lastIndex
+            if (hintIndex in 0..lastIdx && lines[hintIndex].time <= pos) {
+                if (hintIndex == lastIdx || pos < lines[hintIndex + 1].time) return hintIndex
+                val next = hintIndex + 1
+                if (next == lastIdx || pos < lines[next + 1].time) return next
+            }
             var low = 0
-            var high = lines.lastIndex
+            var high = lastIdx
             var idx = -1
             while (low <= high) {
                 val mid = (low + high) ushr 1

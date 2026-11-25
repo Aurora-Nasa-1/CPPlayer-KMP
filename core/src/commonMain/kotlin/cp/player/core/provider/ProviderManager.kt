@@ -130,6 +130,7 @@ class ProviderManager(
             }
         }
         currentProvider = provider
+        HostTrafficPolicy.setActiveProviderImagePolicy(provider?.imageResizeRule)
         sdkSessions.invalidate()
         // Subscribe before any lazy session can be created: configuration changes must also fence
         // the gap between its settings snapshot and registration of the session's own listener.

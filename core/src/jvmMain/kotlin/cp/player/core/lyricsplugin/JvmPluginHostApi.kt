@@ -275,6 +275,17 @@ class JvmPluginHostApi(
         if (key.isBlank()) return
         val dir = cacheRootDir
         if (dir == null) {
+            if (memoryCache.size >= MAX_MEMORY_CACHE_ENTRIES && !memoryCache.containsKey(key)) {
+                val now = System.currentTimeMillis()
+                memoryCache.entries.removeIf { it.value.expiresAt != 0L && it.value.expiresAt <= now }
+                if (memoryCache.size >= MAX_MEMORY_CACHE_ENTRIES) {
+                    val iter = memoryCache.keys.iterator()
+                    while (memoryCache.size >= MAX_MEMORY_CACHE_ENTRIES && iter.hasNext()) {
+                        iter.next()
+                        iter.remove()
+                    }
+                }
+            }
             memoryCache[key] = CacheEntry(value, 0L)
             return
         }
@@ -332,6 +343,7 @@ class JvmPluginHostApi(
         buildJsonArray { bytes.forEach { add(JsonPrimitive(it.toInt() and 0xFF)) } }
 }
 
+private const val MAX_MEMORY_CACHE_ENTRIES = 64
 private const val DEFAULT_CONNECT_TIMEOUT_MS = 8_000
 private const val DEFAULT_READ_TIMEOUT_MS = 10_000
 private const val DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 CPPlayer/1.0"
