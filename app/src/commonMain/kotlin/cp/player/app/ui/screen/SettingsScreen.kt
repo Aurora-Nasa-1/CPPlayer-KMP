@@ -7,12 +7,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.i18n.cpStrings
@@ -32,6 +34,7 @@ import cp.player.app.ui.component.SettingsSearchBar
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.settingsRowContainer
 import cp.player.app.ui.theme.cpNestedSurface
+import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.ui.component.CpText
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
@@ -58,6 +61,15 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
     var selectedId by remember { mutableStateOf(entries.firstOrNull()?.id) }
     var selectedTargetId by remember { mutableStateOf<String?>(null) }
     val adaptiveNavigator = rememberListDetailPaneScaffoldNavigator<Unit>()
+
+    // 安卓端进入设置页时，系统会把初始焦点交给页内第一个可聚焦节点 —— 恰好是顶部搜索框，
+    // 于是软键盘一进页面就弹出来。这里在挂载后主动清掉焦点，输入法随之收起；
+    // 桌面端没有软键盘，也不存在这种自动聚焦，保持原样。
+    // 与 SearchScreen 的策略一致：安卓不自动聚焦输入框，用户要点一下才打字。
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(Unit) {
+        if (isAndroidPlatform()) focusManager.clearFocus()
+    }
 
     val searchResults = remember(searchQuery, entries, strings, isTablet) {
         val q = searchQuery.trim().lowercase()
