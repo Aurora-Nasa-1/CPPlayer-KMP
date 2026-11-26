@@ -61,8 +61,18 @@ independently enforces its signature and expiry.
   keep runtime releases outside the app release workflows and update channels.
   Both workflows download from this repository with the built-in Actions token.
   Set `FLICK_NATIVE_RELEASE_TAG`, `FLICK_ANDROID_SHA256`, `FLICK_WINDOWS_SHA256`,
-  and `FLICK_VIP_PUBLIC_KEY` as repository variables. Keep the APK signing
-  secrets configured for the stable Android build.
+  and `FLICK_VIP_PUBLIC_KEY` as repository variables.
+  Keep the APK signing secrets configured for the stable Android build.
+  `librust_lib_flick_player.so` serves the Android APK (ARM64, from
+  `cargo ndk`). Publish the x86_64 Linux build under a different asset name,
+  `librust_lib_flick_player-linux-x64.so` (from
+  `cargo build --target x86_64-unknown-linux-gnu`): GitHub release assets are
+  flat, so a second file with the Android name would overwrite it. The Linux
+  workflow downloads that asset with the existing `FLICK_NATIVE_RELEASE_TAG`,
+  renames it to `librust_lib_flick_player.so`, and verifies ELF magic +
+  `e_machine=0x3e`, the JNI verifier entry point and the embedded public key.
+  No extra SHA256 variable is configured. See FLICK_ENGINE §7.5 for the
+  cross-build recipe.
   Build the asset from the private engine with ARM64, UAC2, the production
   public key, the `nativeSetVipLicenseV2` JNI entry point and 16 KiB ELF alignment.
   CI checks the digest, embedded bytes,

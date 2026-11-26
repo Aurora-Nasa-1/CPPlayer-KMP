@@ -20,6 +20,8 @@ import cp.player.core.lyricpush.XiaomiSuperIslandConfig
 import cp.player.core.monitor.HealthMonitor
 import cp.player.core.playback.AutoPlayCustomType
 import cp.player.core.playback.AutoPlayMode
+import cp.player.core.playback.FlickEngineSettings
+import cp.player.core.playback.FlickEngineToggles
 import cp.player.core.playback.PlaybackController
 import cp.player.core.playback.PlaybackSessionSettings
 import cp.player.core.provider.BackendProvider
@@ -852,6 +854,98 @@ object AppModel {
         settings.putString(PlaybackSessionSettings.KEY_WASAPI_EXCLUSIVE, enabled.toString())
         _wasapiExclusive.value = enabled
         runCatching { playback.reloadEngine() }
+    }
+
+    // ============ Flick 引擎特性开关（桌面，逐项可关） ============
+    //
+    // 这些不是「音质档位」，而是排障/降级用的逃生门：直连流在个别音源上失败、
+    // 某些声卡不接受 DoP、动态处理改变听感时，用户需要一个不换播放器就能关掉的入口。
+    // 键与默认值在 `FlickEngineSettings`；运行期镜像是 `FlickEngineToggles`（能力位直接读它）。
+    //
+    // ⚠️ 生效时机不同，文案必须如实写：
+    // | 开关 | 何时生效 |
+    // | --- | --- |
+    // | 直连流 | **下一次 load**（当前曲不打断） |
+    // | 无缝队列 | **下一首**（预取时才走 queueNext） |
+    // | 原生交叉淡化 | **立刻**（重提淡入淡出配置，让控制器在两套机制间换边） |
+    // | 动态响度 | **立刻**（重提音效配置，宿主会把链上的压缩器/限幅器摘掉） |
+    // | DSD 模式 | 立刻下发；引擎重建后由 initEngine 补发 |
+
+    private val _flickDirectStream = MutableStateFlow(FlickEngineSettings.directStream(settings))
+
+    /** 直连 HTTP(S) 流是否开启（关 = 整首落盘再播）。 */
+    val flickDirectStreamFlow: StateFlow<Boolean> = _flickDirectStream.asStateFlow()
+
+    fun setFlickDirectStream(enabled: Boolean) {
+        settings.putString(FlickEngineSettings.KEY_DIRECT_STREAM, enabled.toString())
+        FlickEngineToggles.directStream = enabled
+        _flickDirectStream.value = enabled
+    }
+
+    private val _flickGaplessQueue = MutableStateFlow(FlickEngineSettings.gaplessQueue(settings))
+
+    /** 无缝队列是否开启（关 = 播完再 load 下一首）。 */
+    val flickGaplessQueueFlow: StateFlow<Boolean> = _flickGaplessQueue.asStateFlow()
+
+    fun setFlickGaplessQueue(enabled: Boolean) {
+        settings.putString(FlickEngineSettings.KEY_GAPLESS_QUEUE, enabled.toString())
+        FlickEngineToggles.gaplessQueue = enabled
+        _flickGaplessQueue.value = enabled
+    }
+
+    private val _flickNativeCrossfade = MutableStateFlow(FlickEngineSettings.nativeCrossfade(settings))
+
+    /** 原生交叉淡化（双源重叠）是否开启（关 = 交回宿主的音量斜坡）。 */
+    val flickNativeCrossfadeFlow: StateFlow<Boolean> = _flickNativeCrossfade.asStateFlow()
+
+    fun setFlickNativeCrossfade(enabled: Boolean) {
+        settings.putString(FlickEngineSettings.KEY_NATIVE_CROSSFADE, enabled.toString())
+        FlickEngineToggles.nativeCrossfade = enabled
+        _flickNativeCrossfade.value = enabled
+        // 控制器在 setFade 里按能力位决定「引擎交叉淡化」还是「宿主斜坡」，
+        // 重提一次当前配置就能让这次切换立刻生效，不必等下一首。
+        runCatching { playback.setFade(_fade.value) }
+    }
+
+    private val _flickDynamics = MutableStateFlow(FlickEngineSettings.dynamics(settings))
+
+    /** 动态响度处理（压缩器 + 限幅器）是否开启。 */
+    val flickDynamicsFlow: StateFlow<Boolean> = _flickDynamics.asStateFlow()
+
+    fun setFlickDynamics(enabled: Boolean) {
+        settings.putString(FlickEngineSettings.KEY_DYNAMICS, enabled.toString())
+        FlickEngineToggles.dynamics = enabled
+        _flickDynamics.value = enabled
+        // 能力位变了：重提音效配置，宿主会把已挂上的压缩器/限幅器摘掉（或恢复）。
+        runCatching { playback.setAudioEffect(_audioEffect.value) }
+    }
+
+    private val _flickDsdMode = MutableStateFlow(FlickEngineSettings.dsdMode(settings))
+
+    /** DSD 输出模式（0=PCM 抽取 / 1=DoP / 2=Native / 3=Auto）。 */
+    val flickDsdModeFlow: StateFlow<Int> = _flickDsdMode.asStateFlow()
+
+    fun setFlickDsdMode(mode: Int) {
+        val clamped = mode.coerceIn(FlickEngineSettings.DSD_MODE_PCM, FlickEngineSettings.DSD_MODE_AUTO)
+        settings.putString(FlickEngineSettings.KEY_DSD_MODE, clamped.toString())
+        FlickEngineToggles.applyDsdMode(clamped)
+        _flickDsdMode.value = clamped
+    }
+
+    /**
+     * 启动时把引擎开关同步进运行时快照。
+     *
+     * 与 [syncAudioEffect] 同一类：设置页不在监听链路上时（冷启动直接播放），
+     * 能力位也必须按用户上次的选择走。快照的默认值与磁盘默认值一致，
+     * 所以这一步失败最坏也只是「全部按默认」，不会静默关掉引擎。
+     */
+    fun syncFlickEngineToggles() {
+        FlickEngineToggles.applyFrom(settings)
+        _flickDirectStream.value = FlickEngineToggles.directStream
+        _flickGaplessQueue.value = FlickEngineToggles.gaplessQueue
+        _flickNativeCrossfade.value = FlickEngineToggles.nativeCrossfade
+        _flickDynamics.value = FlickEngineToggles.dynamics
+        _flickDsdMode.value = FlickEngineToggles.dsdMode
     }
 
     // ============ 音效（持久化，Android 生效 / 桌面明示不支持） ============
@@ -3132,6 +3226,7 @@ object AppModel {
     /** 最近一次转移的状态；`null` = 还没发起过。给设备页与设备选择弹层展示。 */
     private val _handoffState = MutableStateFlow<HandoffState?>(null)
     val handoffStateFlow: StateFlow<HandoffState?> = _handoffState.asStateFlow()
+    private val handoffSending = MutableStateFlow(false)
 
     /**
      * 把本机当前播放**无缝转移**到目标设备。
@@ -3168,32 +3263,39 @@ object AppModel {
         val queueIndex = st.currentIndex
             .takeIf { queue.isNotEmpty() && it in queue.indices && queue[it].mediaId == track.id }
             ?: -1
-        modelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            _handoffState.value = HandoffState.Starting(deviceName)
-            val result = cp.player.core.sync.SyncTransport.handoff(
-                address,
-                cp.player.core.sync.HandoffRequest(
-                    fromDeviceId = deviceIdentity.deviceId,
-                    fromName = deviceIdentity.name,
-                    mediaId = track.id,
-                    trackName = track.name,
-                    artist = track.artist,
-                    positionMs = positionMs,
-                    wasPlaying = wasPlaying,
-                    sentAt = cp.player.core.util.currentTimeMillis(),
-                    queue = queue,
-                    queueIndex = queueIndex,
-                ),
-            )
-            if (result?.accepted == true) {
-                if (wasPlaying) {
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+        if (!handoffSending.compareAndSet(expect = false, update = true)) return
+        _handoffState.value = HandoffState.Starting(deviceName)
+        modelScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+            try {
+                val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    cp.player.core.sync.SyncTransport.handoff(
+                        address,
+                        cp.player.core.sync.HandoffRequest(
+                            fromDeviceId = deviceIdentity.deviceId,
+                            fromName = deviceIdentity.name,
+                            mediaId = track.id,
+                            trackName = track.name,
+                            artist = track.artist,
+                            positionMs = positionMs,
+                            wasPlaying = wasPlaying,
+                            sentAt = cp.player.core.util.currentTimeMillis(),
+                            queue = queue,
+                            queueIndex = queueIndex,
+                            startTimeoutMs = cp.player.core.sync.HANDOFF_MAX_START_TIMEOUT_MS,
+                        ),
+                    )
+                }
+                if (result?.accepted == true) {
+                    val current = playback.state.value
+                    if (wasPlaying && current.currentTrack?.id == track.id && current.isPlaying) {
                         playback.pause()
                     }
+                    _handoffState.value = HandoffState.Done(deviceName)
+                } else {
+                    _handoffState.value = HandoffState.Failed(result?.message)
                 }
-                _handoffState.value = HandoffState.Done(deviceName)
-            } else {
-                _handoffState.value = HandoffState.Failed(result?.message)
+            } finally {
+                handoffSending.value = false
             }
         }
     }
@@ -3203,46 +3305,24 @@ object AppModel {
      *
      * 播控线程约定与 `IntegrationService` 相同：写操作必须回
      * `Dispatchers.Main`（Android 主线程 / 桌面 EDT）。
-     * 「READY」的判据是 `currentTrack` 变成请求的那首 —— 起流、URL 解析失败
-     * 都过不了这一关，源端就会收到明确的失败并继续播放。
+     * READY 由播放控制器确认。曲名已经显示时，引擎可能还没有收到音频。
      */
     private suspend fun receiveHandoff(req: cp.player.core.sync.HandoffRequest): cp.player.core.sync.HandoffResult {
         val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-            kotlinx.coroutines.withTimeoutOrNull(HANDOFF_START_TIMEOUT_MS) {
-                // 有合法队列 → 用 playQueue 重建整条（当前曲目在下标处开始播，
-                // URL 后台解析不阻塞），「下一首/上一首」在目标端照常可用；
-                // 没有队列（旧对端 / 随机模式边缘态 / 校验降级）→ 单首路径。
-                val wantId = if (req.queue.isNotEmpty() && req.queueIndex >= 0) {
-                    playback.playQueue(req.queue.map { it.mediaId }, startIndex = req.queueIndex)
-                    req.queue[req.queueIndex].mediaId
-                } else {
-                    playback.play(req.mediaId)
-                    req.mediaId
-                }
-                // 等播放引擎真的换上这首（起流失败 / 音源未登录时永远不会换上）
-                val deadline = cp.player.core.util.currentTimeMillis() + HANDOFF_START_TIMEOUT_MS - 500
-                while (cp.player.core.util.currentTimeMillis() < deadline) {
-                    if (playback.state.value.currentTrack?.id == wantId) break
-                    kotlinx.coroutines.delay(150)
-                }
-                val st = playback.state.value
-                if (st.currentTrack?.id != wantId) {
-                    return@withTimeoutOrNull cp.player.core.sync.HandoffResult(
-                        accepted = false,
-                        // ⚠️ 这个串会**跨设备**送到源端显示，而两端语言可能不同。
-                        // 彻底解决要把它改成协议级错误码（core 的改动，影响两端兼容），
-                        // 本批不碰；此处保持既有行为 —— 它是诊断信息，不参与本地化，
-                        // 界面上会作为「对端给出的原因」原样透出。
-                        message = "本机无法播放该曲目（音源未登录或曲目不存在）",
-                    )
-                }
-                if (req.positionMs > 1_500L) playback.seekTo(req.positionMs)
-                if (!req.wasPlaying) playback.pause()
-                cp.player.core.sync.HandoffResult(accepted = true)
-            } ?: cp.player.core.sync.HandoffResult(
-                accepted = false,
-                message = "本机播放未能在时限内启动",
-            )
+            val queueIndex = req.queueIndex.takeIf { req.queue.getOrNull(it)?.mediaId == req.mediaId }
+            val accepted = kotlinx.coroutines.withTimeoutOrNull(req.startTimeoutMs) {
+                playback.takeOverQueue(
+                    mediaIds = if (queueIndex != null) req.queue.map { it.mediaId } else listOf(req.mediaId),
+                    startIndex = queueIndex ?: 0,
+                    positionMs = req.positionMs,
+                    playWhenReady = req.wasPlaying,
+                )
+            }
+            when (accepted) {
+                true -> cp.player.core.sync.HandoffResult(accepted = true)
+                false -> cp.player.core.sync.HandoffResult(message = "本机未能接管该曲目")
+                null -> cp.player.core.sync.HandoffResult(message = "本机播放未能在时限内启动")
+            }
         }
         val from = req.fromName.ifBlank { req.fromDeviceId.take(8) }
         _handoffState.value = if (result.accepted) {
@@ -3253,9 +3333,6 @@ object AppModel {
         }
         return result
     }
-
-    /** 目标端等待「真的出声」的上限；必须小于客户端读超时（10s），给应答留出余量。 */
-    private const val HANDOFF_START_TIMEOUT_MS = 7_000L
 
     private fun startLanSync() {
         if (syncServer == null) {

@@ -78,7 +78,9 @@ class DesktopHiResPlatformPlayer(
             supportsEqualizer = true,
             supportsBalance = true,
             supportsVirtualizer = true,
-            supportsLeveling = DesktopHiResEngine.supportsExtendedFeatures,
+            // 动态响度多一层用户开关：关掉后音效页不再暴露响度均衡，
+            // 引擎侧已挂上的压缩器/限幅器由 applyAudioEffect 摘掉。
+            supportsLeveling = DesktopHiResEngine.supportsExtendedFeatures && FlickEngineToggles.dynamics,
         )
 
     // ============ 引擎级通用能力 ============
@@ -93,7 +95,8 @@ class DesktopHiResPlatformPlayer(
         }
     }
 
-    override val supportsGaplessQueue: Boolean get() = DesktopHiResEngine.supportsExtendedFeatures
+    override val supportsGaplessQueue: Boolean
+        get() = DesktopHiResEngine.supportsExtendedFeatures && FlickEngineToggles.gaplessQueue
 
     override fun queueNext(source: String, headers: Map<String, String>) {
         if (!DesktopHiResEngine.supportsExtendedFeatures) return
@@ -112,7 +115,14 @@ class DesktopHiResPlatformPlayer(
         queueNext(source, headers)
     }
 
-    override val supportsNativeCrossfade: Boolean get() = DesktopHiResEngine.supportsExtendedFeatures
+    override val supportsNativeCrossfade: Boolean
+        // 引擎的真交叉淡化靠**双源重叠**：下一首必须先经 queueNext 进引擎。
+        // 无缝队列关掉时队列不存在，此时若仍声称支持原生淡化，宿主会停掉自己的
+        // 音量斜坡、引擎又没有第二个源 ⇒ 交叉淡化彻底消失（比只关一半更糟）。
+        // 所以这里把 gapless 当作前置条件：关 gapless 自动退回宿主斜坡。
+        get() = DesktopHiResEngine.supportsExtendedFeatures &&
+            FlickEngineToggles.nativeCrossfade &&
+            FlickEngineToggles.gaplessQueue
 
     override fun setNativeCrossfade(enabled: Boolean, durationMs: Long) {
         if (!DesktopHiResEngine.supportsExtendedFeatures) return
@@ -122,7 +132,7 @@ class DesktopHiResPlatformPlayer(
     }
 
     override val supportsSeekableRemoteStreams: Boolean
-        get() = DesktopHiResEngine.supportsExtendedFeatures
+        get() = DesktopHiResEngine.supportsExtendedFeatures && FlickEngineToggles.directStream
 
     private var currentVolume = 1.0f
     private var lastReportedEnginePositionMs = 0L
@@ -385,7 +395,7 @@ class DesktopHiResPlatformPlayer(
             return ResolvedSource.Local(cached)
         }
 
-        if (DesktopHiResEngine.supportsExtendedFeatures) {
+        if (DesktopHiResEngine.supportsExtendedFeatures && FlickEngineToggles.directStream) {
             return ResolvedSource.Stream(url, headers, cacheKey, meta, host)
         }
 
@@ -473,7 +483,10 @@ class DesktopHiResPlatformPlayer(
         val peq = FlickPeqMapper.peqPlan(config.equalizer)
         val fx = FlickPeqMapper.fxPlan(config.mixer)
         val dynamics = FlickPeqMapper.dynamicsPlan(config.leveling, config.enabled)
-        val dynamicsSupported = DesktopHiResEngine.supportsExtendedFeatures
+        // 动态响度是「能力位 + 用户开关」两层：开关关掉时连能力位一起关，
+        // 音效页据此隐藏响度均衡，宿主的预加载/下发也不再碰压缩器。
+        val dynamicsSupported =
+            DesktopHiResEngine.supportsExtendedFeatures && FlickEngineToggles.dynamics
         val peqSignature = peq.signature()
         val fxSignature = fx.signature()
         val dynamicsSignature = if (dynamicsSupported) dynamics.signature() else "unsupported"
@@ -560,7 +573,25 @@ class DesktopHiResPlatformPlayer(
                     }
                     if (applied) lastDynamicsSignature = dynamicsSignature
                 } else if (!dynamicsSupported) {
-                    // 老 DLL：能力位已如实关掉，这里只要别让指纹卡住 diff。
+                    // 能力位关闭有两种来源：旧 DLL（从未挂过链）与**用户刚关掉开关**。
+                    // 后者的链上还留着上次的压缩器/限幅器，必须显式摘掉 —— 只记指纹
+                    // 会让「关开关」止步于 UI（听感不变），这正是开关要解决的场景。
+                    if (lastDynamicsSignature != null && lastDynamicsSignature != "unsupported") {
+                        DesktopHiResEngine.setCompressor(
+                            enabled = false,
+                            thresholdDb = 0f,
+                            ratio = 1f,
+                            attackMs = 0f,
+                            releaseMs = 0f,
+                            makeupGainDb = 0f,
+                        )
+                        DesktopHiResEngine.setLimiter(
+                            enabled = false,
+                            inputGainDb = 0f,
+                            ceilingDb = 0f,
+                            releaseMs = 0f,
+                        )
+                    }
                     lastDynamicsSignature = dynamicsSignature
                 }
 

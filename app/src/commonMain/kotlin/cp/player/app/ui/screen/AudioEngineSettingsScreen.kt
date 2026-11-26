@@ -20,17 +20,20 @@ import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.SettingsBadge
 import cp.player.app.ui.component.SettingsClickItem
+import cp.player.app.ui.component.SettingsDropdownItem
 import cp.player.app.ui.component.SettingsHeroCard
 import cp.player.app.ui.component.SettingsNote
 import cp.player.app.ui.component.SettingsNoteEmphasis
 import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
+import cp.player.app.ui.component.SettingsSwitchItem
 import cp.player.app.ui.component.VipActivationDialog
 import cp.player.app.ui.theme.cpNestedSurface
 import cp.player.core.license.VipLicenseManager
+import cp.player.core.playback.FlickEngineSettings
 import cp.player.core.playback.PlaybackSessionSettings
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.navigation.LocalAppNavigator
 
@@ -61,7 +64,7 @@ import cp.player.app.ui.navigation.LocalAppNavigator
  * [AudioEngineUiState]，才能在离屏测试里把 Windows / 其它桌面 / Android 三种形态
  * 各出一张图核对（见 `AudioEngineSettingsVisualTest`）。改动版式请顺手重跑那个测试。
  */
-class AudioEngineSettingsScreen : Screen {
+class AudioEngineSettingsScreen : RoutePage {
 
     @Composable
     override fun Content() {
@@ -73,6 +76,12 @@ class AudioEngineSettingsScreen : Screen {
         val engineKey by AppModel.audioEngineFlow.collectAsState()
         // ⚠️ 桌面端不再用 KEY_AUDIO_ENGINE 决定内核（只有 FlickEngine），独占才是那个选择。
         val exclusivePref by AppModel.wasapiExclusiveFlow.collectAsState()
+        // 引擎逐项特性开关（仅桌面）：直连流 / 无缝队列 / 原生交叉淡化 / 动态响度 / DSD 模式。
+        val flickDirectStream by AppModel.flickDirectStreamFlow.collectAsState()
+        val flickGapless by AppModel.flickGaplessQueueFlow.collectAsState()
+        val flickNativeCrossfade by AppModel.flickNativeCrossfadeFlow.collectAsState()
+        val flickDynamics by AppModel.flickDynamicsFlow.collectAsState()
+        val flickDsdMode by AppModel.flickDsdModeFlow.collectAsState()
 
         var showVipDialog by remember { mutableStateOf(false) }
         // 卡密框可能从「换内核 / 开独占 / 只想看看状态」三处打开，激活成功后要接着做的是
@@ -98,6 +107,11 @@ class AudioEngineSettingsScreen : Screen {
                 vipLicenseKey = vipInfo.licenseKey,
                 engineKey = engineKey,
                 exclusivePref = exclusivePref,
+                flickDirectStream = flickDirectStream,
+                flickGapless = flickGapless,
+                flickNativeCrossfade = flickNativeCrossfade,
+                flickDynamics = flickDynamics,
+                flickDsdMode = flickDsdMode,
             ),
             onSelectEngine = { index ->
                 if (index == 1) {
@@ -131,6 +145,11 @@ class AudioEngineSettingsScreen : Screen {
             },
             onOpenAudioEffect = { navigator.push(AppRoute.AudioEffectSettings) },
             onOpenFlickHome = { openUrl("https://github.com/moss-apps/Flick") },
+            onToggleDirectStream = AppModel::setFlickDirectStream,
+            onToggleGapless = AppModel::setFlickGaplessQueue,
+            onToggleNativeCrossfade = AppModel::setFlickNativeCrossfade,
+            onToggleDynamics = AppModel::setFlickDynamics,
+            onSelectDsdMode = AppModel::setFlickDsdMode,
             onBack = { navigator.pop() },
         )
     }
@@ -150,6 +169,12 @@ internal data class AudioEngineUiState(
     val vipLicenseKey: String? = null,
     val engineKey: String = PlaybackSessionSettings.ENGINE_STANDARD,
     val exclusivePref: Boolean = false,
+    /** 引擎逐项特性开关（仅桌面有意义）。 */
+    val flickDirectStream: Boolean = FlickEngineSettings.DEFAULT_DIRECT_STREAM,
+    val flickGapless: Boolean = FlickEngineSettings.DEFAULT_GAPLESS_QUEUE,
+    val flickNativeCrossfade: Boolean = FlickEngineSettings.DEFAULT_NATIVE_CROSSFADE,
+    val flickDynamics: Boolean = FlickEngineSettings.DEFAULT_DYNAMICS,
+    val flickDsdMode: Int = FlickEngineSettings.DEFAULT_DSD_MODE,
 ) {
     /** 发烧内核是否**真的**在跑（Android 才存在「换内核」这件事）。 */
     val flickEngineActive: Boolean
@@ -178,6 +203,11 @@ internal fun AudioEngineSettingsContent(
     onOpenVipDialog: () -> Unit,
     onOpenAudioEffect: () -> Unit,
     onOpenFlickHome: () -> Unit,
+    onToggleDirectStream: (Boolean) -> Unit = {},
+    onToggleGapless: (Boolean) -> Unit = {},
+    onToggleNativeCrossfade: (Boolean) -> Unit = {},
+    onToggleDynamics: (Boolean) -> Unit = {},
+    onSelectDsdMode: (Int) -> Unit = {},
     onBack: () -> Unit,
 ) {
     val isAndroid = state.isAndroid
@@ -350,6 +380,67 @@ internal fun AudioEngineSettingsContent(
                         total = 4,
                     )
                 }
+            }
+
+            // ---------------- 引擎特性开关（逐项可关） ----------------
+            //
+            // 这一组不是「音质档位」，而是排障/降级的逃生门：直连流在个别音源上失败、
+            // 某些声卡不接受 DoP、动态处理改变听感时，用户需要不换播放器就能关掉。
+            // ⚠️ 每行副标题必须写清**生效时机**（下一次 load / 下一首 / 立刻），
+            // 否则「关了没反应」会被当成 bug。
+            if (!isAndroid) {
+                SettingsSection(engine.sectionToggles) {
+                    val total = 5
+                    SettingsSwitchItem(
+                        title = engine.toggleDirectStream,
+                        subtitle = engine.toggleDirectStreamNote,
+                        checked = state.flickDirectStream,
+                        onCheckedChange = onToggleDirectStream,
+                        index = 0,
+                        total = total,
+                    )
+                    SettingsSwitchItem(
+                        title = engine.toggleGapless,
+                        subtitle = engine.toggleGaplessNote,
+                        checked = state.flickGapless,
+                        onCheckedChange = onToggleGapless,
+                        index = 1,
+                        total = total,
+                    )
+                    SettingsSwitchItem(
+                        title = engine.toggleNativeCrossfade,
+                        subtitle = engine.toggleNativeCrossfadeNote,
+                        checked = state.flickNativeCrossfade,
+                        onCheckedChange = onToggleNativeCrossfade,
+                        index = 2,
+                        total = total,
+                    )
+                    SettingsSwitchItem(
+                        title = engine.toggleDynamics,
+                        subtitle = engine.toggleDynamicsNote,
+                        checked = state.flickDynamics,
+                        onCheckedChange = onToggleDynamics,
+                        index = 3,
+                        total = total,
+                    )
+                    SettingsDropdownItem(
+                        title = engine.dsdModeTitle,
+                        // ⚠️ 不传 subtitle：SettingsDropdownItem 的副标题位就是「当前值」的
+                        // 展示位（subtitle ?: options[selectedIndex]），传了说明文案反而
+                        // 让用户看不到自己选的是哪一档。DSD 的适用范围写在下方小节注释里。
+                        options = listOf(
+                            engine.dsdModePcm,
+                            engine.dsdModeDop,
+                            engine.dsdModeNative,
+                            engine.dsdModeAuto,
+                        ),
+                        selectedIndex = state.flickDsdMode.coerceIn(0, 3),
+                        onSelect = onSelectDsdMode,
+                        index = 4,
+                        total = total,
+                    )
+                }
+                SettingsNote(engine.togglesNote)
             }
 
             SettingsSection(engine.sectionEffects) {

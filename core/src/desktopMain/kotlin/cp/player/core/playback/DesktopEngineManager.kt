@@ -66,6 +66,10 @@ object DesktopEngineManager {
         storage: SettingsStorage,
         isVipUser: Boolean,
     ): PlatformPlayer {
+        // 引擎特性开关是**能力位的一部分**（gapless / 直连流 / 原生交叉淡化 / 响度），
+        // 底层播放器在构造期就会读它们。这里先对齐一次快照，保证「冷启动直接播放」
+        // 也按用户上次的选择走，而不是等 AppModel 的启动同步。
+        FlickEngineToggles.applyFrom(storage)
         val player = DynamicDesktopPlatformPlayer(storage, preferredEngine, isVipUser)
         activeDynamicPlayer = player
         return player

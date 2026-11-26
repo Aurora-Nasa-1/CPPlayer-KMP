@@ -117,6 +117,9 @@ object DesktopHiResEngine {
 
     init {
         tryLoadLibrary()
+        // 设置页改 DSD 模式时由 [FlickEngineToggles] 回调到这里：引擎未初始化时
+        // [setDsdOutputMode] 只记值不报错，[initEngine] 成功后会用同一份快照补发一次。
+        FlickEngineToggles.registerDsdApplier { mode -> setDsdOutputMode(mode) }
     }
 
     private fun tryLoadLibrary() {
@@ -181,6 +184,12 @@ object DesktopHiResEngine {
                     searchCandidates += File(appRoot, "native/$libFileName")
                     searchCandidates += File(appRoot, "runtime/bin/$libFileName")
                     searchCandidates += File(appRoot, "app/$libFileName")
+                    // Linux/deb 布局：可执行文件在 <root>/bin/CPPlayer，库由 jpackage 的
+                    // `--app-content` 放进 <root>/lib/app（与 jar 同目录）或 <root>/lib。
+                    // 这两个路径不依赖 codeSource 是否可解析，装成 deb / AUR 包时最可靠。
+                    searchCandidates += File(appRoot, "lib/app/$libFileName")
+                    searchCandidates += File(appRoot, "lib/$libFileName")
+                    searchCandidates += File(appRoot, "lib/runtime/lib/$libFileName")
                 }
             }
         } catch (_: Throwable) {
@@ -237,7 +246,13 @@ object DesktopHiResEngine {
         }
 
         _isAvailable = false
-        logger.info("Desktop Hi-Res native library not present. Standard Rodio fallback active.")
+        // 桌面端**没有** rodio / 系统播放器回退路径：缺库就是无输出（NoopDesktopPlatformPlayer），
+        // 这句话旧版写成「Standard Rodio fallback active」，把排查方向直接带偏。
+        logger.warning(
+            "FlickEngine native library not found ($LIB_NAME). " +
+                "Desktop playback will have no audio output; expected location: " +
+                "app/native, <install>/lib/app or <install>/lib.",
+        )
     }
 
     @Synchronized
@@ -251,6 +266,11 @@ object DesktopHiResEngine {
                 isInitialized = true
                 startPolling()
                 startProgressPolling()
+                // DSD 输出模式是「开流前」的配置：引擎重建（切独占 / 换输出设备）后
+                // 必须把用户上次选的模式重放一次，否则会静默回到引擎默认（Auto）。
+                // ⚠️ 必须排在两个 startXxxPolling() **之后**：DesktopProgressPollTest 用
+                // 源码正则钉住「init 成功路径内两个轮询相邻启动」这条契约，插在中间会红。
+                runCatching { nativeSetDsdOutputMode(FlickEngineToggles.dsdMode) }
             }
             success
         } catch (e: Throwable) {

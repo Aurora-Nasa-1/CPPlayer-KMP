@@ -43,9 +43,29 @@ grep -ao "Java_cp_player_[A-Za-z_]*" app/native/rust_lib_flick_player.dll | sort
 | 播放速度 | `audio_set_playback_speed` | `nativeSetPlaybackSpeed/Get...` | 全链路 + 设置页 | 可用；引擎 0.25~4.0，设置页给 0.5~2.0 |
 | 无缝队列 | `audio_queue_next(_url)` / `audio_skip_to_next` | `nativeQueueNext/QueueNextUrl/SkipToNext` | `queueNext()` 已通 | API 可用，宿主自动切换见第 5 节 |
 | 真交叉淡化（双源重叠） | `audio_set_crossfade(_curve)` | `nativeSetCrossfade/Curve` | `setNativeCrossfade` | 可用；与 `FadeRunner` 互斥 |
-| DSD 输出模式 | `audio_set_dsd_output_mode` | `nativeSetDsdOutputMode` | 桌面未接 UI | 已导出，无调用方 |
+| DSD 输出模式 | `audio_set_dsd_output_mode` | `nativeSetDsdOutputMode` | 引擎设置页「DSD 输出模式」 | 可用；`initEngine` 成功后按快照补发 |
 | 硬件独占 | 读 `CP_WASAPI_EXCLUSIVE` | `nativeSetExclusiveMode` | `setExclusiveMode` | 已导出，但仍以 env 为准，见 4.3 |
 | `get_state` / `get_progress` | 有 | `nativeGetState/GetProgress` | `getProgress()` + 100 ms 轮询 | 进度的唯一来源，见 4.5 |
+
+### 2.1 逐项开关（2026-11-26）
+
+能力位不再只由 `apiLevel` 决定，还要过一层用户开关：`FlickEngineSettings`（磁盘契约 +
+默认值）→ `FlickEngineToggles`（进程内快照）→ `DesktopHiResPlatformPlayer` 的 getter。
+
+| 开关 | 键 | 默认 | 关掉之后 |
+|---|---|---|---|
+| 直连网络音频流 | `flick_engine_direct_stream` | 开 | `supportsSeekableRemoteStreams=false` ⇒ 整首落盘再播 |
+| 无缝队列 | `flick_engine_gapless_queue` | 开 | 不调 `queueNext`，播完 `Ended → playCurrent()` |
+| 原生交叉淡化 | `flick_engine_native_crossfade` | 开 | 交回 `PlaybackFadeController` 的音量斜坡 |
+| 动态响度 | `flick_engine_dynamics` | 开 | `supportsLeveling=false`，音效页隐藏响度均衡，链上压缩器/限幅器被摘掉 |
+| DSD 输出模式 | `flick_engine_dsd_mode` | 3 (Auto) | 0/1/2 分别落到 PCM 抽取 / DoP / Native |
+
+| 约定 | 原因 |
+|---|---|
+| 原生交叉淡化**依赖**无缝队列 | 双源重叠要下一首先进引擎；只关 gapless 而仍声称支持原生淡化，会让两套淡化同时失效 |
+| 快照默认 = 磁盘默认 | 快照没加载时等价于全开，绝不因「读不到盘」静默降级音质 |
+| `DesktopEngineManager.createPlayer` 先 `applyFrom(storage)` | 冷启动直接播放时不经过设置页，能力位必须已经对齐 |
+| DSD 的下发走 `registerDsdApplier` | commonMain 不能反向依赖桌面实现；引擎未 init 时只记值，`initEngine` 后补发 |
 
 ## 3. HTTP 流怎么接
 
@@ -309,6 +329,74 @@ cd native/flick-player-engine && cargo build --release --offline --lib
 ### 7.4 混淆
 
 `app/desktop-proguard-rules.pro` 必须保留 `cp.player.core.playback.DesktopHiResEngine` 的类名与 native 方法名：Rust 侧符号名写死，一混淆就 `UnsatisfiedLinkError`，而且只在装出来的包里复现（`desktopRun` 不做混淆）。
+
+### 7.5 Linux：同一个引擎，另一份原生库
+
+Linux 与 Windows 走**同一条**播放链路（`DesktopHiResPlatformPlayer`），差别只有三处：
+
+| 项 | Windows | Linux |
+|---|---|---|
+| 原生库名 | `rust_lib_flick_player.dll` | `librust_lib_flick_player.so` |
+| 输出后端 | WASAPI（cpal） | ALSA（cpal） |
+| 独占直通 | WASAPI Exclusive（VIP） | **不存在**；设置页只显示共享输出 |
+
+ALSA 与 WASAPI 的 `set_exclusive_mode` 无关，`CP_WASAPI_EXCLUSIVE` 只影响 WASAPI 分支；Linux 上 `supportsExclusiveAudio` 恒为 false，设置页据此隐藏独占项。
+
+#### 打包怎么进包（deb 与 tar.gz 都必须有）
+
+```
+app/native/librust_lib_flick_player.so
+  → prepareDesktopAppResources（Sync，按宿主过滤 .so/.dll）
+  → app/build/app-resources
+  → jpackage --app-content            ← nativeDistributions.appResourcesRootDir
+  → <install>/lib/app/librust_lib_flick_player.so
+```
+
+`--app-content` 是 deb 唯一的入口：`packageLinuxTarGz` 的注入发生在 `createDistributable` **之后**，而 `packageDeb` 是另一次 jpackage 调用、自己生成镜像，事后注入碰不到它。缺这份库的 Linux 包能装能启动，但**一点声音都没有**（`NoopDesktopPlatformPlayer`），所以 CI 里有两条硬断言：tar.gz 清单必须含 `CPPlayer/lib/app/librust_lib_flick_player.so`，deb 必须含 `opt/CPPlayer/lib/app/librust_lib_flick_player.so`。
+
+运行时依赖：`libasound.so.2`（发行版包名一般是 `libasound2` / `alsa-lib`）。jpackage 的 deb 不写 `Depends:`，AUR 的 `PKGBUILD` 已显式依赖 `alsa-lib`，其它分发方式需要在文档里提示用户。
+
+#### 交叉编译（Windows 宿主 → x86_64-unknown-linux-gnu）
+
+引擎源码在私有仓库，本机 `native/flick-player-engine` 是未入库的检出。没有 Linux 机器时可以用 zig 做交叉链接：
+
+| 组件 | 作用 |
+|---|---|
+| `zig cc -target x86_64-linux-gnu` | 交叉 C 编译器 **与** 链接器（自带 glibc） |
+| 解包的 `libasound2-dev` + `libasound2`（Debian） | 头文件与 `libasound.so`，cpal 的 ALSA 后端需要 |
+| `pkg-config` 替身 | `alsa-sys` 的 `build.rs` 只认 `pkg-config` 输出，给它 `-L… -lasound -I…` 即可 |
+| `AR` 替身（**exe**，不是 .bat） | opus 有上百个 `.o`，`ar` 命令行超过 cmd.exe 的 8191 字符上限 |
+
+```bash
+export PKG_CONFIG_ALLOW_CROSS=1 PKG_CONFIG=<sysroot>/pkg-config.bat
+export CC_x86_64_unknown_linux_gnu=<sysroot>/zigcc.bat
+export CXX_x86_64_unknown_linux_gnu=<sysroot>/zigcxx.bat
+export AR_x86_64_unknown_linux_gnu=<sysroot>/arwrap.exe
+export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=<sysroot>/zigld.bat
+cargo build --release --target x86_64-unknown-linux-gnu \
+  --no-default-features --features native_audio --lib
+```
+
+| 坑 | 现象 / 原因 |
+|---|---|
+| `link.exe` 被 Git 的 coreutils 抢走 | 宿主 build script 编译失败（`link: extra operand`）；先 `source rust-msvc-env.sh` |
+| cc-rs 追加 `--target=<triple>` | zig 只认 `-target x86_64-linux-gnu`，包装器必须过滤掉这个参数 |
+| 用 `.bat` 写过滤循环 | `for %%a in (%*)` 把 `=` 当分隔符，`--target=…` 被拆成两个 token，过滤静默失效 |
+| `AR` 用 `.bat` | 命令行超 8191 字符，报「文件名或扩展名太长」；换 CreateProcess 包装的 exe |
+| `uac2` feature | 代码里只对 Android 生效，桌面构建加 `--no-default-features` 可省掉 libusb |
+| 产物依赖 | 只应出现 `libasound.so.2` / `libc` / `libm` / `libpthread` / `libdl`；出现 `libgcc_s.so.1` 说明链接方式不对 |
+
+校验产物（不依赖 readelf）：
+
+```bash
+python - <<'EOF'
+d = open("librust_lib_flick_player.so","rb").read()
+assert d[:4] == b"\x7fELF" and d[4] == 2 and d[18:20] == b"\x3e\x00"  # 64-bit x86_64
+assert b"Java_cp_player_core_playback_DesktopHiResEngine_nativePlay" in d
+EOF
+```
+
+Linux 的 `.so` **只放 Release，不进 git**。CI 复用已有的 `FLICK_NATIVE_RELEASE_TAG` 下载资产 `librust_lib_flick_player-linux-x64.so`，落地时改名为 `app/native/librust_lib_flick_player.so`。资产必须换个名字：GitHub Release 资产是平铺的，Android arm64 已经占用 `librust_lib_flick_player.so`，同名无法共存（上一版同名会互相覆盖）。**不设 sha256 变量**：CI 改用结构校验（ELF magic、`e_machine=0x3e`、JNI 符号、VIP 公钥），Gradle 的 `packageLinuxTarGz` 也查 ELF 头 —— 挡的是「把 Android arm64 同名库误放进桌面目录」这类真实事故：JVM 会 dlopen 成功，但所有 JNI 调用失败，现象是静音且不报错。
 
 ## 相关
 
