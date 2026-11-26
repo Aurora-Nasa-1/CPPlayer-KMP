@@ -2,11 +2,16 @@ package cp.player.app
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Looper
 import androidx.media3.common.Player
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import cp.player.core.playback.SharedMedia3Player
+import cp.player.core.playback.flick.FlickEngineManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 /**
  * Android system media-session host. The shared controller remains the source of
@@ -14,6 +19,8 @@ import cp.player.core.playback.SharedMedia3Player
  * controls while the activity is backgrounded.
  */
 class PlaybackMediaSessionService : MediaSessionService() {
+    private var serviceScope: CoroutineScope? = null
+    private var controllerPlayer: ControllerMediaSessionPlayer? = null
     private var player: ControllerForwardingPlayer? = null
     private var mediaSession: MediaSession? = null
 
@@ -32,15 +39,21 @@ class PlaybackMediaSessionService : MediaSessionService() {
         // 同步在 onCreate（主线程）做的话，首次播放那一下会被拖住；
         // 放 IO 线程预热，等下面 ControllerForwardingPlayer 真正 get() 时多半已就绪。
         Thread {
-            runCatching { SharedMedia3Player.getCache(this) }
+            runCatching { cp.player.core.playback.SharedMedia3Player.getCache(this) }
         }.apply {
             isDaemon = true
             name = "media-cache-prewarm"
         }.start()
-        // 会话的 Player 不是裸 ExoPlayer：切歌/seek 必须转交应用控制器。
-        // 裸 ExoPlayer 只持有单个 media item，队列在控制器里，
-        // 直接用它会导致通知栏/锁屏/耳机切歌无效。
-        val sessionPlayer = ControllerForwardingPlayer(SharedMedia3Player.get(this)) {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        serviceScope = scope
+        // 由 PlaybackController 统一驱动 MediaSession Player：无论是 Media3 还是 FlickEngine，
+        // 通知栏/锁屏卡片/封面/进度条/蓝牙 AVRCP 与状态栏歌词都能完整呈现并双向控制。
+        val backendPlayer = ControllerMediaSessionPlayer(Looper.getMainLooper(), scope) {
+            AppModel.playback
+        }
+        backendPlayer.startObserving()
+        controllerPlayer = backendPlayer
+        val sessionPlayer = ControllerForwardingPlayer(backendPlayer) {
             AppModel.playback
         }
         player = sessionPlayer
@@ -76,32 +89,12 @@ class PlaybackMediaSessionService : MediaSessionService() {
             )
             .build()
         mediaSession = session
-        // ⚠️⚠️ 这一步才是「有 MediaSession」的关键，缺了它前面全是死代码。
-        //
-        // MediaSession.Builder(this, player).build() **只**把会话登记进 MediaSession
-        // 自己的静态表（SESSION_ID_TO_SESSION_MAP），**完全不碰 MediaSessionService**
-        // （javap 核实 1.4.1：MediaSession / MediaSession.Builder 的字节码里
-        // `MediaSessionService` 出现 **0 次**）。1.4.1 里服务侧真正的挂载点只有一个 ——
-        // 本方法：notificationManager.addSession(session) 建一条**服务内部 MediaController**，
-        // 再 session.setListener(MediaSessionListener()) 让服务开始监听会话。
-        //
-        // javap 核实（1.4.1）：`public final void addSession(MediaSession)` 是公开 API，
-        // 官方注释说「多数应用不需要手动调用」——那是以「应用自己用 MediaController 播」
-        // 为前提；本应用直接驱动同一个 ExoPlayer 且不建控制器，所以必须显式登记。
         addSession(session)
-        // ⚠️⚠️ addSession 只是**必要条件**：启动时 Player 里没有 media item、状态是 IDLE，
-        // 通知判据 `shouldShowNotification()`（时间线非空 且 非 IDLE）不成立 ⇒ 第一首歌
-        // load 完成之前没有通知，属预期行为（不是 bug，别再往这里找根因）。
-        //
-        // 1.11.1 复核：判据前半句（时间线非空）不变；**IDLE 分支改为由
-        // `setShowNotificationForIdlePlayer(...)` 决定**，默认 = `AFTER_STOP_OR_ERROR`
-        // —— 即「播放过之后再停止/出错」通知**会保留**（1.4.1 是不保留）。这是升级带来的
-        // 唯一用户可见行为变化；若要恢复旧观感，在上面的 setMediaNotificationProvider
-        // 旁加一行：
-        //     setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)
-        //
-        // 另有一处同样致命、且不在本文件：MainActivity 必须 bindService 把本服务绑上
-        // —— 只 startService 的话系统侧永远不知道这条会话存在（见那里的注释）。
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        controllerPlayer?.startObserving()
+        return super.onStartCommand(intent, flags, startId)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
@@ -118,51 +111,38 @@ class PlaybackMediaSessionService : MediaSessionService() {
      */
     override fun onTaskRemoved(rootIntent: Intent?) {
         val p = player
-        val keepAlive = p != null && runCatching {
-            when (p.playbackState) {
-                Player.STATE_READY, Player.STATE_BUFFERING -> true
-                else -> false
-            }
-        }.getOrDefault(false)
+        val keepAlive = hasResumablePlayback(p)
+        // 只要当前并非正在播放中（含暂停 / 空闲），就立刻释放 USB 独占，避免划掉卡片后其它应用无声。
+        runCatching { AppModel.playback.releaseExclusiveAudioIfIdle() }
+        runCatching { FlickEngineManager.releaseUsbIfIdle() }
         if (keepAlive) return
         stopSelf()
         // 故意不调 super：其默认逻辑与上述意图冲突（见 KDoc）。
     }
 
-    /**
-     * ⚠️⚠️ 熄屏后台被杀（进程秒死）的修复点 —— 拦下 media3 的「非播放中即降前台」。
-     *
-     * 通知更新（含暂停、以及**一首播完到下一首 load 完成之间的 STATE_ENDED 间隙**）
-     * 会走 `updateNotificationInternal(runInForeground=false)` →
-     * `maybeStopForegroundService(false)` → **`stopForeground(DETACH)`**：通知还挂在
-     * 通知栏，但服务的**前台资格已被摘掉**。熄屏下进程只剩「started service」优先级，
-     * 厂商 ROM（MIUI/HyperOS、HarmonyOS、ColorOS…）几秒内就把它杀掉。
-     * 播放中看似安全，但**每次切歌都会短暂降级** —— 只要有一次发生在熄屏后，进程就没了。
-     *
-     * 想覆写 `Service.stopForeground` 拦截？**不行** —— 它在 `android.app.Service` 上是
-     * final（编译实锤）。可用的公开钩子就是本方法：这里只要引擎里还有可续播内容
-     * （时间线非空且非 IDLE）就强制按「保持前台」处理；真正空闲（IDLE / 清空队列）时
-     * 透传原值，通知照常可清、服务照常降级。系统拒绝时
-     * （ForegroundServiceStartNotAllowedException）media3 内部有兜底，不会崩。
-     *
-     * 1.11.1 复核：判据 `shouldRunInForeground` 被重写（签名 `(MediaSession, boolean)`
-     * → `(boolean)`，并叠加了默认 **10 分钟**的 user-engaged 超时窗口），但逐字节码追到
-     * `isAnySessionUserEngaged(boolean)` 后确认**老判据逐字保留**（只是从「单 session」
-     * 改成「遍历所有 session」）⇒ 本覆写仍有效；且超时窗口只有 10 分钟、覆盖不了
-     * 「暂停很久仍要保活」这个意图，所以**仍然必要**。
-     */
     override fun onUpdateNotification(session: MediaSession, runInForeground: Boolean) {
-        super.onUpdateNotification(session, runInForeground || hasResumablePlayback())
+        super.onUpdateNotification(session, runInForeground || hasResumablePlayback(player))
     }
 
-    /** 引擎里是否还有可续播内容（有 media item 且不是 IDLE）。读失败按「无」处理。 */
-    private fun hasResumablePlayback(): Boolean {
-        val p = player ?: return false
-        return runCatching { p.mediaItemCount > 0 && p.playbackState != Player.STATE_IDLE }
-            .getOrDefault(false)
+    /** 引擎或 App 控制器里是否还有可续播内容（兼容 Media3 与 FlickEngine）。 */
+    private fun hasResumablePlayback(p: Player? = player): Boolean {
+        val exoResumable = p != null && runCatching {
+            p.mediaItemCount > 0 && p.playbackState != Player.STATE_IDLE
+        }.getOrDefault(false)
+        if (exoResumable) return true
+        return runCatching {
+            val st = AppModel.playback.state.value
+            st.currentTrack != null && (st.isPlaying || st.isBuffering || st.queue.isNotEmpty())
+        }.getOrDefault(false)
     }
 
     override fun onDestroy() {
+        runCatching { AppModel.playback.releaseExclusiveAudioIfIdle() }
+        runCatching { FlickEngineManager.releaseUsbIfIdle() }
+        controllerPlayer?.stopObserving()
+        controllerPlayer = null
+        serviceScope?.cancel()
+        serviceScope = null
         // 先摘歌词通道再释放会话：否则会话销毁后 sink 仍被 core 持有，
         // 下一帧歌词会对着已释放的播放器调 replaceMediaItem。
         if (cp.player.app.platform.lyricpush.LyricPushSinks.metadataSink === lyricSink) {

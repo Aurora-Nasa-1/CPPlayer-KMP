@@ -66,6 +66,11 @@ internal class LyricMetadataSink(
     private fun apply() {
         runCatching {
             val player = playerProvider() ?: return@runCatching
+            val targetPlayer = (player as? androidx.media3.common.ForwardingPlayer)?.wrappedPlayer ?: player
+            if (targetPlayer is ControllerMediaSessionPlayer) {
+                targetPlayer.setLyricOverlay(lyricTitle, lyricSubtitle, lyricExtras)
+                return@runCatching
+            }
             val index = player.currentMediaItemIndex
             if (index < 0) return@runCatching
             val item = player.currentMediaItem ?: return@runCatching
