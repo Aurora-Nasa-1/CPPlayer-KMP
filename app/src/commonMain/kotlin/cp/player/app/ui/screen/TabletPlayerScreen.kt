@@ -647,14 +647,28 @@ private fun TabletLandscapeContent(
                     }
                 }
 
-                Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                    AnimatedVisibility(
+                // 右栏工具悬浮在歌词上，歌词占满整栏高度。
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    TabletLyricsPane(
+                        state = state,
+                        positionFlow = positionFlow,
+                        initialPositionMs = initialPositionMs,
+                        showTranslation = showTranslation,
+                        onToggleTranslation = onToggleTranslation,
+                        onSeek = onSeek,
+                        lineFontSize = if (contentWidth >= 1100.dp) 32.sp else 28.sp,
+                        onChangeSource = onChangeLyricsSource,
+                        isImmersive = isImmersive,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    androidx.compose.animation.AnimatedVisibility(
                         visible = !isImmersive,
                         enter = fadeIn(CpMotion.effects()) + expandVertically(CpMotion.spatial()),
                         exit = fadeOut(CpMotion.effects()) + shrinkVertically(CpMotion.spatial()),
+                        modifier = Modifier.align(Alignment.TopEnd),
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            modifier = Modifier.padding(horizontal = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -672,19 +686,6 @@ private fun TabletLandscapeContent(
                             TabletDockIconButton(Icons.Rounded.MoreHoriz, s.player.more, { moreSheets.showMoreMenu = true })
                         }
                     }
-
-                    TabletLyricsPane(
-                        state = state,
-                        positionFlow = positionFlow,
-                        initialPositionMs = initialPositionMs,
-                        showTranslation = showTranslation,
-                        onToggleTranslation = onToggleTranslation,
-                        onSeek = onSeek,
-                        lineFontSize = if (contentWidth >= 1100.dp) 32.sp else 28.sp,
-                        onChangeSource = onChangeLyricsSource,
-                        isImmersive = isImmersive,
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                    )
                 }
             }
         }
