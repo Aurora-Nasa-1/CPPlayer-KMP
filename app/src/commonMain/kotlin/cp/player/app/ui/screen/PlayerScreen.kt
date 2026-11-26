@@ -110,7 +110,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import cp.player.app.ui.navigation.pageModel
 import cp.player.app.ui.navigation.RoutePage
 import androidx.compose.foundation.lazy.LazyColumn
@@ -119,11 +121,16 @@ import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.foundation.layout.width
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.isAndroidPlatform
+import cp.player.app.ui.util.DesktopShell
 import cp.player.app.AppModel
 import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope
 import cp.player.app.ui.anim.LocalSharedTransitionScope
+import cp.player.app.ui.component.LocalPlayerAllowSharedBounds
+import cp.player.app.ui.component.LocalPlayerDismissHandler
 import cp.player.app.ui.component.isWindowAdaptiveExpanded
+import cp.player.app.ui.component.playerDismissDragGesture
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LegacyModalBottomSheet
 import cp.player.app.ui.component.cpFluidBackground
@@ -203,12 +210,113 @@ class PlayerScreen : RoutePage {
         // 本页的「收起」是折叠语义（↓ / ✕），与「返回上一页」不是一回事，所以不参与返回键统一。
         state.currentTrack?.let { cp.player.app.ui.util.DesktopRouteTitle(it.name) }
 
-        Box(Modifier.fillMaxSize()) {
-            if (isWindowAdaptiveExpanded() && state.currentTrack != null) {
-                val navAnimScope = LocalNavAnimatedVisibilityScope.current
+        val mobile = isAndroidPlatform() || DesktopShell.isMobileMode
+        val isTablet = cp.player.app.ui.component.isTabletLayout()
+        val expanded = isWindowAdaptiveExpanded()
+        val sharedScope = LocalSharedTransitionScope.current
+        val navAnimScope = LocalNavAnimatedVisibilityScope.current
+        val dismissHandler = LocalPlayerDismissHandler.current
+        val allowSharedBounds = LocalPlayerAllowSharedBounds.current
+        val onClosePlayer = {
+            if (dismissHandler != null) dismissHandler.requestDismiss()
+            else navigator.pop()
+            Unit
+        }
+        val currentTrack = effectiveState.currentTrack
+        val sharedContainerModifier = if (allowSharedBounds && sharedScope != null && navAnimScope != null) {
+            with(sharedScope) {
+                Modifier.sharedBounds(
+                    rememberSharedContentState("player-container"),
+                    navAnimScope,
+                    zIndexInOverlay = 0f,
+                )
+            }
+        } else Modifier
+        val sharedCoverModifier = if (allowSharedBounds && sharedScope != null && navAnimScope != null && currentTrack != null) {
+            with(sharedScope) {
+                Modifier.sharedBounds(
+                    rememberSharedContentState("cover-${currentTrack.id}"),
+                    navAnimScope,
+                    zIndexInOverlay = 1f,
+                    clipInOverlayDuringTransition = OverlayClip(MaterialTheme.shapes.medium),
+                )
+            }
+        } else Modifier
+        val sharedTitleModifier = if (allowSharedBounds && sharedScope != null && navAnimScope != null && currentTrack != null) {
+            with(sharedScope) {
+                Modifier.sharedBounds(
+                    rememberSharedContentState("title-${currentTrack.id}"),
+                    navAnimScope,
+                    resizeMode = androidx.compose.animation.SharedTransitionScope.ResizeMode.scaleToBounds(
+                        ContentScale.Fit,
+                        Alignment.CenterStart,
+                    ),
+                    zIndexInOverlay = 1f,
+                )
+            }
+        } else Modifier
+        val sharedArtistModifier = if (allowSharedBounds && sharedScope != null && navAnimScope != null && currentTrack != null) {
+            with(sharedScope) {
+                Modifier.sharedBounds(
+                    rememberSharedContentState("artist-${currentTrack.id}"),
+                    navAnimScope,
+                    resizeMode = androidx.compose.animation.SharedTransitionScope.ResizeMode.scaleToBounds(
+                        ContentScale.Fit,
+                        Alignment.CenterStart,
+                    ),
+                    zIndexInOverlay = 1f,
+                )
+            }
+        } else Modifier
+
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val phoneLandscape = mobile && maxWidth >= 480.dp && maxHeight < 480.dp && maxWidth > maxHeight
+            if (phoneLandscape && state.currentTrack != null) {
+                LandscapePlayerScreen(
+                    state = effectiveState,
+                    positionFlow = positionFlow,
+                    initialPositionMs = initialPositionMs,
+                    onBack = onClosePlayer,
+                    onTogglePlay = controller::togglePlayPause,
+                    onSeek = controller::seekTo,
+                    onSkipNext = controller::skipNext,
+                    onSkipPrev = controller::skipPrevious,
+                    onRepeat = onRepeat,
+                    onShuffle = controller::toggleShuffle,
+                    onLike = { AppModel.toggleFavoriteOf(state.currentTrack?.id) },
+                    onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
+                    onMove = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
+                    onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
+                    onClearQueue = { scope.launch { controller.clearQueue() } },
+                    transitionRunning = navAnimScope?.transition?.isRunning == true,
+                )
+            } else if (isTablet) {
+                TabletPlayerScreen(
+                    state = effectiveState,
+                    positionFlow = positionFlow,
+                    initialPositionMs = initialPositionMs,
+                    onBack = onClosePlayer,
+                    onTogglePlay = controller::togglePlayPause,
+                    onSeek = controller::seekTo,
+                    onSkipNext = controller::skipNext,
+                    onSkipPrev = controller::skipPrevious,
+                    onRepeat = onRepeat,
+                    onShuffle = controller::toggleShuffle,
+                    onLike = { AppModel.toggleFavoriteOf(state.currentTrack?.id) },
+                    onPlayAt = { idx -> scope.launch { controller.playAt(idx) } },
+                    onMove = { from, to -> scope.launch { controller.moveQueueItem(from, to) } },
+                    onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
+                    onClearQueue = { scope.launch { controller.clearQueue() } },
+                    transitionRunning = navAnimScope?.transition?.isRunning == true,
+                    containerModifier = sharedContainerModifier,
+                    artworkModifier = sharedCoverModifier,
+                    titleModifier = sharedTitleModifier,
+                    artistModifier = sharedArtistModifier,
+                )
+            } else if (expanded && state.currentTrack != null) {
                 DesktopPlayerScreen(
                     state = effectiveState,
-                    onBack = { navigator.pop() },
+                    onBack = onClosePlayer,
                     onTogglePlay = controller::togglePlayPause,
                     onSeek = controller::seekTo,
                     onSkipNext = controller::skipNext,
@@ -223,10 +331,12 @@ class PlayerScreen : RoutePage {
                     onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
                     onClearQueue = { scope.launch { controller.clearQueue() } },
                     transitionRunning = navAnimScope?.transition?.isRunning == true,
+                    containerModifier = sharedContainerModifier,
+                    artworkModifier = sharedCoverModifier,
+                    titleModifier = sharedTitleModifier,
+                    artistModifier = sharedArtistModifier,
                 )
             } else {
-                val sharedScope = LocalSharedTransitionScope.current
-                val navAnimScope = LocalNavAnimatedVisibilityScope.current
                 val modernPlayerEnabled by AppModel.modernMobilePlayerEnabledFlow.collectAsState()
 
                 if (sharedScope != null && navAnimScope != null) {
@@ -237,7 +347,7 @@ class PlayerScreen : RoutePage {
                                 positionFlow = positionFlow,
                                 initialPositionMs = initialPositionMs,
                                 animatedVisibilityScope = navAnimScope,
-                                onBack = { navigator.pop() },
+                                onBack = onClosePlayer,
                                 onTogglePlay = controller::togglePlayPause,
                                 onSeek = controller::seekTo,
                                 onSkipNext = controller::skipNext,
@@ -255,7 +365,7 @@ class PlayerScreen : RoutePage {
                                 positionFlow = positionFlow,
                                 initialPositionMs = initialPositionMs,
                                 animatedVisibilityScope = navAnimScope,
-                                onBack = { navigator.pop() },
+                                onBack = onClosePlayer,
                                 onTogglePlay = controller::togglePlayPause,
                                 onSeek = controller::seekTo,
                                 onSkipNext = controller::skipNext,
@@ -278,7 +388,7 @@ class PlayerScreen : RoutePage {
                                     positionFlow = positionFlow,
                                     initialPositionMs = initialPositionMs,
                                     animatedVisibilityScope = this,
-                                    onBack = { navigator.pop() },
+                                    onBack = onClosePlayer,
                                     onTogglePlay = controller::togglePlayPause,
                                     onSeek = controller::seekTo,
                                     onSkipNext = controller::skipNext,
@@ -296,7 +406,7 @@ class PlayerScreen : RoutePage {
                                     positionFlow = positionFlow,
                                     initialPositionMs = initialPositionMs,
                                     animatedVisibilityScope = this,
-                                    onBack = { navigator.pop() },
+                                    onBack = onClosePlayer,
                                     onTogglePlay = controller::togglePlayPause,
                                     onSeek = controller::seekTo,
                                     onSkipNext = controller::skipNext,
@@ -612,13 +722,25 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
         }
     }
 
+    val dismissHandler = LocalPlayerDismissHandler.current
+    val allowSharedBounds = LocalPlayerAllowSharedBounds.current
+    val containerSharedModifier = if (allowSharedBounds) {
+        Modifier.sharedBounds(
+            sharedContentState = rememberSharedContentState(key = "player-container"),
+            animatedVisibilityScope = animatedVisibilityScope,
+            zIndexInOverlay = 0f,
+        )
+    } else Modifier
+
     Box(
         Modifier
             .fillMaxSize()
-            .sharedBounds(
-                sharedContentState = rememberSharedContentState(key = "player-container"),
-                animatedVisibilityScope = animatedVisibilityScope
+            .then(
+                if (dismissHandler == null && offsetY.value > 0f) {
+                    Modifier.offset { IntOffset(0, offsetY.value.roundToInt()) }
+                } else Modifier
             )
+            .then(containerSharedModifier)
             .cpFluidBackground(
                 enabled = fluidBackground,
                 fallback = bgBrush,
@@ -638,33 +760,38 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             modifier = Modifier
                 .fillMaxSize()
                 .then(
-                    if (isOnPlayerPage) Modifier.pointerInput(Unit) {
-                        detectVerticalDragGestures(
-                            onDragEnd = {
-                                if (offsetY.value > 0) {
-                                    val target = if (offsetY.value > maxDrag / 2) maxDrag * 2 else 0f
-                                    if (target > 0f) onBack()
-                                    scope.launch {
-                                        offsetY.animateTo(target, tween(250))
+                    if (!isOnPlayerPage) {
+                        Modifier
+                    } else if (dismissHandler != null) {
+                        Modifier.playerDismissDragGesture(dismissHandler)
+                    } else {
+                        Modifier.pointerInput(Unit) {
+                            detectVerticalDragGestures(
+                                onDragEnd = {
+                                    if (offsetY.value > 0) {
+                                        val target = if (offsetY.value > maxDrag / 2) maxDrag * 2 else 0f
+                                        if (target > 0f) onBack()
+                                        scope.launch {
+                                            offsetY.animateTo(target, tween(250))
+                                        }
                                     }
-                                }
-                            },
-                            onDragCancel = {
-                                if (offsetY.value > 0) {
-                                    scope.launch { offsetY.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
-                                }
-                            },
-                            onVerticalDrag = { change, dragAmount ->
-                                if (dragAmount > 0 || offsetY.value > 0) {
-                                    val newOffset = (offsetY.value + dragAmount).coerceIn(0f, maxDrag * 2)
-                                    scope.launch { offsetY.snapTo(newOffset) }
-                                    change.consume()
-                                }
-                            },
-                        )
-                    } else Modifier
-                )
-                .offset { IntOffset(0, offsetY.value.roundToInt()) },
+                                },
+                                onDragCancel = {
+                                    if (offsetY.value > 0) {
+                                        scope.launch { offsetY.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) }
+                                    }
+                                },
+                                onVerticalDrag = { change, dragAmount ->
+                                    if (dragAmount > 0 || offsetY.value > 0) {
+                                        val newOffset = (offsetY.value + dragAmount).coerceIn(0f, maxDrag * 2)
+                                        scope.launch { offsetY.snapTo(newOffset) }
+                                        change.consume()
+                                    }
+                                },
+                            )
+                        }
+                    }
+                ),
             color = Color.Transparent,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ) {
@@ -1059,20 +1186,50 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 animationSpec = tween(260),
                 label = "coverScale",
             )
+            val allowSharedBounds = LocalPlayerAllowSharedBounds.current
+            val isTransitionRunning = animatedVisibilityScope.transition.isRunning
+            val coverShape = RoundedCornerShape(coverCorner)
+            val coverSharedModifier = if (allowSharedBounds) {
+                Modifier.sharedBounds(
+                    sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    zIndexInOverlay = 1f,
+                    clipInOverlayDuringTransition = OverlayClip(coverShape),
+                )
+            } else Modifier
+            val titleSharedModifier = if (allowSharedBounds) {
+                Modifier.sharedBounds(
+                    sharedContentState = rememberSharedContentState(key = "title-${track.id}"),
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    resizeMode = androidx.compose.animation.SharedTransitionScope.ResizeMode.scaleToBounds(
+                        ContentScale.Fit,
+                        Alignment.CenterStart,
+                    ),
+                    zIndexInOverlay = 1f,
+                )
+            } else Modifier
+            val artistSharedModifier = if (allowSharedBounds) {
+                Modifier.sharedBounds(
+                    sharedContentState = rememberSharedContentState(key = "artist-${track.id}"),
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    resizeMode = androidx.compose.animation.SharedTransitionScope.ResizeMode.scaleToBounds(
+                        ContentScale.Fit,
+                        Alignment.CenterStart,
+                    ),
+                    zIndexInOverlay = 1f,
+                )
+            } else Modifier
             Surface(
-                shape = RoundedCornerShape(coverCorner),
+                shape = coverShape,
                 modifier = Modifier
                     .size(artSize)
                     .aspectRatio(1f)
-                    .sharedBounds(
-                        sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
-                        animatedVisibilityScope = animatedVisibilityScope
-                    )
+                    .then(coverSharedModifier)
                     .graphicsLayer {
                         scaleX = coverScale
                         scaleY = coverScale
                     }
-                    .clip(RoundedCornerShape(coverCorner)),
+                    .clip(coverShape),
                 color = cpNestedSurface().copy(alpha = 0.5f),
                 shadowElevation = coverElevation,
             ) {
@@ -1105,11 +1262,8 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                         maxLines = 1,
                         color = MaterialTheme.colorScheme.onSurface,
                         emphasized = true,
-                        marqueeEnabled = state.isPlaying,
-                        modifier = Modifier.sharedBounds(
-                            sharedContentState = rememberSharedContentState(key = "title-${track.id}"),
-                            animatedVisibilityScope = animatedVisibilityScope,
-                        )
+                        marqueeEnabled = state.isPlaying && !isTransitionRunning,
+                        modifier = titleSharedModifier,
                     )
                     Spacer(Modifier.height(if (isUltraCompact) 0.dp else 2.dp))
                     cp.player.app.ui.component.TrackArtistText(
@@ -1118,10 +1272,8 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                         style = if (isUltraCompact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        modifier = Modifier.sharedBounds(
-                            sharedContentState = rememberSharedContentState(key = "artist-${track.id}"),
-                            animatedVisibilityScope = animatedVisibilityScope,
-                        )
+                        marqueeEnabled = state.isPlaying && !isTransitionRunning,
+                        modifier = artistSharedModifier,
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1436,6 +1588,8 @@ fun DesktopLyricsContent(
     onRepeat: () -> Unit = {},
     onLikeClick: () -> Unit = {},
     onChangeSource: (() -> Unit)? = null,
+    lineFontSize: TextUnit = 28.sp,
+    contentPadding: PaddingValues = PaddingValues(vertical = 24.dp, horizontal = 16.dp),
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -1449,11 +1603,12 @@ fun DesktopLyricsContent(
             showTranslation = showTranslation,
             onSeek = onSeek,
             onChangeSource = onChangeSource,
+            lineFontSize = lineFontSize,
             modifier = Modifier
                 .widthIn(max = 860.dp)
                 .fillMaxWidth()
                 .fillMaxHeight(),
-            contentPadding = PaddingValues(vertical = 24.dp, horizontal = 16.dp),
+            contentPadding = contentPadding,
         )
     }
 }

@@ -77,6 +77,7 @@ class AppearanceSettingsScreen(
         val colorSource by AppModel.colorSourceFlow.collectAsState()
         val pureBlack by AppModel.pureBlackFlow.collectAsState()
         val bottomBarAutoHide by AppModel.bottomBarAutoHideFlow.collectAsState()
+        val predictiveBackEnabled by AppModel.predictiveBackEnabledFlow.collectAsState()
         val coverFlightAnimation by AppModel.coverFlightAnimationFlow.collectAsState()
         val fluidBackground by AppModel.fluidBackgroundFlow.collectAsState()
         val fluidBackgroundFps by AppModel.fluidBackgroundFpsFlow.collectAsState()
@@ -159,6 +160,8 @@ class AppearanceSettingsScreen(
 
                 // 3. 界面与交互动效
                 SettingsSection(s.appearance.sectionMotion) {
+                    val isAndroid = cp.player.app.platform.isAndroidPlatform()
+                    val motionTotal = if (isAndroid) 5 else 4
                     SettingsSwitchItem(
                         title = s.appearance.coverFlight,
                         modifier = Modifier.settingsSearchTarget("appearance_cover_flight", targetSettingId),
@@ -166,7 +169,7 @@ class AppearanceSettingsScreen(
                         checked = coverFlightAnimation,
                         onCheckedChange = AppModel::setCoverFlightAnimation,
                         index = 0,
-                        total = 4,
+                        total = motionTotal,
                     )
                     SettingsSwitchItem(
                         title = s.appearance.fluidBackground,
@@ -175,7 +178,7 @@ class AppearanceSettingsScreen(
                         checked = fluidBackground,
                         onCheckedChange = AppModel::setFluidBackground,
                         index = 1,
-                        total = 4,
+                        total = motionTotal,
                     )
                     SettingsSegmentedItem(
                         title = s.appearance.fluidBackgroundFps,
@@ -188,7 +191,7 @@ class AppearanceSettingsScreen(
                         },
                         enabled = fluidBackground,
                         index = 2,
-                        total = 4,
+                        total = motionTotal,
                     )
                     SettingsSwitchItem(
                         title = s.appearance.autoHideBottomBar,
@@ -197,8 +200,19 @@ class AppearanceSettingsScreen(
                         checked = bottomBarAutoHide,
                         onCheckedChange = AppModel::setBottomBarAutoHide,
                         index = 3,
-                        total = 4,
+                        total = motionTotal,
                     )
+                    if (isAndroid) {
+                        SettingsSwitchItem(
+                            title = s.appearance.predictiveBack,
+                            modifier = Modifier.settingsSearchTarget("appearance_predictive_back", targetSettingId),
+                            subtitle = s.appearance.predictiveBackNote,
+                            checked = predictiveBackEnabled,
+                            onCheckedChange = AppModel::setPredictiveBackEnabled,
+                            index = 4,
+                            total = motionTotal,
+                        )
+                    }
                 }
 
                 // 3. 内容与列表呈现

@@ -166,6 +166,7 @@ fun AppRoute.toRoutePage(): RoutePage = when (this) {
 class StackAppNavigator(
     private val navigator: PageStack,
     private val rootNavigator: PageStack = navigator,
+    private val playerOverlay: PlayerOverlayController? = null,
 ) : AppNavigator {
     override val depth: Int
         get() = runCatching { navigator.size }.getOrDefault(0)
@@ -174,21 +175,41 @@ class StackAppNavigator(
         get() = runCatching { navigator.lastItem.key }.getOrNull()
 
     override fun push(route: AppRoute) {
+        if (route is AppRoute.Player && playerOverlay != null) {
+            playerOverlay.open()
+            return
+        }
+        playerOverlay?.closeImmediately()
         runCatching { navigator.push(route.toRoutePage()) }
             .onFailure { UiEvents.notify("暂时无法打开这个页面") }
     }
 
     override fun pushRoot(route: AppRoute) {
+        if (route is AppRoute.Player && playerOverlay != null) {
+            playerOverlay.open()
+            return
+        }
+        playerOverlay?.closeImmediately()
         runCatching { rootNavigator.push(route.toRoutePage()) }
             .onFailure { UiEvents.notify("暂时无法打开这个页面") }
     }
 
     override fun replace(route: AppRoute) {
+        if (route is AppRoute.Player && playerOverlay != null) {
+            playerOverlay.open()
+            return
+        }
+        playerOverlay?.closeImmediately()
         runCatching { navigator.replace(route.toRoutePage()) }
             .onFailure { UiEvents.notify("暂时无法打开这个页面") }
     }
 
     override fun replaceAll(route: AppRoute) {
+        if (route is AppRoute.Player && playerOverlay != null) {
+            playerOverlay.open()
+            return
+        }
+        playerOverlay?.closeImmediately()
         runCatching { navigator.replaceAll(route.toRoutePage()) }
             .onFailure { UiEvents.notify("暂时无法打开这个页面") }
     }
@@ -208,6 +229,7 @@ class StackAppNavigator(
     }
 
     override fun popToRoot() {
+        playerOverlay?.closeImmediately()
         runCatching { navigator.popUntilRoot() }
             .onFailure { UiEvents.notify("暂时无法返回主界面") }
     }
@@ -222,8 +244,9 @@ fun ProvideAppNavigator(
     rootNavigator: PageStack = navigator,
     content: @Composable () -> Unit,
 ) {
-    val appNavigator = remember(navigator, rootNavigator) {
-        StackAppNavigator(navigator, rootNavigator)
+    val playerOverlay = LocalPlayerOverlayController.current
+    val appNavigator = remember(navigator, rootNavigator, playerOverlay) {
+        StackAppNavigator(navigator, rootNavigator, playerOverlay)
     }
     CompositionLocalProvider(
         LocalAppNavigator provides appNavigator,

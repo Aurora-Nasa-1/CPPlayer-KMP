@@ -6,3 +6,6 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 actual fun rememberScreenCornerRadius(): Dp = 28.dp
+
+@Composable
+actual fun rememberTopScreenCornerRadius(): Dp = 28.dp

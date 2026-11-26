@@ -201,6 +201,8 @@ object CpStringsZh : CpStrings {
         override val pureBlackNote = "深色下使用纯黑背景，OLED 更省电"
         override val autoHideBottomBar = "自动隐藏底栏"
         override val autoHideBottomBarNote = "上滑收起底栏，下滑恢复"
+        override val predictiveBack = "预测性手势返回"
+        override val predictiveBackNote = "从屏幕边缘侧滑返回时实时预览上一级界面"
         override val coverFlight = "封面飞行动画"
         override val coverFlightNote = "封面飞入播放页的转场动画"
 

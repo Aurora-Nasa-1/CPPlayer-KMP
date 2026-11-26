@@ -265,7 +265,9 @@ fun SharedTransitionScope.MiniPlayer(
             }
             .sharedBounds(
                 sharedContentState = rememberSharedContentState(key = "player-container"),
-                animatedVisibilityScope = animatedVisibilityScope
+                animatedVisibilityScope = animatedVisibilityScope,
+                zIndexInOverlay = 0f,
+                clipInOverlayDuringTransition = OverlayClip(currentShape),
             ),
         color = if (isTabletFloating) cpElevatedSurface() else cpCardSurface(),
         tonalElevation = 0.dp,
@@ -929,7 +931,9 @@ private fun SharedTransitionScope.MiniCover(
             modifier = Modifier.fillMaxSize()
                 .sharedBounds(
                     sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
-                    animatedVisibilityScope = animatedVisibilityScope
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    zIndexInOverlay = 1f,
+                    clipInOverlayDuringTransition = OverlayClip(coverShape),
                 )
                 .clip(coverShape),
         )
@@ -972,6 +976,8 @@ private fun SharedTransitionScope.MiniTrackInfo(
     lyricHighlight: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
+    val isTransitionRunning = animatedVisibilityScope.transition.isRunning
+    val isShowingArtist = lyricText.isBlank()
     Column(modifier, verticalArrangement = Arrangement.Center) {
         CpText(
             text = track.name,
@@ -979,28 +985,36 @@ private fun SharedTransitionScope.MiniTrackInfo(
             maxLines = 1,
             color = MaterialTheme.colorScheme.onSurface,
             emphasized = true,
-            // 暂停时停住不滚：画面跟着声音一起停。见 CpText.marqueeEnabled。
-            marqueeEnabled = isPlaying,
+            // 暂停或转场期间停住不滚：避免 sharedBounds 过渡期间字形横向滑出裁切。
+            marqueeEnabled = isPlaying && !isTransitionRunning,
             modifier = Modifier.sharedBounds(
                 sharedContentState = rememberSharedContentState(key = "title-${track.id}"),
                 animatedVisibilityScope = animatedVisibilityScope,
+                resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(ContentScale.Fit, Alignment.CenterStart),
+                zIndexInOverlay = 1f,
             )
         )
         CpText(
             text = lyricText.ifBlank { track.artist },
             style = secondLineStyle,
             maxLines = 1,
-            color = if (lyricHighlight && lyricText.isNotBlank()) {
+            color = if (lyricHighlight && !isShowingArtist) {
                 MaterialTheme.colorScheme.primary
             } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
             },
             emphasized = secondLineEmphasized,
-            marqueeEnabled = isPlaying,
-            modifier = Modifier.sharedBounds(
-                sharedContentState = rememberSharedContentState(key = "artist-${track.id}"),
-                animatedVisibilityScope = animatedVisibilityScope,
-            )
+            marqueeEnabled = isPlaying && !isTransitionRunning,
+            modifier = if (isShowingArtist) {
+                Modifier.sharedBounds(
+                    sharedContentState = rememberSharedContentState(key = "artist-${track.id}"),
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(ContentScale.Fit, Alignment.CenterStart),
+                    zIndexInOverlay = 1f,
+                )
+            } else {
+                Modifier
+            },
         )
     }
 }

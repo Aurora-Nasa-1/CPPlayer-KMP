@@ -31,7 +31,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
 import cp.player.app.platform.BackHandler
@@ -94,29 +96,35 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
         lyricsExpanded = false
     }
 
+    val dismissHandler = LocalPlayerDismissHandler.current
+    val allowSharedBounds = LocalPlayerAllowSharedBounds.current
     val currentBack by rememberUpdatedState(onBack)
     val dragOffset = remember { Animatable(0f) }
     val dragThreshold = with(LocalDensity.current) { 100.dp.toPx() }
     val resetMotion = CpMotion.spatial<Float>()
-    val dismissGesture = Modifier.pointerInput(dragThreshold) {
-        detectVerticalDragGestures(
-            onVerticalDrag = { change, amount ->
-                if (amount > 0 || dragOffset.value > 0) {
-                    change.consume()
-                    scope.launch {
-                        dragOffset.snapTo((dragOffset.value + amount).coerceIn(0f, dragThreshold * 2))
+    val dismissGesture = if (dismissHandler != null) {
+        Modifier.playerDismissDragGesture(dismissHandler)
+    } else {
+        Modifier.pointerInput(dragThreshold) {
+            detectVerticalDragGestures(
+                onVerticalDrag = { change, amount ->
+                    if (amount > 0 || dragOffset.value > 0) {
+                        change.consume()
+                        scope.launch {
+                            dragOffset.snapTo((dragOffset.value + amount).coerceIn(0f, dragThreshold * 2))
+                        }
                     }
-                }
-            },
-            onDragEnd = {
-                if (dragOffset.value >= dragThreshold) {
-                    haptics.perform(CpHaptic.Confirm)
-                    currentBack()
-                }
-                scope.launch { dragOffset.animateTo(0f, resetMotion) }
-            },
-            onDragCancel = { scope.launch { dragOffset.animateTo(0f, resetMotion) } },
-        )
+                },
+                onDragEnd = {
+                    if (dragOffset.value >= dragThreshold) {
+                        haptics.perform(CpHaptic.Confirm)
+                        currentBack()
+                    }
+                    scope.launch { dragOffset.animateTo(0f, resetMotion) }
+                },
+                onDragCancel = { scope.launch { dragOffset.animateTo(0f, resetMotion) } },
+            )
+        }
     }
     val onArtist: ((ArtistSummary) -> Unit)? = remember(navigator) {
         { artist -> navigator.push(AppRoute.UserProfile(artist.id, artist.name, artist.resourceId)) }
@@ -126,17 +134,38 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
     }
 
     val currentTrack = state.currentTrack
-    val titleModifier = if (currentTrack != null) {
+    val containerSharedModifier = if (allowSharedBounds) {
         Modifier.sharedBounds(
-            sharedContentState = rememberSharedContentState("title-${currentTrack.id}"),
+            sharedContentState = rememberSharedContentState("player-container"),
             animatedVisibilityScope = animatedVisibilityScope,
+            zIndexInOverlay = 0f,
         )
     } else Modifier
 
-    val artistModifier = if (currentTrack != null) {
+    val artworkSharedModifier = if (allowSharedBounds && currentTrack != null) {
+        Modifier.sharedBounds(
+            sharedContentState = rememberSharedContentState("cover-${currentTrack.id}"),
+            animatedVisibilityScope = animatedVisibilityScope,
+            zIndexInOverlay = 1f,
+            clipInOverlayDuringTransition = OverlayClip(MaterialTheme.shapes.medium),
+        )
+    } else Modifier
+
+    val titleModifier = if (allowSharedBounds && currentTrack != null) {
+        Modifier.sharedBounds(
+            sharedContentState = rememberSharedContentState("title-${currentTrack.id}"),
+            animatedVisibilityScope = animatedVisibilityScope,
+            resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(ContentScale.Fit, Alignment.CenterStart),
+            zIndexInOverlay = 1f,
+        )
+    } else Modifier
+
+    val artistModifier = if (allowSharedBounds && currentTrack != null) {
         Modifier.sharedBounds(
             sharedContentState = rememberSharedContentState("artist-${currentTrack.id}"),
             animatedVisibilityScope = animatedVisibilityScope,
+            resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(ContentScale.Fit, Alignment.CenterStart),
+            zIndexInOverlay = 1f,
         )
     } else Modifier
 
@@ -153,6 +182,12 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
 
     Box(
         Modifier.fillMaxSize()
+            .then(
+                if (dismissHandler == null && dragOffset.value > 0f) {
+                    Modifier.graphicsLayer { translationY = dragOffset.value }
+                } else Modifier
+            )
+            .then(containerSharedModifier)
             .cpFluidBackground(
                 enabled = fluidBackground,
                 fallback = backgroundBrush,
@@ -160,9 +195,7 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
                     animatedVisibilityScope.transition.isRunning,
                 ),
                 coverUrl = state.currentTrack?.coverUrl,
-            )
-            .sharedBounds(rememberSharedContentState("player-container"), animatedVisibilityScope)
-            .graphicsLayer { translationY = dragOffset.value },
+            ),
     ) {
         MobileNowPlayingLayout(
             state = state,
@@ -196,9 +229,7 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
             modifier = Modifier.fillMaxSize(),
             contentModifier = Modifier.windowInsetsPadding(WindowInsets.systemBars),
             dismissGesture = dismissGesture,
-            artworkModifier = Modifier.sharedBounds(
-                rememberSharedContentState("cover-${state.currentTrack?.id}"), animatedVisibilityScope,
-            ),
+            artworkModifier = artworkSharedModifier,
             titleModifier = titleModifier,
             artistModifier = artistModifier,
             isImmersive = isImmersive,
@@ -209,6 +240,7 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
             onImmersiveChange = { active ->
                 isImmersiveActive = active
             },
+            isTransitionRunning = animatedVisibilityScope.transition.isRunning,
         ) { modifier ->
             LyricContent(
                 state = state,

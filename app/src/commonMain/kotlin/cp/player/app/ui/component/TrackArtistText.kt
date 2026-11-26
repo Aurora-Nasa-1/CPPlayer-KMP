@@ -63,6 +63,7 @@ fun TrackArtistText(
     maxLines: Int = 1,
     textAlign: TextAlign? = null,
     reveal: CpTextReveal = CpTextReveal.Auto,
+    marqueeEnabled: Boolean = true,
 ) {
     val textStyle = style.copy(color = color, textAlign = textAlign ?: style.textAlign)
     val resolvedStyle = textStyle.localizedForLanguage(track.artist)
@@ -77,6 +78,7 @@ fun TrackArtistText(
             maxLines = maxLines,
             textAlign = textAlign,
             reveal = reveal,
+            marqueeEnabled = marqueeEnabled,
         )
         return
     }
@@ -105,6 +107,7 @@ fun TrackArtistText(
                 maxLines = 1,
                 textAlign = textAlign,
                 reveal = reveal,
+                marqueeEnabled = marqueeEnabled,
             )
         }
         return

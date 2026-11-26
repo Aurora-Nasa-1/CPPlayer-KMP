@@ -291,9 +291,11 @@ class MainScreen : RoutePage {
         LaunchedEffect(contentNavigator) {
             if (contentNavigator == null) paneStack.discardHiddenDetails()
         }
-        val contentAppNavigator = remember(contentNavigator, navigator) {
-            contentNavigator?.let { StackAppNavigator(it, navigator ?: it) }
+        val playerOverlay = cp.player.app.ui.navigation.LocalPlayerOverlayController.current
+        val contentAppNavigator = remember(contentNavigator, navigator, playerOverlay) {
+            contentNavigator?.let { StackAppNavigator(it, navigator ?: it, playerOverlay) }
         }
+        val isPlayerOverlayVisible = playerOverlay?.isVisibleOnScreen == true
         val controller = AppModel.playback
         val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
         // 宽屏右侧面板的当前形态。原本是「desktopPlaylist + desktopSettingsOpen」两个
@@ -706,7 +708,8 @@ class MainScreen : RoutePage {
                                     EmbeddedContentNavigator(
                                         nav = paneStack,
                                         backEnabled = navigator?.lastItem === this@MainScreen &&
-                                            desktopPane == DesktopPane.Tabs,
+                                            desktopPane == DesktopPane.Tabs &&
+                                            !isPlayerOverlayVisible,
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
@@ -850,7 +853,7 @@ class MainScreen : RoutePage {
                             ) {
                                 EmbeddedContentNavigator(
                                     nav = paneStack,
-                                    backEnabled = navigator?.lastItem === this@MainScreen,
+                                    backEnabled = navigator?.lastItem === this@MainScreen && !isPlayerOverlayVisible,
                                     modifier = Modifier.fillMaxSize().padding(padding),
                                 )
                             }

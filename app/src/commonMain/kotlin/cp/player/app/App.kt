@@ -15,7 +15,10 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import kotlin.math.roundToInt
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
@@ -25,9 +28,12 @@ import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalDensity
@@ -165,12 +171,17 @@ fun App(
                 }
             }
             val navigator = rememberPageStack(start, "window-routes")
+            val playerOverlay = cp.player.app.ui.navigation.rememberPlayerOverlayController()
+            val independentPlayerPage = remember { PlayerScreen() }
             run {
-                val appNavigator = remember(navigator) {
-                    cp.player.app.ui.navigation.StackAppNavigator(navigator, navigator)
+                val appNavigator = remember(navigator, playerOverlay) {
+                    cp.player.app.ui.navigation.StackAppNavigator(navigator, navigator, playerOverlay)
                 }
                 // Backend startup changes the root, independently of pages above it.
                 LaunchedEffect(startDestination) {
+                    if (startDestination !is AppStartDestination.Main) {
+                        playerOverlay.closeImmediately()
+                    }
                     val current = navigator.firstItem
                     if (current::class != start::class ||
                         (startDestination is AppStartDestination.Error && current !== start)
@@ -226,6 +237,7 @@ fun App(
                         }
                     }
                     AppModel.consumePendingMessageOpen()
+                    playerOverlay.closeImmediately()
                     navigator.popToMainShell()
                     appNavigator.push(
                         AppRoute.Chat(
@@ -247,7 +259,7 @@ fun App(
                 // 纳入 enabled 判据，并让兜底动作与标题栏返回键**同链**：内嵌 pop → 根 pop →
                 // 收面板。两处各写一套判据的话，「Esc 能退、点返回键不能退」的漂移迟早出现。
                 //
-                // 安卓端由 Nav3 接管系统返回键，避免再注册一个全局处理器。
+                // 安卓端由 Nav3 / PlayerOverlayHost 接管系统返回键，避免再注册一个全局处理器。
                 if (!cp.player.app.platform.isAndroidPlatform()) {
                     cp.player.app.platform.BackHandler(
                         enabled = navigator.size > 1 || cp.player.app.ui.util.DesktopShell.pageCanGoBack,
@@ -271,6 +283,7 @@ fun App(
                 LaunchedEffect(openSettingsFromShortcut) {
                     if (openSettingsFromShortcut) {
                         cp.player.app.ui.util.DesktopShell.openSettingsFromShortcut = false
+                        playerOverlay.closeImmediately()
                         navigator.popToMainShell()
                         cp.player.app.ui.util.DesktopShell.settingsRequested = true
                     }
@@ -285,26 +298,11 @@ fun App(
                     //
                     // 三件事同时成立才算：注入了自绘标题栏（桌面端）、窗口是 Expanded 宽度、
                     // **有桌面播放页在显示**。
-                    //
-                    // ⚠️ 播放页的「是否在显示」有两条来源，**都要**算上：
-                    // - `MainScreen` 的展开覆盖层（用户点底栏小播放器，最常用的入口）——
-                    //   它由壳层自己登记（`DesktopPlayerStage`，见 MainScreen 里的注释），
-                    //   根栈顶始终是 `MainScreen`，判路由永远判不中；
-                    // - 根栈上的 `PlayerScreen` 路由（主壳层之外点小播放器 / 首页播放按钮）。
-                    //   这条直接看栈顶即可：push / pop 都在**那一帧**翻转，不用登记。
                     val immersive = titleBar != null &&
                         cp.player.app.ui.component.LocalIsExpanded.current &&
                         (cp.player.app.ui.component.isPlayerStageActive ||
+                            playerOverlay.isExpanded ||
                             navigator.lastItem is PlayerScreen)
-                    // 标题栏为内容让出的高度：沉浸时收到 0 ⇒ 页面区域长高 44dp，
-                    // 播放页的流体背景于是铺到**窗口顶边**（连标题栏底下那一条也盖住）。
-                    //
-                    // ⚠️ 这里刻意用 tween 而不是 spatial 的 spring：这个值同时决定「页面区域
-                    // 从这里开始」和「播放页补多少内边距」，两者之和必须恒等于 44dp。
-                    // spring 会**过冲**（44 → 0 冲到负数、回程冲过 44），钳位之后两端各自
-                    // 夹在 0 与 44，那个瞬间和就不再是 44 —— 内容会上下跳几 dp。
-                    // ⚠️ 时长必须等于 [CpMotion.PlayerExpandMs]（播放页淡入淡出的节拍），
-                    // 三个动画同拍才不会出现「顶栏先空了一条，页面才长出来」。
                     val topInset by animateDpAsState(
                         targetValue = if (immersive) 0.dp else CpTitleBarHeight,
                         animationSpec = tween(
@@ -336,6 +334,7 @@ fun App(
                                 cp.player.app.ui.util.LocalRootNavigator provides navigator,
                                 // 根导航契约：所有页面与组件通过 AppRoute 表达跳转意图。
                                 cp.player.app.ui.navigation.LocalAppNavigator provides appNavigator,
+                                cp.player.app.ui.navigation.LocalPlayerOverlayController provides playerOverlay,
                                 // 播放页要补回来的顶部内边距 = 标题栏让出的量（见 LocalPlayerTopInset）。
                                 // 两者之和恒等于 CpTitleBarHeight ⇒ 内容不动，只有背景在长高。
                                 cp.player.app.ui.component.LocalPlayerTopInset provides
@@ -343,161 +342,150 @@ fun App(
                                     else (CpTitleBarHeight - clampedTopInset).coerceAtLeast(0.dp),
                             ) {
                                 // 整窗「空白处右键 → 返回上一级」兜底。
-                                //
-                                // 为什么不放在各页面里：桌面的返回有**四条**来源（根栈出栈 /
-                                // 内容区内嵌栈出栈 / 收起内嵌面板 / 页面自己的处理器），
-                                // 而设置面板、歌单面板、播放页这些页面**看不到全部四条**，
-                                // 页面自己判就只能判到一部分 —— 用户遇到的就是「在设置页 /
-                                // 歌单页右键，菜单里没有返回」。判据与动作由
-                                // `rememberBackContextMenuItem` 与标题栏返回键逐字同链。
-                                //
-                                // `passive = true`：页面里自己的右键菜单（歌曲行 / 卡片 /
-                                // 页面级「刷新」）都是**后代**节点，先于这里收到 Main 阶段的 Press
-                                // ⇒ 只有它们都没接手的空白 / 纯文本区域才弹这一层
-                                // （默认的 Initial 模式会让父子同时弹两个菜单）。
-                                //
-                                // ⚠️ 已经自带空白处右键容器的页面（`CpRefreshablePage`）
-                                // 不会被这里覆盖 —— 它的菜单在内层先消费，且它自己也并进了
-                                // 同一个「返回上一级」项，不会出现两种菜单。
                                 val backItem = cp.player.app.ui.component.rememberBackContextMenuItem()
                                 cp.player.app.ui.component.CpContextMenu(
                                     items = backItem?.let { listOf(it) },
                                     modifier = Modifier.fillMaxSize().weight(1f),
                                     passive = true,
                                 ) {
+                                    val isDesktopExpanded = cp.player.app.ui.component.LocalIsExpanded.current
+                                    val isDesktop = isDesktopExpanded || titleBar != null
+                                    val predictiveBackEnabled by AppModel.predictiveBackEnabledFlow.collectAsState()
+                                    val overlayCoverageState = remember { mutableFloatStateOf(0f) }
+                                    var isPlayerExiting by remember { mutableStateOf(false) }
+
                                     // ⚠️ 整个根 Navigator 只此一个 SharedTransitionLayout，且必须同时
-                                    // 罩住「页面转场」与「全局 MiniPlayer」两端：共享元素只有在
-                                    // **同一个** SharedTransitionScope 里才能配对。此前 MiniPlayer
-                                    // 自带一个独立的 SharedTransitionLayout、而路由版 PlayerScreen
-                                    // 又自建一个 —— 三方互不相识，从歌单等其它页面点 MiniPlayer
-                                    // 展开播放页时配不上对，展开动画直接消失（tab 页里正常，
-                                    // 因为那一对走的是 MainScreen 自己的 scope）。
+                                    // 罩住「页面转场」、「全局 MiniPlayer」与「独立播放页覆盖层」三端：
+                                    // 共享元素只有在同一个 SharedTransitionScope 里才能配对。
                                     SharedTransitionLayout(Modifier.fillMaxSize()) {
                                         CompositionLocalProvider(
                                             cp.player.app.ui.anim.LocalSharedTransitionScope provides this,
                                         ) {
-                                            // MainScreen already owns this overlay; all other pages get the
-                                            // same controller here so playback remains accessible globally.
-                                            //
-                                            // ⚠️ 页面（ScreenTransition）必须留在宿主**里面**（pageContent）：
-                                            // 小播放器的尾留白（LocalMiniPlayerTailSpace）由宿主 provide，
-                                            // 各页滚动容器的 contentPadding 读的就是它 —— 页面若在 provider
-                                            // 外面（曾经的写法），读到的永远是默认 0，整页路由（一起听 /
-                                            // 歌单详情 / 账号 / 设置 …）的列表末尾就会被浮层小播放器压住。
-                                            // 安卓上所有非 tab 页面都推在这条根栈上，症状最明显。
                                             GlobalMiniPlayerHost(
-                                                // 聊天页（窄屏整页）也让位：那一页底部是固定输入栏，
-                                                // 小播放器浮层会把它盖住并吞掉点击。
-                                                // 桌面宽屏的对话在 `MessagesPane` 右栏里、不在这条根栈上，
-                                                // 由 `MainScreen` 自己那份宿主处理。
                                                 show = shouldShowGlobalMiniPlayer(
                                                     startDestination = startDestination,
                                                     lastItem = navigator.lastItem,
                                                     miniPlayerBlockedByChat =
                                                         cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat,
+                                                    playerExpanded = playerOverlay.isExpanded && !isPlayerExiting,
                                                 ),
                                                 mainScreenVisible = navigator.lastItem is MainScreen,
-                                                onClick = { appNavigator.push(AppRoute.Player) },
-                                            ) {
-                                                val isDesktopExpanded = cp.player.app.ui.component.LocalIsExpanded.current
-                                                val isDesktop = isDesktopExpanded || titleBar != null
-                                                // 转场规格只在组合期取一次：`transition` 是普通 lambda，
-                                                // 里面不能调用 @Composable 的 CpMotion 取值函数。
-                                                val pageTransitions = cp.player.app.ui.theme.rememberCpPageTransitions()
-                                                RouteDisplay(
-                                                    stack = navigator,
-                                                    transition = { from, to, isPop ->
-                                                        // 播放页路由（从全局 MiniPlayer 展开）：
-                                                        // 桌面端保持双端淡入淡出，由窗口沉浸态协调顶栏；
-                                                        // 手机端应用背景沉底（scale/slide/dim）与浮起动效，sharedBounds 的「小卡片长成全屏」形变唱主角。
-                                                        if (to == PageMotion.Player || from == PageMotion.Player) {
-                                                            if (isDesktop) {
-                                                                fadeIn(tween(CpMotion.PlayerExpandMs)) togetherWith
-                                                                    fadeOut(tween(CpMotion.PlayerExpandMs))
-                                                            } else if (to == PageMotion.Player) {
-                                                                val enter = fadeIn(tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing))
-                                                                val exit = scaleOut(
-                                                                    animationSpec = tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing),
-                                                                    targetScale = 0.92f,
-                                                                    transformOrigin = TransformOrigin(0.5f, 0.4f),
-                                                                ) + slideOutVertically(
-                                                                    animationSpec = tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing),
-                                                                    targetOffsetY = { (it * 0.02f).roundToInt() },
-                                                                ) + fadeOut(
-                                                                    animationSpec = tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing),
-                                                                    targetAlpha = 0.6f,
-                                                                )
-                                                                (enter togetherWith exit).apply {
-                                                                    targetContentZIndex = 1f
-                                                                }
-                                                            } else {
-                                                                val enter = scaleIn(
-                                                                    animationSpec = tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing),
-                                                                    initialScale = 0.92f,
-                                                                    transformOrigin = TransformOrigin(0.5f, 0.4f),
-                                                                ) + slideInVertically(
-                                                                    animationSpec = tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing),
-                                                                    initialOffsetY = { (it * 0.02f).roundToInt() },
-                                                                ) + fadeIn(
-                                                                    animationSpec = tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing),
-                                                                    initialAlpha = 0.6f,
-                                                                )
-                                                                val exit = fadeOut(tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing))
-                                                                (enter togetherWith exit).apply {
-                                                                    targetContentZIndex = -1f
-                                                                }
-                                                            }
-                                                        } else if (to == PageMotion.Playlist || from == PageMotion.Playlist) {
-                                                            // 歌单详情 fade 转场：配合 CoverFlight 封面飞行器平滑衔接，
-                                                            // 避免整个页面横向硬滑导致封面与主页脱节。
-                                                            fadeIn(tween(300)) togetherWith fadeOut(tween(220))
-                                                        } else {
-                                                            // 统一遵循 M3 Expressive Shared Axis (X 轴) 动效体系规范
-                                                            if (!isDesktop && from == PageMotion.Main && to != PageMotion.Main) {
-                                                                // 手机端从主页进入无底栏子页面：Shared Axis X 推进并维持层级
-                                                                pageTransitions.sharedAxisX(isPop = false).apply {
-                                                                    targetContentZIndex = 1f
-                                                                }
-                                                            } else if (!isDesktop && to == PageMotion.Main && from != PageMotion.Main) {
-                                                                // 手机端从无底栏子页面返回主页：Shared Axis X 回退并维持层级
-                                                                pageTransitions.sharedAxisX(isPop = true).apply {
-                                                                    targetContentZIndex = -1f
-                                                                }
-                                                            } else {
-                                                                pageTransitions.sharedAxisX(isPop = isPop)
-                                                            }
-                                                        }
-                                                    },
-                                                    // 每个页面（进 / 退场双方）各自拿到本次转场的
-                                                    // AnimatedVisibilityScope —— 路由页的 sharedBounds
-                                                    // 靠它挂到同一条转场时间线上。
-                                                    content = { screen ->
+                                                fastReturn = isPlayerExiting,
+                                                onClick = { playerOverlay.open() },
+                                                overlayContent = {
+                                                    cp.player.app.ui.navigation.PlayerOverlayHost(
+                                                        controller = playerOverlay,
+                                                        isDesktopExpanded = isDesktopExpanded,
+                                                        predictiveBackEnabled = predictiveBackEnabled,
+                                                        overlayCoverageState = overlayCoverageState,
+                                                        onExitingChange = { isPlayerExiting = it },
+                                                    ) {
                                                         CompositionLocalProvider(
                                                             cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope provides this,
                                                         ) {
-                                                            val isPlayerOnTop = navigator.lastItem is PlayerScreen
-                                                            val cornerRadius by animateDpAsState(
-                                                                targetValue = if (isPlayerOnTop && !isDesktop && screen !is PlayerScreen) 20.dp else 0.dp,
-                                                                animationSpec = tween(
-                                                                    durationMillis = CpMotion.PlayerExpandMs,
-                                                                    easing = FastOutSlowInEasing,
-                                                                ),
-                                                                label = "playerBackgroundSinkCorner",
-                                                            )
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .fillMaxSize()
-                                                                    .then(
-                                                                        if (cornerRadius > 0.dp) {
-                                                                            Modifier.clip(RoundedCornerShape(cornerRadius))
-                                                                        } else Modifier
-                                                                    ),
+                                                            independentPlayerPage.Content()
+                                                        }
+                                                    }
+                                                },
+                                            ) {
+                                                // 转场规格只在组合期取一次：`transition` 是普通 lambda，
+                                                // 里面不能调用 @Composable 的 CpMotion 取值函数。
+                                                val pageTransitions = cp.player.app.ui.theme.rememberCpPageTransitions()
+                                                val densityForBg = LocalDensity.current
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .graphicsLayer {
+                                                            if (!isDesktop) {
+                                                                val coverage = overlayCoverageState.floatValue
+                                                                if (coverage > 0.001f) {
+                                                                    val sVal = 1f - 0.06f * coverage
+                                                                    scaleX = sVal
+                                                                    scaleY = sVal
+                                                                    val radiusPx = with(densityForBg) { (20.dp * coverage).toPx() }
+                                                                    if (radiusPx > 0.5f) {
+                                                                        shape = RoundedCornerShape(radiusPx)
+                                                                        clip = true
+                                                                    } else {
+                                                                        clip = false
+                                                                    }
+                                                                } else {
+                                                                    clip = false
+                                                                }
+                                                            } else {
+                                                                clip = false
+                                                            }
+                                                        },
+                                                ) {
+                                                    RouteDisplay(
+                                                        stack = navigator,
+                                                        backEnabled = !playerOverlay.isVisibleOnScreen,
+                                                        predictiveBackEnabled = predictiveBackEnabled,
+                                                        transition = { from, to, isPop ->
+                                                            if (to == PageMotion.Playlist || from == PageMotion.Playlist) {
+                                                                // 歌单详情 fade 转场：配合 CoverFlight 封面飞行器平滑衔接，
+                                                                // 避免整个页面横向硬滑导致封面与主页脱节。
+                                                                fadeIn(tween(300)) togetherWith fadeOut(tween(220))
+                                                            } else {
+                                                                // 统一遵循 M3 Expressive Shared Axis (X 轴) 动效体系规范
+                                                                if (!isDesktop && from == PageMotion.Main && to != PageMotion.Main) {
+                                                                    // 手机端从主页进入无底栏子页面：Shared Axis X 推进并维持层级
+                                                                    pageTransitions.sharedAxisX(isPop = false).apply {
+                                                                        targetContentZIndex = 1f
+                                                                    }
+                                                                } else if (!isDesktop && to == PageMotion.Main && from != PageMotion.Main) {
+                                                                    // 手机端从无底栏子页面返回主页：Shared Axis X 回退并维持层级
+                                                                    pageTransitions.sharedAxisX(isPop = true).apply {
+                                                                        targetContentZIndex = -1f
+                                                                    }
+                                                                } else {
+                                                                    pageTransitions.sharedAxisX(isPop = isPop)
+                                                                }
+                                                            }
+                                                        },
+                                                        predictiveTransition = { _, _, swipeEdge ->
+                                                            val edgeSign = if (swipeEdge == androidx.navigationevent.NavigationEvent.EDGE_RIGHT) -1f else 1f
+                                                            val enter = scaleIn(
+                                                                animationSpec = tween(260, easing = FastOutSlowInEasing),
+                                                                initialScale = 0.96f,
+                                                            ) + slideInHorizontally(
+                                                                animationSpec = tween(260, easing = FastOutSlowInEasing),
+                                                            ) { -(it * 0.06f * edgeSign).roundToInt() } +
+                                                                fadeIn(tween(260, easing = FastOutSlowInEasing), initialAlpha = 0.72f)
+                                                            val exit = scaleOut(
+                                                                animationSpec = tween(260, easing = FastOutSlowInEasing),
+                                                                targetScale = 0.90f,
+                                                                transformOrigin = if (edgeSign > 0f) TransformOrigin(0.82f, 0.5f) else TransformOrigin(0.18f, 0.5f),
+                                                            ) + slideOutHorizontally(
+                                                                animationSpec = tween(260, easing = FastOutSlowInEasing),
+                                                            ) { (it * 0.14f * edgeSign).roundToInt() } +
+                                                                fadeOut(tween(260, easing = FastOutSlowInEasing), targetAlpha = 0.35f)
+                                                            (enter togetherWith exit).apply {
+                                                                targetContentZIndex = -1f
+                                                            }
+                                                        },
+                                                        content = { screen ->
+                                                            CompositionLocalProvider(
+                                                                cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope provides this,
                                                             ) {
                                                                 screen.Content()
                                                             }
-                                                        }
-                                                    },
-                                                )
+                                                        },
+                                                    )
+                                                    // 播放页背景压暗遮罩（只读 FloatState 在 Draw 阶段绘制，0 重组）
+                                                    if (!isDesktop) {
+                                                        Box(
+                                                            Modifier
+                                                                .fillMaxSize()
+                                                                .drawBehind {
+                                                                    val coverage = overlayCoverageState.floatValue
+                                                                    if (coverage > 0.001f) {
+                                                                        drawRect(Color.Black.copy(alpha = 0.34f * coverage))
+                                                                    }
+                                                                },
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -571,7 +559,9 @@ internal fun shouldShowGlobalMiniPlayer(
     startDestination: AppStartDestination,
     lastItem: Any?,
     miniPlayerBlockedByChat: Boolean,
+    playerExpanded: Boolean = false,
 ): Boolean = startDestination is AppStartDestination.Main &&
+    !playerExpanded &&
     lastItem !is PlayerScreen &&
     lastItem !is ChatScreen &&
     lastItem !is cp.player.app.ui.screen.VideoPlayerScreen &&
@@ -580,29 +570,15 @@ internal fun shouldShowGlobalMiniPlayer(
 
 /**
  * 全局 MiniPlayer 宿主（根 Navigator 上的路由页通用底栏；MainScreen 自己有一份）。
- *
- * 结构是「**页面内容进宿主**」：[pageContent]（根 Navigator 渲染的整页路由）与
- * 小播放器同被 `LocalMiniPlayerTailSpace` 的 provider 罩住 —— 尾留白必须同时管住
- * 两端：各页滚动容器读它给列表末尾让位，浮层与预留量出自**同一个**状态源。
- * 页面若在 provider 外面（曾经的写法），读到的永远是默认 0，整页路由的列表末尾
- * 就会被小播放器压住。
- *
- * ⚠️ 完整播放状态的订阅隔离在最内层的 [GlobalMiniPlayerBar]：播放中
- * `playback.state` 每 200ms 换一个新对象（位置轮询），collect 在宿主这一层会连带
- * [pageContent]（整棵页面树）每 200ms 重组 —— 与 [PlaybackMediaControlsBridge]
- * 的 KDoc 同一理由。宿主自己只订一个**起/停歌才翻转**的布尔（尾留白的判据）。
- *
- * ⚠️ `show` 翻转必须走 [AnimatedContent] 的 target，**不能**用外层 `if` 摘除整个块：
- * 从 MiniPlayer 打开播放页（push `PlayerScreen`）时，sharedBounds 需要退场方
- * （MiniPlayer）在转场期间保持组合才能和进场方配对 —— 外层 `if` 会把它连同
- * scope 一起瞬时移除，配对失败，展开动画随之消失。
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun SharedTransitionScope.GlobalMiniPlayerHost(
     show: Boolean,
     mainScreenVisible: Boolean,
+    fastReturn: Boolean = false,
     onClick: () -> Unit,
+    overlayContent: @Composable SharedTransitionScope.() -> Unit = {},
     pageContent: @Composable () -> Unit,
 ) {
     // 尾留白的判据只依赖「有没有当前曲目」—— 起/停歌才翻转。派生成独立布尔流，
@@ -664,6 +640,7 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
             GlobalMiniPlayerBar(
                 show = show,
                 isDockedToBottomBar = isBottomBarShowing,
+                fastReturn = fastReturn,
                 onClick = onClick,
                 onBarHeight = { barHeightPx = it },
                 modifier = Modifier
@@ -673,6 +650,7 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
                         bottom = safeBottomGap,
                     ),
             )
+            overlayContent()
         }
     }
 }
@@ -688,6 +666,7 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
 private fun SharedTransitionScope.GlobalMiniPlayerBar(
     show: Boolean,
     isDockedToBottomBar: Boolean,
+    fastReturn: Boolean,
     onClick: () -> Unit,
     onBarHeight: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -696,7 +675,9 @@ private fun SharedTransitionScope.GlobalMiniPlayerBar(
     AnimatedContent(
         targetState = show && playbackState.currentTrack != null,
         transitionSpec = {
-            fadeIn(tween(300)) togetherWith fadeOut(tween(300))
+            val enterMs = if (fastReturn) 240 else CpMotion.PlayerExpandMs
+            fadeIn(tween(enterMs, easing = FastOutSlowInEasing)) togetherWith
+                fadeOut(tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing))
         },
         label = "GlobalMiniPlayer",
         modifier = modifier,

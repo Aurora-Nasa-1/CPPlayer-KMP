@@ -200,6 +200,9 @@ object CpStringsEn : CpStrings {
         override val autoHideBottomBar = "Auto-hide bottom bar"
         override val autoHideBottomBarNote =
             "Collapse the bottom navigation bar when scrolling up, bring it back when scrolling down"
+        override val predictiveBack = "Predictive back gesture"
+        override val predictiveBackNote =
+            "Preview the previous screen in real time while swiping back from the screen edge"
         override val coverFlight = "Cover flight animation"
         override val coverFlightNote =
             "Transition that flies the artwork into the player or detail page when you tap a track or " +

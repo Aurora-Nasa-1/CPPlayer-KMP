@@ -69,4 +69,16 @@ class MiniPlayerVisibilityTest {
             ),
         )
     }
+
+    @Test
+    fun `expanded player overlay hides mini player`() {
+        assertFalse(
+            shouldShowGlobalMiniPlayer(
+                startDestination = AppStartDestination.Main,
+                lastItem = MainScreen(),
+                miniPlayerBlockedByChat = false,
+                playerExpanded = true,
+            ),
+        )
+    }
 }

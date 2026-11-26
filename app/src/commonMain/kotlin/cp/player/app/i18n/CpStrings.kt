@@ -364,6 +364,8 @@ interface AppearanceStrings {
     val pureBlackNote: String
     val autoHideBottomBar: String
     val autoHideBottomBarNote: String
+    val predictiveBack: String
+    val predictiveBackNote: String
     val coverFlight: String
     val coverFlightNote: String
 

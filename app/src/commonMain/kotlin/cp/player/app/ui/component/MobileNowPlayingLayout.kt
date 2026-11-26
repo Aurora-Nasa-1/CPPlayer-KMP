@@ -139,6 +139,7 @@ internal fun MobileNowPlayingLayout(
     isImmersive: Boolean = false,
     onToggleImmersive: () -> Unit = {},
     onImmersiveChange: (Boolean) -> Unit = {},
+    isTransitionRunning: Boolean = false,
     lyricsContent: @Composable (Modifier) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -361,6 +362,7 @@ internal fun MobileNowPlayingLayout(
                                         modifier = Modifier.weight(1f),
                                         titleModifier = titleModifier,
                                         artistModifier = artistModifier,
+                                        marqueeEnabled = state.isPlaying && !isTransitionRunning,
                                     )
                                     PlayerIconButton(
                                         if (state.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
@@ -470,7 +472,7 @@ internal fun MobileNowPlayingLayout(
 }
 
 @Composable
-private fun AlbumEyebrow(
+internal fun AlbumEyebrow(
     album: String?,
     fallback: String,
     modifier: Modifier = Modifier,
@@ -510,22 +512,25 @@ private fun TrackHeading(
     modifier: Modifier = Modifier,
     titleModifier: Modifier = Modifier,
     artistModifier: Modifier = Modifier,
+    marqueeEnabled: Boolean = true,
 ) {
     Column(modifier) {
         CpText(
             track.name,
-            modifier = Modifier.then(titleModifier).fillMaxWidth().testTag("player-track-title"),
+            modifier = Modifier.then(titleModifier).testTag("player-track-title"),
             style = if (large) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1, reveal = CpTextReveal.Marquee,
+            marqueeEnabled = marqueeEnabled,
         )
         Spacer(Modifier.height(4.dp))
         TrackArtistText(
             track = track, onArtistClick = onArtistClick,
-            modifier = Modifier.then(artistModifier).fillMaxWidth().testTag("player-track-artist"),
+            modifier = Modifier.then(artistModifier).testTag("player-track-artist"),
             style = if (large) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
             reveal = CpTextReveal.Marquee,
+            marqueeEnabled = marqueeEnabled,
         )
     }
 }
@@ -565,7 +570,7 @@ private fun PlayerArtwork(
 }
 
 @Composable
-private fun PlayerTimeline(
+internal fun PlayerTimeline(
     state: PlaybackUiState,
     positionFlow: Flow<Long>? = null,
     initialPositionMs: Long = state.positionMs,
@@ -703,7 +708,7 @@ private fun PlayerIconButton(
     }
 }
 
-private fun Modifier.lyricEdgeFade(): Modifier =
+internal fun Modifier.lyricEdgeFade(): Modifier =
     clip(androidx.compose.ui.graphics.RectangleShape)
         .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
         .drawWithContent {

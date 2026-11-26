@@ -22,8 +22,11 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import androidx.navigation3.ui.NavDisplay
+import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
+import androidx.navigationevent.compose.rememberNavigationEventState
 import cp.player.app.ui.screen.HomeGeneratedPlaylistScreen
 import cp.player.app.ui.screen.MainScreen
 import cp.player.app.ui.screen.PlayerScreen
@@ -114,8 +117,10 @@ private fun RoutePage.motion(): PageMotion = when (this) {
 internal fun RouteDisplay(
     stack: PageStack,
     backEnabled: Boolean = true,
+    predictiveBackEnabled: Boolean = true,
     transition: (from: PageMotion, to: PageMotion, isPop: Boolean) -> ContentTransform =
         { _, _, _ -> EnterTransition.None togetherWith ExitTransition.None },
+    predictiveTransition: ((from: PageMotion, to: PageMotion, swipeEdge: Int) -> ContentTransform)? = null,
     content: @Composable AnimatedContentScope.(RoutePage) -> Unit = { it.Content() },
 ) {
     val render = rememberUpdatedState(content)
@@ -143,8 +148,24 @@ internal fun RouteDisplay(
             entryDecorators = decorators,
             transitionSpec = { transition(initialState.pageMotion(), targetState.pageMotion(), false) },
             popTransitionSpec = { transition(initialState.pageMotion(), targetState.pageMotion(), true) },
-            predictivePopTransitionSpec = { transition(initialState.pageMotion(), targetState.pageMotion(), true) },
+            predictivePopTransitionSpec = { edge ->
+                if (predictiveBackEnabled && predictiveTransition != null) {
+                    predictiveTransition(initialState.pageMotion(), targetState.pageMotion(), edge)
+                } else {
+                    transition(initialState.pageMotion(), targetState.pageMotion(), true)
+                }
+            },
             entryProvider = entryProvider,
         )
+        // 预测性返回关闭时用后置拦截器接管边缘侧滑完成事件，跳过 NavDisplay 的跟手进度缩放，
+        // 确认返回后再触发常规 popTransitionSpec。
+        if (!predictiveBackEnabled && backEnabled && stack.size > 1) {
+            val nonPredictiveState = rememberNavigationEventState(NavigationEventInfo.None)
+            NavigationBackHandler(
+                state = nonPredictiveState,
+                isBackEnabled = true,
+                onBackCompleted = { stack.pop() },
+            )
+        }
     }
 }

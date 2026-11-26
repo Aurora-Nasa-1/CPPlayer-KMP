@@ -92,6 +92,7 @@ fun LyricContent(
     /** 无歌词时的换源入口（跳「歌词来源」页）。null = 不显示入口。 */
     onChangeSource: (() -> Unit)? = null,
     immersiveEnabled: Boolean = false,
+    lineFontSize: TextUnit = 28.sp,
     onImmersiveChange: ((Boolean) -> Unit)? = null,
 ) {
     // Position ticks are intentionally observed only by the lyric renderer. The parent
@@ -243,15 +244,15 @@ fun LyricContent(
         hasHan -> appFonts.misans ?: FontFamily.SansSerif
         else -> currentTextStyle.fontFamily
     }
-    val normalStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation, lyricFamily) {
-        currentTextStyle.lyricLineStyle()
+    val normalStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation, lyricFamily, lineFontSize) {
+        currentTextStyle.lyricLineStyle(lineFontSize)
             .forLyricLanguage(japaneseLyrics, wordSegmentation)
             .copy(fontFamily = lyricFamily)
     }
 
-    val accompanimentStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation, lyricFamily) {
+    val accompanimentStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation, lyricFamily, lineFontSize) {
         currentTextStyle.copy(
-            fontSize = 20.sp,
+            fontSize = lineFontSize * (20f / 28f),
             fontFamily = lyricFamily,
             fontWeight = FontWeight.Bold,
             textMotion = TextMotion.Animated,
@@ -262,12 +263,12 @@ fun LyricContent(
     // 没有注音时这一档仍是「行级罗马音」的字号（正文的一半），两者不要混用同一个值。
     val basePhoneticStyle = MaterialTheme.typography.bodyMedium
     val phoneticTextStyle = remember(
-        basePhoneticStyle, hasRuby, japaneseLyrics, wordSegmentation, appFonts,
+        basePhoneticStyle, hasRuby, japaneseLyrics, wordSegmentation, appFonts, lineFontSize,
     ) {
         val size = if (hasRuby) RubyFontRatio else 0.5f
         val base = basePhoneticStyle.copy(
-            fontSize = (28 * size).sp,
-            lineHeight = (28 * if (hasRuby) 0.32f else 0.7f).sp,
+            fontSize = lineFontSize * size,
+            lineHeight = lineFontSize * (if (hasRuby) 0.32f else 0.7f),
         ).forLyricLanguage(japaneseLyrics, wordSegmentation)
         if (japaneseLyrics && appFonts.japanese != null) {
             base.copy(fontFamily = appFonts.japanese)

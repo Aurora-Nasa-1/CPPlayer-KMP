@@ -238,6 +238,14 @@ private fun generalEntries(): List<SettingsEntry> = listOfNotNull(
                 sectionOf = { "界面动效与视觉表现" },
             ),
             SettingsSubItem(
+                id = "appearance_predictive_back",
+                titleOf = { it.appearance.predictiveBack },
+                subtitleOf = { it.appearance.predictiveBackNote },
+                keywords = listOf("预测性返回", "手势返回", "侧滑返回", "边缘返回", "返回动画", "predictive back", "gesture", "back"),
+                sectionOf = { "界面动效与视觉表现" },
+                androidOnly = true,
+            ),
+            SettingsSubItem(
                 id = "appearance_show_song_album",
                 titleOf = { it.appearance.showSongAlbum },
                 subtitleOf = { it.appearance.showSongAlbumNote },

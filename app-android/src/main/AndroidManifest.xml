@@ -91,6 +91,7 @@
     <application
         android:name=".CPPlayerApplication"
         android:allowBackup="true"
+        android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:label="CPPlayer"
         android:supportsRtl="true"

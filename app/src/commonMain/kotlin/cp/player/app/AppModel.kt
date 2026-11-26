@@ -1078,6 +1078,29 @@ object AppModel {
         _bottomBarAutoHide.value = enabled
     }
 
+    // ============ 预测性手势返回（持久化） ============
+
+    private const val KEY_PREDICTIVE_BACK_ENABLED = "predictive_back_enabled"
+
+    private val _predictiveBackEnabled = MutableStateFlow(
+        settings.getString(KEY_PREDICTIVE_BACK_ENABLED)?.toBooleanStrictOrNull() ?: true
+    )
+
+    /**
+     * Android 预测性手势返回开关（默认开）。
+     *
+     * 开启后从屏幕边缘侧滑返回时实时预览上一级界面；关闭时仅在手势确认返回后
+     * 执行常规退场动画。
+     */
+    val predictiveBackEnabledFlow: StateFlow<Boolean> = _predictiveBackEnabled.asStateFlow()
+
+    fun predictiveBackEnabled(): Boolean = _predictiveBackEnabled.value
+
+    fun setPredictiveBackEnabled(enabled: Boolean) {
+        settings.putString(KEY_PREDICTIVE_BACK_ENABLED, enabled.toString())
+        _predictiveBackEnabled.value = enabled
+    }
+
     // ============ 主导航入口（持久化） ============
 
     private const val KEY_DYNAMIC_REPLACES_SEARCH = "nav_dynamic_replaces_search"
