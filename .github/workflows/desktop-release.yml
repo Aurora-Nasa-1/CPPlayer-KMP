@@ -289,8 +289,14 @@ jobs:
             echo "::error::不是 x86_64 ELF 共享库（magic=$magic machine=$machine）"
             exit 1
           }
-          grep -aFq -- 'Java_cp_player_core_playback_DesktopHiResEngine_nativeSetVipLicenseV2' "$so"
-          grep -aFq -- "$FLICK_VIP_PUBLIC_KEY" "$so"
+          grep -aFq -- 'Java_cp_player_core_playback_DesktopHiResEngine_nativeSetVipLicenseV2' "$so" || {
+            echo "::error::Linux 引擎库缺 nativeSetVipLicenseV2 JNI 入口"
+            exit 1
+          }
+          grep -aFq -- "$FLICK_VIP_PUBLIC_KEY" "$so" || {
+            echo "::error::Linux 引擎库内嵌公钥与 FLICK_VIP_PUBLIC_KEY 不一致（检查引擎交叉构建时是否传了该变量）"
+            exit 1
+          }
           sha256sum "$so"   # 只留一条可追溯记录，不做校验
           mkdir -p app/native
           cp "$so" app/native/librust_lib_flick_player.so
@@ -439,7 +445,10 @@ jobs:
           done
           echo "tar.gz 布局 OK"
 
-      # deb 是**另一次** jpackage 调用（自己生成应用镜像），tar.gz 的注入碰不到它。
+      # deb 是**另一次**打包调用（electron-builder，自己生成应用镜像），tar.gz 的注入碰不到它。
+      # ⚠️ electron-builder 渲染出的资产名是小写 `cpplayer-<version>-linux-amd64.deb`，
+      # 不是 jpackage 时代的 `CPPlayer-*.deb`。写死大写前缀会 pack 成功却在这里误判成缺包
+      # （v1.12.3 真实事故）。这里按扩展名找，并把实际目录打出来。
       # 引擎库靠 nativeDistributions.appResourcesRootDir → `--app-content` 进入
       # lib/app；这条断言就是那个假设的唯一物证：没有它，包能装、启动、但一点声都没有。
       - name: Verify deb contains FlickEngine
@@ -447,7 +456,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          deb="$(ls app/build/compose/binaries/main/deb/CPPlayer-*.deb)"
+          shopt -s nullglob
+          debs=(app/build/compose/binaries/main/deb/*.deb)
+          if (( ${#debs[@]} != 1 )); then
+            echo "::error::deb 目录里期望恰好 1 个 .deb，实际 ${#debs[@]} 个"
+            ls -la app/build/compose/binaries/main/deb || true
+            exit 1
+          fi
+          deb="${debs[0]}"
           echo "deb: $deb"
           tmp="$(mktemp -d)"
           ( cd "$tmp" && ar x "$OLDPWD/$deb" )
