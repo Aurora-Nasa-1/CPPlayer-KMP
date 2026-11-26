@@ -1529,6 +1529,7 @@ fun DesktopLyricsContent(
     lineFontSize: TextUnit = 28.sp,
     contentPadding: PaddingValues = PaddingValues(vertical = 24.dp, horizontal = 16.dp),
     modifier: Modifier = Modifier,
+    focusedPaneStyle: Boolean = false,
 ) {
     Box(
         modifier = modifier.fillMaxSize(),
@@ -1547,6 +1548,7 @@ fun DesktopLyricsContent(
                 .fillMaxWidth()
                 .fillMaxHeight(),
             contentPadding = contentPadding,
+            focusedPaneStyle = focusedPaneStyle,
         )
     }
 }

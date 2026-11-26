@@ -18,10 +18,13 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +45,7 @@ import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
+import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.LyricsFade
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.theme.cpElevatedSurface
@@ -57,6 +61,7 @@ import cp.player.core.playback.SyncedLyricLine
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Color
 
 /**
  * 注音（振り仮名）相对正文的字号比例。
@@ -93,13 +98,9 @@ fun LyricContent(
     onChangeSource: (() -> Unit)? = null,
     immersiveEnabled: Boolean = false,
     lineFontSize: TextUnit = 28.sp,
+    focusedPaneStyle: Boolean = false,
     onImmersiveChange: ((Boolean) -> Unit)? = null,
 ) {
-    // Position ticks are intentionally observed only by the lyric renderer. The parent
-    // player page keeps a stable state projection, so karaoke animation does not force
-    // artwork, controls or navigation to recompose.
-    val positionMs = positionFlow?.collectAsState(initial = initialPositionMs)?.value
-        ?: state.positionMs
     val lyricState = state.lyrics
     val lines = (lyricState as? LyricsState.Success)?.lines.orEmpty()
     val s = cpStrings()
@@ -196,10 +197,21 @@ fun LyricContent(
     // ② **位置要被 Compose 观察到**：见下方 [smoothPosition] 与那段 ticker。
     //
     // 以 currentTrackId 为 key，曲目切换时立即建立全新时钟源，彻底重置旧曲外推状态。
-    val positionSource = remember(currentTrackId) { SmoothPositionSource() }
-    positionSource.update(positionMs, state.isPlaying)
+    val startingPosition = if (positionFlow != null) initialPositionMs else state.positionMs
+    val positionSource = remember(currentTrackId, positionFlow) { SmoothPositionSource() }
+    val smoothPosition = remember(positionSource) { mutableLongStateOf(startingPosition) }
+    val playbackPosition = key(currentTrackId, positionFlow) {
+        positionFlow?.collectAsState(initial = initialPositionMs) ?: rememberUpdatedState(state.positionMs)
+    }
+    val isPlaying = rememberUpdatedState(state.isPlaying)
 
-    val smoothPosition = remember(currentTrackId) { mutableLongStateOf(positionMs) }
+    // Observe backend samples outside composition; publish paused seeks even without a frame ticker.
+    LaunchedEffect(positionSource) {
+        snapshotFlow { playbackPosition.value to isPlaying.value }.collect { (position, playing) ->
+            positionSource.update(position, playing)
+            if (!playing) smoothPosition.longValue = position
+        }
+    }
 
     // 播放中逐帧把外推位置写进 [smoothPosition]。
     //
@@ -212,23 +224,10 @@ fun LyricContent(
     // 会稳定丢 / 叠帧，反而更抖。
     // 窗口隐藏到托盘后不再逐帧外推：`withFrameNanos` 每帧都会让窗口请求新帧，
     // 看不见的窗口没必要维持这个循环。恢复可见时 effect 重启，位置会立刻刷新。
-    LaunchedEffect(state.isPlaying, DesktopShell.isWindowHidden) {
-        if (DesktopShell.isWindowHidden) return@LaunchedEffect
-        if (!state.isPlaying) {
-            // 暂停：立刻把位置钉到权威值上，不要停在最后一次外推的结果。
-            smoothPosition.longValue = positionSource.currentMs()
-            return@LaunchedEffect
-        }
+    LaunchedEffect(positionSource, state.isPlaying, DesktopShell.isWindowHidden) {
+        if (!state.isPlaying || DesktopShell.isWindowHidden) return@LaunchedEffect
         while (true) {
             withFrameNanos { smoothPosition.longValue = positionSource.currentMs() }
-        }
-    }
-
-    // 暂停中 / 未起播（如启动时恢复会话、暂停中拖动进度条）：
-    // 当位置发生变化时，立即同步至 smoothPosition，避免歌词卡在初始 0ms 的前奏状态。
-    LaunchedEffect(positionMs, state.isPlaying) {
-        if (!state.isPlaying) {
-            smoothPosition.longValue = positionSource.currentMs()
         }
     }
 
@@ -307,8 +306,11 @@ fun LyricContent(
             normalLineTextStyle = normalStyle,
             accompanimentLineTextStyle = accompanimentStyle,
             phoneticTextStyle = phoneticTextStyle,
-            textColor = MaterialTheme.colorScheme.onSurface,
-            blendMode = if (isDark) BlendMode.Plus else BlendMode.SrcOver,
+            // The renderer dims inactive rows to 40%. SrcOver preserves that contrast.
+            textColor = if (focusedPaneStyle && isDark) Color.White else MaterialTheme.colorScheme.onSurface,
+            blendMode = if (isDark && !focusedPaneStyle) BlendMode.Plus else BlendMode.SrcOver,
+            topFade = if (focusedPaneStyle) LyricsFade.Fraction(0.10f) else LyricsFade.ToAnchor(16.dp),
+            bottomFade = LyricsFade.Fraction(if (focusedPaneStyle) 0.14f else 0.50f),
             showTranslation = showTranslation,
             showPhonetic = hasRuby,
             useBlurEffect = false,
@@ -561,7 +563,7 @@ internal class SmoothPositionSource(
     private var correctionMs: Double = 0.0
 
     /**
-     * 收录一次权威采样。由 Composable 在每次收到新 state 时调用。
+     * 收录一次权威采样，或同步播放 / 暂停状态。
      *
      * 同一个值重复调用（重组但位置没变）不会重置时间基准 —— 否则外推会被
      * 频繁的重组不断「归零」，进度条就永远走不动。
