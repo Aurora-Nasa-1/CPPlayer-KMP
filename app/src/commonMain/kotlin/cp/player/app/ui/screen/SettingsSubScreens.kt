@@ -50,6 +50,7 @@ import cp.player.app.ui.component.SettingsPage
 import cp.player.app.ui.component.SettingsSection
 import cp.player.app.ui.component.SettingsSegmentedItem
 import cp.player.app.ui.component.SettingsSwitchItem
+import cp.player.app.ui.component.isTabletLayout
 import cp.player.app.ui.component.settingsSearchTarget
 import cp.player.app.ui.model.SONG_CACHE_CAPACITY_OPTIONS
 import cp.player.app.ui.model.StorageSettingsModel
@@ -64,7 +65,7 @@ import cp.player.app.ui.theme.isPlatformColorSourceAvailable
 import cp.player.app.ui.util.UiEvents
 
 /**
- * 外观与主题设置页面（设计贴合 Android 16 现代原生风格）。
+ * 界面设置页面。
  */
 class AppearanceSettingsScreen(
     private val targetSettingId: String? = null,
@@ -301,6 +302,10 @@ class AppearanceSettingsScreen(
                             total = 1,
                         )
                     }
+                }
+
+                if (!isTabletLayout()) {
+                    NavigationSettingsSections(targetSettingId)
                 }
             }
         }

@@ -102,8 +102,8 @@ class SettingsRegistryTest {
         withReleaseChannel("debug") {
             val byGroup = settingsEntries().groupBy { it.group }
             assertEquals(
-                // `navigation`（动态 / 消息 / 搜索入口可见性）属于通用行为，排在快捷键之后；`ai_settings` 为 AI 与 A2UI 生成式界面。
-                listOf("appearance", "playback", "storage", "shortcuts", "navigation", "ai_settings"),
+                listOf("appearance", "playback", "storage", "shortcuts") +
+                    if (cp.player.app.ui.a2ui.A2UI_ENTRY_ENABLED) listOf("ai_settings") else emptyList(),
                 byGroup[SettingsGroup.GENERAL]?.map { it.id },
                 "「通用」组的内容或顺序变了",
             )

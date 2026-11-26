@@ -52,18 +52,14 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
     val navigator = LocalAppNavigator.current
     val strings = cpStrings()
     val isTablet = cp.player.app.ui.component.isTabletLayout()
-    val entries = remember(isTablet) {
-        settingsEntries().let { list ->
-            if (isTablet) list.filterNot { it.id == "navigation" } else list
-        }
-    }
+    val entries = remember { settingsEntries() }
     var searchQuery by remember { mutableStateOf("") }
     var targetRequestKey by remember { mutableStateOf(0L) }
     var selectedId by remember { mutableStateOf(entries.firstOrNull()?.id) }
     var selectedTargetId by remember { mutableStateOf<String?>(null) }
     val adaptiveNavigator = rememberListDetailPaneScaffoldNavigator<Unit>()
 
-    val searchResults = remember(searchQuery, entries, strings) {
+    val searchResults = remember(searchQuery, entries, strings, isTablet) {
         val q = searchQuery.trim().lowercase()
         if (q.isEmpty()) emptyList()
         else {
@@ -72,7 +68,7 @@ private fun SettingsScreenContent(embedded: Boolean = false) {
 
             // 1. 优先搜索所有具体设置子项 (SubItemMatch)
             entries.forEach { entry ->
-                entry.visibleSubItems().forEach { subItem ->
+                entry.visibleSubItems(isTablet).forEach { subItem ->
                     val title = subItem.titleOf(strings).lowercase()
                     val subtitle = subItem.subtitleOf?.invoke(strings)?.lowercase().orEmpty()
                     val section = subItem.sectionOf?.invoke(strings)?.lowercase().orEmpty()

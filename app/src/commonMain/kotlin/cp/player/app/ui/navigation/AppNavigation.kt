@@ -138,7 +138,6 @@ fun AppRoute.toRoutePage(): RoutePage = when (this) {
         ?: throw IllegalStateException("未知设置入口: $entryId")
     is AppRoute.AppearanceSettings -> cp.player.app.ui.screen.AppearanceSettingsScreen(targetSettingId)
     is AppRoute.PlaybackSettings -> cp.player.app.ui.screen.PlaybackSettingsScreen(targetSettingId)
-    is AppRoute.NavigationSettings -> cp.player.app.ui.screen.NavigationSettingsScreen(targetSettingId)
     AppRoute.AiSettings -> cp.player.app.ui.screen.AiSettingsScreen()
     AppRoute.ExternalAccessSettings -> cp.player.app.ui.screen.ExternalAccessSettingsScreen()
     AppRoute.LyricPushSettings -> cp.player.app.ui.screen.LyricPushSettingsScreen()

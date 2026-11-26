@@ -55,8 +55,8 @@ object CpStringsEn : CpStrings {
             subtitle = "Follow the system, or pin to Simplified Chinese / English",
         )
         override val itemAppearance = CpTextPair(
-            title = "Appearance & Theme",
-            subtitle = "Theme mode, color source, and pure black background",
+            title = "Interface Settings",
+            subtitle = "Theme, language, motion, and navigation",
         )
         override val itemPlayback = CpTextPair(
             title = "Playback & Quality",
@@ -101,10 +101,6 @@ object CpStringsEn : CpStrings {
         override val itemOnboarding = CpTextPair(
             title = "Replay Onboarding",
             subtitle = "Walk through first-time setup again",
-        )
-        override val itemNavigation = CpTextPair(
-            title = "Navigation",
-            subtitle = "Dynamic instead of Search, hide Dynamic/Messages, and provider support",
         )
     }
 
@@ -167,7 +163,7 @@ object CpStringsEn : CpStrings {
     }
 
     override val appearance: AppearanceStrings = object : AppearanceStrings {
-        override val screenTitle = "Appearance & Theme"
+        override val screenTitle = "Interface Settings"
         override val sectionLook = "Look"
         override val sectionMotion = "Motion and visual effects"
         override val sectionContent = "Content and list presentation"
@@ -1031,10 +1027,6 @@ object CpStringsEn : CpStrings {
         override val immersiveLyricsOn = "Immersive lyrics (on)"
         override val immersiveLyricsOff = "Immersive lyrics (off)"
         override val playerSettings = "Player screen settings"
-        override val viewFullMetadata = "View full metadata →"
-        override val wordByWordLyrics = "Word-by-word lyrics"
-        override val dynamicLyrics = "Synced lyrics"
-        override val lyricOffsetChip = "Fine-tune"
         override fun lyricOffsetChipValue(label: String, seconds: String) = "$label ($seconds)"
 
         override val similarSongs = "Similar songs"

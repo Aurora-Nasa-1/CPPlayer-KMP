@@ -58,8 +58,8 @@ object CpStringsZh : CpStrings {
             subtitle = "跟随系统，或固定为简体中文 / English", // 混排 English 的理由见 optionEnglish
         )
         override val itemAppearance = CpTextPair(
-            title = "外观与主题",
-            subtitle = "主题模式、取色来源与纯黑背景",
+            title = "界面设置",
+            subtitle = "主题、语言、动效与导航",
         )
         override val itemPlayback = CpTextPair(
             title = "播放与音质",
@@ -104,10 +104,6 @@ object CpStringsZh : CpStrings {
         override val itemOnboarding = CpTextPair(
             title = "重看新手引导",
             subtitle = "重新走一遍首次使用引导",
-        )
-        override val itemNavigation = CpTextPair(
-            title = "导航入口",
-            subtitle = "动态替代搜索、隐藏动态 / 消息入口，以及音源不支持的功能",
         )
     }
 
@@ -170,7 +166,7 @@ object CpStringsZh : CpStrings {
     }
 
     override val appearance: AppearanceStrings = object : AppearanceStrings {
-        override val screenTitle = "外观与主题"
+        override val screenTitle = "界面设置"
         override val sectionLook = "外观"
         override val sectionMotion = "界面动效与视觉表现"
         override val sectionContent = "内容与列表呈现"
@@ -963,10 +959,6 @@ object CpStringsZh : CpStrings {
         override val immersiveLyricsOn = "沉浸歌词 (已开启)"
         override val immersiveLyricsOff = "沉浸歌词 (已关闭)"
         override val playerSettings = "播放界面设置"
-        override val viewFullMetadata = "查看完整元数据 →"
-        override val wordByWordLyrics = "逐字歌词"
-        override val dynamicLyrics = "动态歌词"
-        override val lyricOffsetChip = "微调"
         override fun lyricOffsetChipValue(label: String, seconds: String) = "$label ($seconds)"
 
         override val similarSongs = "相似歌曲"

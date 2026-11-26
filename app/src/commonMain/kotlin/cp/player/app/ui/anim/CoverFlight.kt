@@ -75,7 +75,7 @@ private const val DISMISS_MS = 180L
  * （触摸端要看得见起落、有"扔出去"的弧感），桌面走常规 spatial 直线
  * （窗口指针交互不需要夸张的弧线，节奏也不用那么拖）。
  *
- * 整条动画可在「设置 > 外观与主题 > 封面飞行动画」关掉（见 [CoverFlight.start]）。
+ * 整条动画可在「设置 > 界面设置 > 封面飞行动画」关掉（见 [CoverFlight.start]）。
  */
 object CoverFlight {
 
@@ -134,7 +134,7 @@ object CoverFlight {
 
     private fun start(targetKey: String, coverUrl: String?, sourceKey: String) {
         if (coverUrl.isNullOrBlank()) return
-        // 「封面飞行动画」开关（设置 > 外观与主题，默认开）。在**起飞点**判一次：
+        // 「封面飞行动画」开关（设置 > 界面设置，默认开）。在**起飞点**判一次：
         // 关掉时连 Flight 都不建，目标端（MiniPlayer / 详情页头部）也就不会被
         // 隐藏（见 isFlyingTo），页面按自身转场正常显示，不会留下空洞。
         if (!cp.player.app.AppModel.coverFlightAnimation()) return

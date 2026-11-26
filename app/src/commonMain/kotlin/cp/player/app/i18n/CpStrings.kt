@@ -241,7 +241,6 @@ interface SettingsStrings {
     val itemDiagnostics: CpTextPair
     val itemRenderTuning: CpTextPair
     val itemOnboarding: CpTextPair
-    val itemNavigation: CpTextPair
 }
 
 /**
@@ -330,7 +329,7 @@ interface MessageNotifyStrings {
 }
 
 // ---------------------------------------------------------------------------
-// 外观与主题
+// 界面设置
 // ---------------------------------------------------------------------------
 
 interface AppearanceStrings {
@@ -1219,10 +1218,6 @@ interface PlayerStrings {
     val immersiveLyricsOn: String
     val immersiveLyricsOff: String
     val playerSettings: String
-    val viewFullMetadata: String
-    val wordByWordLyrics: String
-    val dynamicLyrics: String
-    val lyricOffsetChip: String
     fun lyricOffsetChipValue(label: String, seconds: String): String
 
     // —— 相似歌曲 ——

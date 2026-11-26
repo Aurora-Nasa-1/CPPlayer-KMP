@@ -145,9 +145,6 @@ sealed interface AppRoute {
     /** 播放设置 */
     data class PlaybackSettings(val targetSettingId: String? = null) : AppRoute
 
-    /** 导航设置 */
-    data class NavigationSettings(val targetSettingId: String? = null) : AppRoute
-
     /** AI 设置 */
     data object AiSettings : AppRoute
 

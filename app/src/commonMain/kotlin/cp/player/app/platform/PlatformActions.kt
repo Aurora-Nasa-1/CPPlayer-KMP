@@ -21,7 +21,7 @@ expect fun desktopPlatform(): String
  *   应用跟随系统观感 ⇒ 默认 100；
  * - 其余平台（Android 15 及以下 / 桌面）按字体文件自带的默认实例 ⇒ 0（方正）。
  *
- * 用户可在「外观与主题 → 字体圆滑度」里覆盖；这里的值只决定**未自定义时**的表现。
+ * 用户可在「界面设置 → 字体圆滑度」里覆盖；这里的值只决定**未自定义时**的表现。
  */
 expect fun defaultFontRoundness(): Int
 
