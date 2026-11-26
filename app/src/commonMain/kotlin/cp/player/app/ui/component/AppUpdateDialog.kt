@@ -4,18 +4,16 @@ package cp.player.app.ui.component
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,9 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.BugReport
@@ -36,16 +32,14 @@ import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NewReleases
-import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.RocketLaunch
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -64,6 +58,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import cp.player.app.i18n.AppUpdateStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.desktopPlatform
@@ -72,16 +67,8 @@ import cp.player.app.platform.openUrl
 import cp.player.app.ui.theme.cpSheetInnerSurface
 import cp.player.app.ui.util.formatBytes
 import cp.player.app.update.AppUpdateChecker
-import cp.player.app.version.AppVersion
 
-/**
- * 软件更新弹窗：Kazumi 的信息结构 + Material 3 Expressive 的标准控件。
- *
- * - 结构仍按 `auto_updater.dart:200-340`：标题 → 正文 → 发布时间 → 安装类型区 → 动作区；
- * - 安装类型行用 M3E [OutlinedButton] + `ButtonDefaults.shapes()`，按压时按钮形状形变；
- * - 底部用官方 M3E [ButtonGroup]（[CpActionButtonGroup]），按下会横向撑开、邻居收窄；
- * - 限制弹窗宽度，避免桌面端 Dialog 撑满整个窗口。
- */
+/** 软件更新弹窗：沿用 Kazumi 的信息顺序，用主题色区分安装包与主要操作。 */
 @Composable
 fun AppUpdateDialog(
     result: AppUpdateChecker.UpdateResult,
@@ -91,149 +78,190 @@ fun AppUpdateDialog(
     isAutoCheck: Boolean = false,
     onDisableAutoUpdate: (() -> Unit)? = null,
 ) {
-    val isExpanded = LocalIsExpanded.current
     val s = cpStrings().update
+    val colors = MaterialTheme.colorScheme
     val installTypes = resolveInstallTypes(result, s)
 
     CpAlertDialog(
         onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
         modifier = Modifier
-            .widthIn(min = 320.dp, max = if (isExpanded) 620.dp else 520.dp)
-            .fillMaxWidth(if (isExpanded) 0.68f else 0.9f),
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .widthIn(max = 540.dp)
+            .fillMaxWidth(),
         title = {
-            CpText(
-                text = s.titleWithVersion(result.versionName),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = Int.MAX_VALUE,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = colors.primaryContainer,
+                    contentColor = colors.onPrimaryContainer,
+                ) {
+                    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.NewReleases, contentDescription = null)
+                    }
+                }
+                CpText(
+                    text = s.titleWithVersion(result.versionName),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = colors.onSurface,
+                    maxLines = Int.MAX_VALUE,
+                )
+            }
         },
         text = {
             Column(
-                horizontalAlignment = Alignment.Start,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(max = 360.dp)
                     .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 CpText(
                     text = stripEmojis(result.changelog?.takeIf { it.isNotBlank() } ?: s.title),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = colors.onSurface,
                     maxLines = Int.MAX_VALUE,
                 )
 
-                result.publishedAt?.take(10)?.let { date ->
-                    Spacer(Modifier.height(8.dp))
-                    CpText(
+                result.publishedAt?.takeIf { it.isNotBlank() }?.take(10)?.let { date ->
+                    ExpressiveMetaChip(
+                        icon = Icons.Default.CalendarToday,
                         text = s.publishedAt(date),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = Int.MAX_VALUE,
                     )
                 }
 
-                Spacer(Modifier.height(8.dp))
                 if (installTypes.isNotEmpty()) {
-                    Surface(
-                        shape = MaterialTheme.shapes.extraSmall,
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.Start,
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.padding(8.dp),
-                        ) {
-                            CpText(
-                                text = s.installPackage,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = Int.MAX_VALUE,
-                            )
-                            for (installType in installTypes) {
-                                // M3E：整行是一颗 OutlinedButton，按压时容器形状形变。
-                                OutlinedButton(
-                                    onClick = { onDownloadAsset(installType.asset) },
-                                    shapes = ButtonDefaults.shapes(),
-                                    border = BorderStroke(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                                    ),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        contentColor = MaterialTheme.colorScheme.onSurface,
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Download,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    CpText(
-                                        text = installType.label,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = Int.MAX_VALUE,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.outline,
-                                        modifier = Modifier.size(12.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    UpdateInstallPackages(s.installPackage, installTypes, onDownloadAsset)
                 }
             }
         },
         confirmButton = {
-            // M3E 标准动作组：官方 ButtonGroup，按住时当前按钮撑开、相邻按钮收窄。
-            CpActionButtonGroup(
-                items = buildList {
-                    if (isAutoCheck && onDisableAutoUpdate != null) {
-                        add(
-                            CpActionGroupItem(
-                                label = s.disableAutoUpdate,
-                                icon = Icons.Default.NotificationsOff,
-                                onClick = onDisableAutoUpdate,
-                            ),
-                        )
-                    }
-                    add(
-                        CpActionGroupItem(
-                            label = s.later,
-                            icon = Icons.Default.Schedule,
-                            onClick = onDismiss,
-                        ),
-                    )
-                    if (result.releaseUrl.isNotBlank()) {
-                        add(
-                            CpActionGroupItem(
-                                label = s.releasePage,
-                                icon = Icons.AutoMirrored.Filled.OpenInNew,
-                                onClick = { openUrl(result.releaseUrl) },
-                            ),
-                        )
-                    }
-                    add(
-                        CpActionGroupItem(
-                            label = s.downloadNow,
-                            icon = Icons.Default.Download,
-                            onClick = onDownload,
-                        ),
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
+            AppUpdateActions(
+                releaseUrl = result.releaseUrl,
+                onDismiss = onDismiss,
+                onDownload = onDownload,
+                onDisableAutoUpdate = onDisableAutoUpdate.takeIf { isAutoCheck },
             )
         },
     )
+}
+
+@Composable
+private fun UpdateInstallPackages(
+    title: String,
+    installTypes: List<UpdateInstallType>,
+    onDownloadAsset: (AppUpdateChecker.UpdateAsset) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = cpSheetInnerSurface(),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            CpText(
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.onSurfaceVariant,
+                maxLines = Int.MAX_VALUE,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+
+            for (installType in installTypes) {
+                OutlinedButton(
+                    onClick = { onDownloadAsset(installType.asset) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shapes = ButtonDefaults.shapes(),
+                    border = BorderStroke(1.dp, colors.outlineVariant),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onSurface),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = null,
+                        tint = colors.primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        CpText(
+                            text = installType.label,
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = Int.MAX_VALUE,
+                        )
+                        installType.asset.size?.takeIf { it > 0L }?.let { size ->
+                            CpText(
+                                text = formatBytes(size),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colors.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                        contentDescription = null,
+                        tint = colors.onSurfaceVariant,
+                        modifier = Modifier.size(12.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AppUpdateActions(
+    releaseUrl: String,
+    onDismiss: () -> Unit,
+    onDownload: () -> Unit,
+    onDisableAutoUpdate: (() -> Unit)?,
+) {
+    val s = cpStrings().update
+    val secondaryColors = ButtonDefaults.textButtonColors(
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (onDisableAutoUpdate != null) {
+            TextButton(onClick = onDisableAutoUpdate, colors = secondaryColors) {
+                CpText(s.disableAutoUpdate, maxLines = Int.MAX_VALUE)
+            }
+        }
+        TextButton(onClick = onDismiss, colors = secondaryColors) {
+            CpText(s.later, maxLines = Int.MAX_VALUE)
+        }
+        if (releaseUrl.isNotBlank()) {
+            FilledTonalButton(
+                onClick = { openUrl(releaseUrl) },
+                shapes = ButtonDefaults.shapes(),
+            ) {
+                CpText(s.releasePage, maxLines = Int.MAX_VALUE)
+            }
+        }
+        Button(onClick = onDownload, shapes = ButtonDefaults.shapes()) {
+            Icon(
+                imageVector = Icons.Default.Download,
+                contentDescription = null,
+                modifier = Modifier.size(ButtonDefaults.IconSize),
+            )
+            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+            CpText(s.downloadNow, maxLines = Int.MAX_VALUE)
+        }
+    }
 }
 
 private data class UpdateInstallType(
