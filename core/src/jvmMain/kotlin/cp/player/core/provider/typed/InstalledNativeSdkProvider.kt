@@ -3,6 +3,7 @@ package cp.player.core.provider.typed
 import cp.player.core.provider.*
 import cp.player.core.util.PlatformInfo
 import cp.player.core.util.PlatformContext
+import cp.player.sdk.MusicProvider
 import cp.player.sdk.ProviderContext
 import cp.player.sdk.jni.JniMusicProvider
 import cp.player.sdk.jni.JniProviderSession
@@ -10,6 +11,7 @@ import cp.player.sdk.jni.NativeProviderFactory
 import cp.player.sdk.jni.NativeSession
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipFile
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -33,6 +35,10 @@ internal fun installedNativeSdkProvider(manifest: ModuleManifest, root: File, co
         "Native provider does not support this platform ABI: ${abis.joinToString()}"
     }
     val className = manifest.nativeFactoryClass
+    if (nativeImageRuntime) {
+        check(className == null) { nativeAdapterJarUnavailable(manifest) }
+        return installedCAbiProvider(manifest, root)
+    }
     if (className != null) {
         ZipFile(File(root, manifest.entryPoint)).use { archive ->
             val classEntry = if (PlatformInfo.isAndroid) "classes.dex" else className.replace('.', '/') + ".class"
@@ -49,33 +55,13 @@ internal fun installedNativeSdkProvider(manifest: ModuleManifest, root: File, co
         val libraryDirectory = abis.asSequence().map { File(snapshot, "lib/$it") }
             .firstOrNull { it.isDirectory } ?: snapshot
         val entry = File(snapshot, manifest.entryPoint)
-        // C ABI **只在原生构建里探测**：
-        // - 原生构建：JNI 要按包 defineClass，native image 做不到 ⇒ C ABI 是唯一可行路径；
-        // - JVM / Android：继续走原 JNI 路径（线上跑了几年的那条），行为一点不变；
-        //   这里也不去 `libraryLookup`，免得白白把 DLL 加载进来钉住快照目录。
-        var cAbiFailure: String? = null
-        val cAbi = if (className == null && nativeImageRuntime) {
-            when (val probe = probeCAbiSessionFactory(entry)) {
-                is CAbiProbe.Available -> probe.factory
-                is CAbiProbe.Unavailable -> {
-                    cAbiFailure = probe.reason
-                    null
-                }
-            }
-        } else null
-        val packageLoader: ClassLoader? = when {
-            cAbi != null -> null
+        val packageLoader: ClassLoader = when {
             className == null -> nativeLibraryClassLoader(context)
             else -> nativePackageClassLoader(entry, libraryDirectory)
         }
-        closable = cAbi ?: (packageLoader as? java.io.Closeable)
-        val factory: (ProviderContext) -> JniProviderSession = if (cAbi != null) {
-            { sessionContext -> cAbi.open(sessionContext, Json.encodeToString(sessionContext.settings)) }
-        } else if (className == null) {
-            // 没有 C ABI ⇒ 只能用「按包 defineClass 一份 NativeSession」的 JNI 旁路，
-            // 而 native image 既没有类文件资源、也不支持运行时定义类（见 NativePackageClassLoader）。
-            check(!nativeImageRuntime) { nativeJniUnavailable(manifest, cAbiFailure) }
-            val bridge = packageLoader!!.loadClass(NativeSession::class.java.name)
+        closable = packageLoader as? java.io.Closeable
+        val factory: (ProviderContext) -> JniProviderSession = if (className == null) {
+            val bridge = packageLoader.loadClass(NativeSession::class.java.name)
                 .asSubclass(JniProviderSession::class.java)
             val constructor = bridge.getConstructor(String::class.java, ProviderContext::class.java, String::class.java)
             val open: (ProviderContext) -> JniProviderSession = { sessionContext ->
@@ -90,8 +76,6 @@ internal fun installedNativeSdkProvider(manifest: ModuleManifest, root: File, co
             }
             open
         } else {
-            // 自定义适配器 JAR 同样依赖运行时类加载，原生构建里没有可行路径。
-            check(!nativeImageRuntime) { nativeAdapterJarUnavailable(manifest) }
             val factoryType = Class.forName(className, false, packageLoader).asSubclass(NativeProviderFactory::class.java)
             val constructor = factoryType.getConstructor()
             val open: (ProviderContext) -> JniProviderSession = { sessionContext ->
@@ -121,6 +105,112 @@ internal fun installedNativeSdkProvider(manifest: ModuleManifest, root: File, co
         runCatching { closable?.close() }
         snapshot.deleteRecursively()
         throw IllegalArgumentException("Cannot load native SDK package: ${error.message}", error)
+    }
+}
+
+private fun installedCAbiProvider(manifest: ModuleManifest, root: File): BackendProvider {
+    // Keep package bytes stable across import/replace, without mapping the library during the scan.
+    val snapshot = File(root.parentFile, ".repository-runtime-${UUID.randomUUID()}")
+    try {
+        check(root.copyRecursively(snapshot)) { "Cannot prepare native SDK runtime" }
+        val owner = NativeImageProviderLibrary(manifest, snapshot)
+        val descriptor = SdkBackendProvider(
+            id = manifest.id, name = manifest.name, version = manifest.version, type = ProviderType.JNI,
+            factory = owner::open,
+            settingsSchema = manifest.settingsSchema,
+            sdkAllowedOrigins = manifest.sdkOrigins.toSet(),
+            capabilities = manifest.knownCapabilities,
+            defaultCountryCode = manifest.resolvedDefaultCountryCode,
+            imageResizeRule = manifest.imageResize,
+        )
+        return object : BackendProvider by descriptor {
+            override val requiresExclusiveNativeLibrary = true
+
+            override fun close() {
+                try { descriptor.close() } finally { owner.retire() }
+            }
+        }
+    } catch (error: Throwable) {
+        snapshot.deleteRecursively()
+        throw error
+    }
+}
+
+/** One loaded C ABI package per process. A host owns a lease until all its lanes have closed. */
+private class NativeImageProviderLibrary(
+    private val manifest: ModuleManifest,
+    private val snapshot: File,
+) {
+    private companion object {
+        val lock = Any()
+        var loaded: NativeImageProviderLibrary? = null
+    }
+
+    private var factory: CAbiSessionFactory? = null
+    private var leases = 0
+    private var retired = false
+    private var failed = false
+
+    fun open(context: ProviderContext): MusicProvider {
+        val settings = Json.encodeToString(context.settings)
+        val library = synchronized(lock) {
+            check(!retired && !failed) { "Native provider closed" }
+            check(loaded == null || loaded === this) { "Previous native provider has not unloaded" }
+            val acquired = factory ?: run {
+                loaded = this
+                try {
+                    when (val probe = probeCAbiSessionFactory(File(snapshot, manifest.entryPoint))) {
+                        is CAbiProbe.Available -> probe.factory.also { factory = it }
+                        is CAbiProbe.Unavailable -> error(nativeJniUnavailable(manifest, probe.reason))
+                    }
+                } catch (error: Throwable) {
+                    // An uncertain unload must never let a second library into the process.
+                    if (error is NativeLibraryUnloadException) failed = true else loaded = null
+                    throw error
+                }
+            }
+            leases++
+            acquired
+        }
+        val pool = JniMusicProvider.pooled { library.open(context, settings) }
+        return object : MusicProvider by pool {
+            private val closing = AtomicBoolean()
+            override suspend fun close() {
+                if (!closing.compareAndSet(false, true)) return
+                try {
+                    pool.close()
+                } catch (error: Throwable) {
+                    synchronized(lock) { failed = true }
+                    throw error
+                } finally {
+                    release()
+                }
+            }
+        }
+    }
+
+    fun retire() = synchronized(lock) {
+        retired = true
+        deleteSnapshotIfUnused()
+    }
+
+    private fun release() = synchronized(lock) {
+        leases--
+        if (leases == 0 && !failed) {
+            try { checkNotNull(factory).close() } catch (error: Throwable) {
+                failed = true
+                throw error
+            }
+            factory = null
+            loaded = null
+        }
+        deleteSnapshotIfUnused()
+    }
+
+    private fun deleteSnapshotIfUnused() {
+        if (retired && leases == 0 && !failed && !snapshot.deleteRecursively() && snapshot.exists()) {
+            error("Cannot delete native SDK runtime snapshot: ${snapshot.absolutePath}")
+        }
     }
 }
 

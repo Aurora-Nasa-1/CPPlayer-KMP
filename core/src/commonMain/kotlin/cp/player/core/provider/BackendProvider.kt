@@ -14,6 +14,7 @@ import cp.player.core.util.defaultSettingsStorage
 interface BackendProvider {
     /** Typed session factory. A missing factory is an error, never a legacy fallback. */
     fun createSdkProvider(context: cp.player.sdk.ProviderContext): cp.player.sdk.MusicProvider? = null
+    val requiresExclusiveNativeLibrary: Boolean get() = false
     val sdkAllowedOrigins: Set<String> get() = emptySet()
     fun onSdkSessionRetired(listener: () -> Unit): () -> Unit = {}
     /** Provider 唯一标识符（如 "netease"、"my-custom"） */

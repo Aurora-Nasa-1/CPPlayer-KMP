@@ -5,6 +5,9 @@ import cp.player.sdk.jni.JniProviderSession
 import java.io.Closeable
 import java.io.File
 
+internal class NativeLibraryUnloadException(cause: Throwable) :
+    IllegalStateException("Cannot unload native provider library", cause)
+
 /**
  * 原生音源包的 **C ABI**（`cpp_*`）会话工厂 —— 规范见 `docs/dev/providers/NATIVE.md`。
  *

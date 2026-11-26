@@ -63,16 +63,13 @@ class ProviderSdkSessions private constructor(
 
     /** Atomically fences old results, updates host image policy under session lock, and retires the old host. */
     internal fun invalidateAndApplyPolicy(applyPolicy: () -> Unit) {
-        val retired = synchronized(this) {
+        synchronized(this) {
             revision++
             val previous = host.also { host = null }
             previous?.invalidate()
+            if (previous != null) retirement.launch { previous.close() }
             applyPolicy()
             _changes.value++
-            if (closed) null else previous
-        }
-        if (retired != null) {
-            retirement.launch { retired.close() }
         }
     }
 
@@ -106,11 +103,28 @@ class ProviderSdkSessions private constructor(
             previous.context.credentialVersion == credentialEpoch &&
             previous.context.credential == credential && previous.context.settings == settings) return@withLock previous
 
-        previous?.invalidate()
-        if (previous != null) retirement.launch { previous.close() }
-        val generation = synchronized(this) { host = null; ++revision }
+        val generation = synchronized(this) {
+            if (closed || revision != generationBefore || active() !== provider) {
+                throw CancellationException("Session changed during creation")
+            }
+            host?.let { retired ->
+                retired.invalidate()
+                retirement.launch { retired.close() }
+            }
+            host = null
+            ++revision
+        }
         owner = provider
         if (provider == null || provider.contract != "kmp-sdk-v1") return@withLock null
+        if (provider.requiresExclusiveNativeLibrary) {
+            // A cancelled native call still owns the old DLL until the host and all lanes drain.
+            retirement.coroutineContext.job.children.toList().joinAll()
+            synchronized(this) {
+                if (closed || revision != generation || active() !== provider) {
+                    throw CancellationException("Session changed during native provider retirement")
+                }
+            }
+        }
         val key = ProviderSessionKey(provider.id, account, generation)
         val credentialHash = if (credential.isNullOrEmpty()) "anon" else cp.player.core.util.stableHash64(credential)
         val settingsHash = if (settings.isEmpty()) "0" else cp.player.core.util.stableHash64(

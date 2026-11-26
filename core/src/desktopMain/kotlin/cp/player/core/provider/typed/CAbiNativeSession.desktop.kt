@@ -40,7 +40,11 @@ internal actual fun probeCAbiSessionFactory(library: File): CAbiProbe {
     return try {
         CAbiProbe.Available(FfmCAbiSessionFactory(arena, library))
     } catch (error: Throwable) {
-        runCatching { arena.close() }
+        try {
+            arena.close()
+        } catch (closeError: Throwable) {
+            throw NativeLibraryUnloadException(closeError).apply { addSuppressed(error) }
+        }
         CAbiProbe.Unavailable(describeProbeFailure(error))
     }
 }
@@ -181,8 +185,8 @@ private class FfmCAbiSessionFactory(
     /** 只在所有会话关闭后调用：关掉 arena 就等于卸载库，之后该目录才能被替换/删除。 */
     override fun close() {
         if (closed) return
+        arena.close()
         closed = true
-        runCatching { arena.close() }
     }
 }
 
