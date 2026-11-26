@@ -449,8 +449,11 @@ jobs:
       # ⚠️ electron-builder 渲染出的资产名是小写 `cpplayer-<version>-linux-amd64.deb`，
       # 不是 jpackage 时代的 `CPPlayer-*.deb`。写死大写前缀会 pack 成功却在这里误判成缺包
       # （v1.12.3 真实事故）。这里按扩展名找，并把实际目录打出来。
-      # 引擎库靠 nativeDistributions.appResourcesRootDir → `--app-content` 进入
-      # lib/app；这条断言就是那个假设的唯一物证：没有它，包能装、启动、但一点声都没有。
+      # 引擎库靠 nativeDistributions.appResourcesRootDir 进入包里。Nucleus 3.0 的
+      # electron-builder 把它放到 lib/app/resources/（和 libnucleus_*.so 同处），
+      # 不再像 jpackage 时代那样落在 lib/app/ 根 —— 两种布局都得认。
+      # tar.gz 那份 lib/app/ 是 app/build.gradle.kts 的事后注入补的，deb 走不到那条路。
+      # DesktopHiResEngine 的加载候选已覆盖这两个位置；这里只管「库在不在包里」。
       - name: Verify deb contains FlickEngine
         if: matrix.platform == 'linux'
         shell: bash
@@ -469,13 +472,14 @@ jobs:
           ( cd "$tmp" && ar x "$OLDPWD/$deb" )
           data="$(ls "$tmp"/data.tar.*)"
           listing="$(tar -tf "$data")"
-          grep -q 'opt/CPPlayer/lib/app/librust_lib_flick_player\.so$' <<<"$listing" || {
-            echo "::error::deb 里缺 /opt/CPPlayer/lib/app/librust_lib_flick_player.so —— Linux 版会静音"
+          flick="$(grep -E 'opt/CPPlayer/lib/app/(resources/)?librust_lib_flick_player\.so$' <<<"$listing" | head -1 || true)"
+          if [[ -z "$flick" ]]; then
+            echo "::error::deb 里缺 /opt/CPPlayer/lib/app/{,resources/}librust_lib_flick_player.so —— Linux 版会静音"
             echo "--- 实际 lib/app 内容 ---"
             grep 'opt/CPPlayer/lib/app/' <<<"$listing" | head -30 || true
             exit 1
-          }
-          echo "deb 引擎库 OK"
+          fi
+          echo "deb 引擎库 OK: /$flick"
       - name: Stage release artifacts
         # 把匹配到的安装包**平铺**到一个目录再上传。upload-artifact 会保留匹配路径的
         # 公共父目录结构：Linux 的 deb/*.deb 与 targz/*.tar.gz 没有共同文件层，

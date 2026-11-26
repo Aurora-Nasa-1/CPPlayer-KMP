@@ -188,6 +188,9 @@ object DesktopHiResEngine {
                     // `--app-content` 放进 <root>/lib/app（与 jar 同目录）或 <root>/lib。
                     // 这两个路径不依赖 codeSource 是否可解析，装成 deb / AUR 包时最可靠。
                     searchCandidates += File(appRoot, "lib/app/$libFileName")
+                    // Nucleus 3.0 的 deb 走 electron-builder，appResources 落在 lib/app/resources/
+                    // 而不是 lib/app/（v1.12.4 实测）。缺这条候选，包里有库也加载不到 ⇒ 静音。
+                    searchCandidates += File(appRoot, "lib/app/resources/$libFileName")
                     searchCandidates += File(appRoot, "lib/$libFileName")
                     searchCandidates += File(appRoot, "lib/runtime/lib/$libFileName")
                 }
