@@ -179,7 +179,6 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     val downloadsModel = compositionModel { DownloadsScreenModel() }
     val downloadsState by downloadsModel.state.collectAsState()
     val likedIds by AppModel.playback.likedIds.collectAsState()
-    val profile by AppModel.userProfileFlow.collectAsState()
     val expanded = LocalIsExpanded.current
     var gridView by rememberSaveable { mutableStateOf(true) }
     val supportsCloud = rememberActiveProviderSupports(ProviderCapability.CLOUD_DRIVE)
@@ -235,7 +234,6 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             gridView = if (expanded) gridView else false,
             onGridViewChange = { gridView = it },
             compact = !expanded,
-            greeting = if (!expanded) profile?.nickname?.let(s.library::greeting) else null,
             actions = DesktopLibraryActions(
                 onSelectTab = model::selectTab,
                 onCreatePlaylist = { showCreateDialog = true },

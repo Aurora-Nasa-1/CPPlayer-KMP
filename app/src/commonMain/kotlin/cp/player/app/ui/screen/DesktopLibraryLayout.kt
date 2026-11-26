@@ -16,10 +16,8 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -65,7 +63,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -85,7 +82,6 @@ import cp.player.app.ui.component.CpContextMenu
 import cp.player.app.ui.component.CpContextMenuItem
 import cp.player.app.ui.component.CpAnchoredMenu
 import cp.player.app.ui.component.cpPressScale
-import cp.player.app.ui.component.CpSplitButton
 import cp.player.app.ui.component.legacySegmentGridShape
 import cp.player.app.ui.component.ProvideCpTextFullDisplay
 import cp.player.app.ui.component.LazyScrollColumn
@@ -132,7 +128,6 @@ internal fun DesktopLibraryLayout(
     gridView: Boolean,
     onGridViewChange: (Boolean) -> Unit,
     compact: Boolean = false,
-    greeting: String? = null,
     localContent: @Composable () -> Unit,
 ) {
     val s = cpStrings()
@@ -151,8 +146,9 @@ internal fun DesktopLibraryLayout(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
-                    horizontal = CpSpacing.pageHorizontal,
-                    vertical = CpSpacing.pageTop,
+                    start = CpSpacing.pageHorizontal,
+                    end = CpSpacing.pageHorizontal,
+                    bottom = CpSpacing.pageTop,
                 ),
                 verticalArrangement = Arrangement.spacedBy(
                     if (playlistList) playlistGap else CpSpacing.section,
@@ -160,46 +156,20 @@ internal fun DesktopLibraryLayout(
             ) {
                 item(key = "heading") {
                     Row(
-                        Modifier.fillMaxWidth().padding(bottom = sectionTail),
-                        horizontalArrangement = Arrangement.spacedBy(CpSpacing.musicGap),
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (!greeting.isNullOrBlank()) {
-                                CpText(greeting, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            CpText(
-                                s.library.myMusic,
-                                style = if (compact) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.displaySmall,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 2,
-                            )
-                            CpText(
-                                subtitle, maxLines = 2,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            if (!compact) {
-                                Spacer(Modifier.height(4.dp))
-                                CpSplitButton(
-                                    onLeadingClick = actions.onCreatePlaylist,
-                                    leadingContent = {
-                                        Icon(Icons.Filled.Add, null, Modifier.size(20.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        CpText(s.library.newPlaylist)
-                                    },
-                                    onTrailingClick = actions.onImport,
-                                    trailingContent = { Icon(Icons.Filled.FileUpload, s.library.importPlaylist) },
-                                    modifier = Modifier.width(236.dp).height(CpSpacing.touchTarget),
-                                )
-                            }
-                        }
-                        if (state.playlists.isNotEmpty()) {
-                            LibraryCoverStack(
-                                state.playlists.take(3),
-                                Modifier.size(if (compact) 88.dp else 152.dp),
-                            )
-                        }
+                        CpText(
+                            subtitle,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 2,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        DesktopLibraryActionButton(s.library.searchLibrary, Icons.Filled.Search, actions.onSearch)
+                        DesktopLibraryActionButton(s.library.importPlaylist, Icons.Filled.FileUpload, actions.onImport)
+                        DesktopLibraryActionButton(s.library.newPlaylist, Icons.Filled.Add, actions.onCreatePlaylist)
                     }
                 }
                 item(key = "shortcuts") {
@@ -247,29 +217,19 @@ internal fun DesktopLibraryLayout(
                         modifier = Modifier.padding(bottom = sectionTail),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Column(Modifier.weight(1f)) {
+                        Column {
+                            CpText(
+                                s.library.libraryTitle,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            if (state.selectedTab != 0) {
                                 CpText(
-                                    s.library.libraryTitle,
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                CpText(
-                                    if (state.selectedTab == 0) s.library.libraryPlaylistsCount(state.playlists.size)
-                                    else s.library.libraryOffline,
+                                    s.library.libraryOffline,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                            }
-                            DesktopLibraryActionButton(s.library.searchLibrary, Icons.Filled.Search, actions.onSearch)
-                            if (compact) {
-                                DesktopLibraryActionButton(s.library.importPlaylist, Icons.Filled.FileUpload, actions.onImport)
-                                DesktopLibraryActionButton(s.library.newPlaylist, Icons.Filled.Add, actions.onCreatePlaylist)
                             }
                         }
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -401,22 +361,6 @@ private fun DesktopLibraryShortcut(
                 maxLines = 2,
                 textAlign = TextAlign.Center,
                 color = if (prominent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            )
-        }
-    }
-}
-
-@Composable
-private fun LibraryCoverStack(playlists: List<PlaylistSummary>, modifier: Modifier = Modifier) {
-    Box(modifier, contentAlignment = Alignment.Center) {
-        playlists.reversed().forEachIndexed { index, playlist ->
-            val back = playlists.lastIndex - index
-            LandingArtwork(
-                playlist.coverUrl,
-                Modifier.fillMaxSize(0.72f)
-                    .offset(x = (back * 9).dp, y = (-back * 3).dp)
-                    .graphicsLayer { rotationZ = back * 9f - 8f }
-                    .clip(MaterialTheme.shapes.large),
             )
         }
     }
