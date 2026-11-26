@@ -12,7 +12,11 @@ app-android -> app -> core -> provider-sdk-kmp
 |---|---|---|
 | `provider-sdk-kmp` | 强类型业务契约、数据类型、默认批量行为、受控 runtime | 不依赖 core、Compose、宿主数据库或具体音源 |
 | `core` | 账号会话、统一音乐源、本地库、播放 / 下载 / 缓存、歌词、对外集成 | 不含 UI |
-| `app` | Compose UI、ScreenModel、业务 Repository、平台呈现 | 经 `MusicBackend` 访问后端 |
+| `app` | Compose UI、Nav3、页面 ViewModel、业务 Repository、平台呈现 | 经 `MusicBackend` 访问后端 |
+
+根栈负责整窗路由，宽屏内容栈保留侧栏；两条栈各自为每次访问分配条目 ID，分别保存组合状态和持有页面模型。业务层只经纯 Kotlin 的 `AppRoute` / `AppNavigator` 表达跳转，Nav3 依赖集中在 `app`。
+
+Android 视频组件负责绑定原生 Surface；`core` 播放内核只接受渲染目标。Android 应用在初始化 `MusicBackend` 时注入系统歌词投递实现，`core` 只持有歌词帧、配置与投递接口。
 | `app-android` | Activity、Application、MediaSessionService | Android 平台入口 |
 
 ## 2. 唯一远端数据链

@@ -9,12 +9,10 @@
 | 步骤 | 命令 / 判据 |
 |---|---|
 | 编译 | `./gradlew :app:compileKotlinDesktop :core:compileKotlinDesktop` |
-| 测试 | 只认 `**/test-results/**/TEST-*.xml`；`skipped="0"` 才算跑过 |
 | 链路回归 | `pwsh -File scripts/verify-provider-chain.ps1`（仅 Windows） |
 | 契约 | 改过 SDK 才需要：`node provider-contract/generate.mjs --check` |
-| 版式 | 改 UI 版式必须离屏出图核对，编译与单测都量不到宽度 |
 
-不要用「应该能过」交差。构建成功不等于测试跑过；端到端测试 `assumeTrue` 跳过时同样 BUILD SUCCESSFUL。
+编译是唯一硬判据；不要用「应该能过」交差。
 
 ## 2. Kotlin / KMP
 
@@ -33,10 +31,10 @@
 | `fun x() = runBlocking { … }` 用块体 | 末句若是有返回值的调用（如 `assertFailsWith`），方法非 void，JUnit 报 `InvalidTestClassError` 且不指行 |
 | 嵌套类默认不是 `inner` | 需要外部实例时显式加 |
 | 版本目录别名的访问路径把 `-` 换成 `.` | `accompanist-lyrics-ui` ⇒ `libs.accompanist.lyrics.ui`；按原名 grep 永远 0 命中 |
-| `rememberScreenModel` 只能在 `Screen` 子类成员里调 | 它是 `Screen` 的扩展函数；放进顶层 `private @Composable fun` 会报 `Unresolved reference` 并连带下游几十行 unresolved |
+| 路由页模型使用 `pageModel` | 由当前 Nav3 条目持有，覆盖页面时保留，离栈后释放；单独进入和退出组合的小部件用 `compositionModel` |
 | 不用 `kotlinx.datetime` 做运行时日期换算 | desktop 运行时是 0.7.x、编译期 0.6.x，`Instant` 已成 typealias ⇒ `NoClassDefFoundError`，包在 `runCatching` 里会静默退化成 null；用 `cp.player.core.util.localDateTimeOf(ms)` |
 
-`rememberScreenModel` 的正确写法：在 `Screen.Content()` 里 `rememberScreenModel { … }`，把模型当参数传下去（`PlaylistDetailScreen` 即此写法）。
+在 `RoutePage.Content()` 中创建 `pageModel { … }`，把模型当参数传给页面内容（例如 `PlaylistDetailScreen`）。
 
 ## 3. Compose / UI
 
@@ -173,7 +171,7 @@ Compose 资源（字体 / 图片）要在 Android 生效，`:app` 必须 `androi
 | 提交粒度 | 一个提交一件事；重构与功能分开 |
 | 提交信息 | 说明「为什么」，不是「改了什么文件」 |
 | 新功能 | 同一提交内带文档；破坏性变更带迁移说明 |
-| 评审 | 需要能复现的验证证据（测试 XML、出图、命令输出） |
+| 评审 | 需要能复现的验证证据（编译输出、出图、命令输出） |
 
 ## 相关
 
