@@ -24,7 +24,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -50,6 +50,7 @@ import cp.player.app.ui.component.CpExpressiveArtwork
 import cp.player.app.ui.component.CpPlayPauseButton
 import cp.player.app.ui.component.CpPlayingEqualizer
 import cp.player.app.ui.component.CpSpacing
+import cp.player.app.ui.component.CpSplitButton
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.CpWavyProgress
 import cp.player.app.ui.component.cpPressScale
@@ -130,25 +131,18 @@ internal fun DailySelectionFocus(
                         LandingArtwork(songs.firstOrNull()?.coverUrl, Modifier.fillMaxSize())
                     }
                 }
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Button(
-                        onClick = { songs.firstOrNull()?.let(actions.onPlayDailyTrack) },
-                        modifier = Modifier.height(CpSpacing.touchTarget),
-                    ) {
+                CpSplitButton(
+                    onLeadingClick = { songs.firstOrNull()?.let(actions.onPlayDailyTrack) },
+                    leadingContent = {
                         Icon(Icons.Filled.PlayArrow, null, Modifier.size(22.dp))
                         Spacer(Modifier.width(8.dp))
                         CpText("播放推荐", fontWeight = FontWeight.SemiBold)
-                    }
-                    Icon(
-                        Icons.Filled.ChevronRight, null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                }
+                    },
+                    onTrailingClick = actions.onOpenDaily,
+                    trailingContent = { Icon(Icons.Filled.ChevronRight, "查看每日推荐") },
+                    modifier = Modifier.width(if (compact) 224.dp else 256.dp).height(CpSpacing.touchTarget),
+                    colors = ButtonDefaults.buttonColors(),
+                )
             }
         }
     }
@@ -194,23 +188,33 @@ internal fun LandingNowPlaying(
                     CpText(track.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // 暂停键与波形播放条同排居中对齐；时间行另起一行并预留按钮宽度，
+            // 避免「进度 + 时间」整体把按钮拽到播放条中心之下。
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     CpWavyProgress(
                         if (snapshot.durationMs > 0) snapshot.positionMs.toFloat() / snapshot.durationMs else 0f,
                         waveFlowing = snapshot.isPlaying,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.weight(1f),
                     )
+                    CpPlayPauseButton(
+                        snapshot.isPlaying, actions.onTogglePlayPause,
+                        size = CpSpacing.touchTarget,
+                    )
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     CpText(
                         "${formatTimeMs(snapshot.positionMs)} / ${if (snapshot.durationMs > 0) formatTimeMs(snapshot.durationMs) else "--:--"}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
                     )
+                    Spacer(Modifier.width(CpSpacing.touchTarget))
                 }
-                CpPlayPauseButton(
-                    snapshot.isPlaying, actions.onTogglePlayPause,
-                    size = CpSpacing.touchTarget,
-                )
             }
         }
     }
