@@ -409,9 +409,13 @@ class AccountPresenter(
                     QrStatusKind.SCANNED -> message.value = account.qrScanned
                     QrStatusKind.SUCCESS -> {
                         onLoginSucceeded(resp.cookie, binding = binding)
-                        return QrPollResult.LOGGED_IN
+                        return if (isLogged.value) QrPollResult.LOGGED_IN else QrPollResult.STOPPED
                     }
                     QrStatusKind.EXPIRED -> return QrPollResult.EXPIRED
+                    QrStatusKind.FAILED -> {
+                        message.value = account.loginFailed(resp.reason?.takeIf { it.isNotBlank() } ?: account.pleaseRetry)
+                        return QrPollResult.STOPPED
+                    }
                     QrStatusKind.UNKNOWN -> Unit
                 }
             }

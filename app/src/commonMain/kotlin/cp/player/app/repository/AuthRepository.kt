@@ -20,12 +20,14 @@ enum class QrStatusKind {
     SCANNED,
     SUCCESS,
     EXPIRED,
+    FAILED,
     UNKNOWN,
 }
 
 data class QrStatusResult(
     val status: QrStatusKind,
     val cookie: String?,
+    val reason: String? = null,
 )
 
 data class AuthActionResult(
@@ -79,9 +81,12 @@ class AuthRepository(
         return QrCodeResult(url = result?.url, imageBase64 = result?.imageBase64)
     }
 
-    suspend fun checkQrStatus(key: String): QrStatusResult {
+    suspend fun checkQrStatus(key: String): QrStatusResult? {
         val result = authenticate(AuthActionRequest(action = AuthAction.QR_CHECK, key = key, md5 = false))
-        return QrStatusResult(qrStatusOf(result), result?.cookie)
+            ?: return null
+        val code = result.status ?: result.code
+        if (!result.success && (code == 408 || code == 429 || (code != null && code in 500..599))) return null
+        return QrStatusResult(qrStatusOf(result), result.cookie, result.message)
     }
 
     suspend fun login(email: String, password: String): AuthActionResult =
@@ -175,14 +180,14 @@ class AuthRepository(
     }
 
     /** 二维码状态：优先看 `status`（上游 800/801/802/803），没有再退回 `code`。 */
-    private fun qrStatusOf(result: ProviderAuthResult?): QrStatusKind {
-        if (result == null) return QrStatusKind.UNKNOWN
+    private fun qrStatusOf(result: ProviderAuthResult): QrStatusKind {
         if (result.cookie?.isNotBlank() == true && result.success) return QrStatusKind.SUCCESS
         return when (result.status ?: result.code) {
             803, 2, 4 -> QrStatusKind.SUCCESS
             802, 1 -> QrStatusKind.SCANNED
             800, 3 -> QrStatusKind.EXPIRED
             801, 0 -> QrStatusKind.WAITING
+            in 400..499 -> QrStatusKind.FAILED
             else -> if (result.success) QrStatusKind.SUCCESS else QrStatusKind.UNKNOWN
         }
     }
