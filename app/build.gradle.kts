@@ -623,10 +623,10 @@ val desktopRunHeapArgs = listOf("-Xms64m", "-Xmx192m", "-Xmn48m")
 // 不把 6 MB 的异构二进制塞进另一个平台的包里。
 // ⚠️ 目录由本任务生成，jpackage 任务必须显式依赖它 —— Gradle 不会自动连线，
 // 漏了就会「目录为空但构建成功」，装出来依旧无声。
-val nativeLibExt = when {
-    System.getProperty("os.name").lowercase().contains("win") -> "dll"
-    System.getProperty("os.name").lowercase().contains("mac") -> "dylib"
-    else -> "so"
+val (nativeLibOsDir, nativeLibExt) = when {
+    System.getProperty("os.name").lowercase().contains("win") -> "windows" to "dll"
+    System.getProperty("os.name").lowercase().contains("mac") -> "macos" to "dylib"
+    else -> "linux" to "so"
 }
 val prepareDesktopAppResources = tasks.register<Sync>("prepareDesktopAppResources") {
     group = "compose desktop"
@@ -634,9 +634,17 @@ val prepareDesktopAppResources = tasks.register<Sync>("prepareDesktopAppResource
     into(layout.buildDirectory.dir("app-resources"))
     from(project.file("native")) {
         include("*.$nativeLibExt")
+        // Nucleus 的 prepareAppResources 只从 appResourcesRootDir 下的 common/、<os>/、<target>/ 读取，
+        // 放在根目录会被静默忽略并触发 Gradle 隐式依赖报错。
+        into(nativeLibOsDir)
     }
 }
-tasks.matching { it.name == "createDistributable" || it.name.startsWith("package") }.configureEach {
+tasks.matching {
+    it.name == "prepareAppResources" ||
+        it.name == "prepareSandboxedAppResources" ||
+        it.name == "createDistributable" ||
+        it.name.startsWith("package")
+}.configureEach {
     dependsOn(prepareDesktopAppResources)
 }
 
@@ -710,7 +718,7 @@ nucleus {
             // FlickEngine 动态库（见上面 prepareDesktopAppResources 的说明）。
             // jpackage `--app-content` ⇒ Linux 落到 lib/app、Windows 落到 app/，
             // 两条搜索路径都在 DesktopHiResEngine 的候选列表里。
-            appResourcesRootDir.set(layout.buildDirectory.dir("app-resources"))
+            appResourcesRootDir.set(layout.dir(prepareDesktopAppResources.map { it.destinationDir }))
 
             // ⚠️ release 的 jlink 镜像是**按模块清单裁剪**的，这份清单必须手工维护
             // （2026-10-05 真实事故：1.4.3 安装包启动即死，本地 `desktopRun` 完全复现不了）。
