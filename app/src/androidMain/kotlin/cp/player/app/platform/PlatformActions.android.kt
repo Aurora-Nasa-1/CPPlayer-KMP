@@ -670,10 +670,10 @@ actual fun isAggressiveStandbyActive(): Boolean =
 
 actual fun shizukuState(): ShizukuState {
     val ctx = ctxOrNull ?: return ShizukuState.NOT_INSTALLED
-    if (!cp.player.core.lyricpush.ShizukuPermissions.isInstalled(ctx)) {
+    if (!cp.player.app.platform.lyricpush.ShizukuPermissions.isInstalled(ctx)) {
         return ShizukuState.NOT_INSTALLED
     }
-    return if (cp.player.core.lyricpush.ShizukuPermissions.isGranted()) {
+    return if (cp.player.app.platform.lyricpush.ShizukuPermissions.isGranted()) {
         ShizukuState.READY
     } else {
         // 包含「装了但没启动」与「启动了但未授权」两种：对用户而言都是「还没就绪」。
@@ -683,10 +683,10 @@ actual fun shizukuState(): ShizukuState {
 
 actual fun requestShizukuPermission(onResult: (ShizukuState) -> Unit) {
     val ctx = ctxOrNull ?: return onResult(ShizukuState.NOT_INSTALLED)
-    cp.player.core.lyricpush.ShizukuPermissions.requestPermission { granted ->
+    cp.player.app.platform.lyricpush.ShizukuPermissions.requestPermission { granted ->
         if (granted) {
             // 授权成功后立刻把 keepalive 绑上，别等下一次播放（移植指南 §4.2）。
-            cp.player.core.lyricpush.ShizukuKeepAlive.ensureBound(ctx)
+            cp.player.app.platform.lyricpush.ShizukuKeepAlive.ensureBound(ctx)
         }
         onResult(shizukuState())
     }

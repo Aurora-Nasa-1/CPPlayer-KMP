@@ -4,7 +4,8 @@ import android.app.Application
 import cp.player.app.monitoring.AppMonitoring
 import cp.player.app.platform.installAndroidImageCacheLimit
 import cp.player.core.MusicBackend
-import cp.player.core.lyricpush.HiddenApiExemptions
+import cp.player.app.platform.lyricpush.HiddenApiExemptions
+import cp.player.app.platform.lyricpush.createAndroidLyricPusher
 import cp.player.core.provider.typed.QuickJsWarmup
 import cp.player.core.util.defaultSettingsStorage
 import cp.player.core.util.initKmpAndroidContext
@@ -18,6 +19,7 @@ class CPPlayerApplication : Application() {
             context = toPlatformContext(),
             settings = defaultSettingsStorage(),
             applicationVersionName = BuildConfig.VERSION_NAME,
+            lyricPusherFactory = { createAndroidLyricPusher(toPlatformContext()) },
         )
     }
 

@@ -131,6 +131,7 @@ class MusicBackend private constructor(
     private val providerManager: ProviderManager,
     private val moduleManager: ModuleManager,
     private val applicationVersionName: String?,
+    lyricPusherFactory: (() -> cp.player.core.lyricpush.LyricPusher)?,
 ) {
 
     /** 模块内可见：供兼容层转发。 */
@@ -452,8 +453,7 @@ class MusicBackend private constructor(
      * 惰性创建：桌面返回空实现，Android 构造各渠道 bridge（构造本身无副作用，
      * 真正对外写数据要等 [applyLyricPushConfig] 把开关打开）。
      */
-    private val lyricPusherLazy: kotlin.Lazy<cp.player.core.lyricpush.LyricPusher> =
-        kotlin.lazy { cp.player.core.lyricpush.createLyricPusher(context) }
+    private val lyricPusherLazy = lazy { lyricPusherFactory?.invoke() }
 
     /**
      * 应用歌词投放配置（设置页改动 / 启动恢复）。
@@ -462,7 +462,7 @@ class MusicBackend private constructor(
      * 与 [applyOutputConfig] 的分工一致。
      */
     fun applyLyricPushConfig(config: LyricPushConfig) {
-        runCatching { lyricPusherLazy.value.applyConfig(config) }
+        runCatching { lyricPusherLazy.value?.applyConfig(config) }
     }
 
     /**
@@ -1105,7 +1105,7 @@ class MusicBackend private constructor(
         if (lrclibClientLazy.isInitialized()) runCatching { lrclibClientLazy.value.close() }
         // 歌词投放：true 时会解除渠道注册（词幕 unregister / SuperLyric 反注册 /
         // 收起超级岛与实时活动）。未装配过就不碰，避免反向触发惰性创建。
-        if (lyricPusherLazy.isInitialized()) runCatching { lyricPusherLazy.value.close() }
+        if (lyricPusherLazy.isInitialized()) runCatching { lyricPusherLazy.value?.close() }
         // 仅在已装配时关闭下载引擎（避免 reset 反向触发惰性初始化）
         if (downloadManagerLazy.isInitialized()) {
             runCatching { downloadManager.shutdown() }
@@ -1191,6 +1191,7 @@ class MusicBackend private constructor(
             context: PlatformContext,
             settings: SettingsStorage,
             applicationVersionName: String? = null,
+            lyricPusherFactory: (() -> cp.player.core.lyricpush.LyricPusher)? = null,
         ): MusicBackend {
             synchronized(COMPA) {
                 INSTANCE?.let { return it }
@@ -1206,6 +1207,7 @@ class MusicBackend private constructor(
                     providerManager = providerManager,
                     moduleManager = moduleManager,
                     applicationVersionName = applicationVersionName,
+                    lyricPusherFactory = lyricPusherFactory,
                 )
                 backend._stateFlow.value = BackendState.Initializing
 

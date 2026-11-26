@@ -75,7 +75,7 @@
     <!--
       Android 11（API 30）起的包可见性：不声明 `<queries>` 的话
       `getPackageInfo("moe.shizuku.privileged.api")` 会抛 NameNotFoundException，
-      表现为「明明装了 Shizuku，设置页却说未安装」。见 core 的 ShizukuPermissions。
+      表现为「明明装了 Shizuku，设置页却说未安装」。见 ShizukuPermissions。
 
       ⚠️ `com.xiaomi.xmsf` 是**同一类坑的第二处**（2026-10-15 补）：XMSF 断网隔离要靠
       `getPackageUid("com.xiaomi.xmsf")` 拿到它的 uid，而它在设备的 `forceQueryable`
@@ -109,7 +109,7 @@
         </service>
 
         <!--
-          HyperOS 超级岛歌词的载体（见 core 的 XiaomiSuperIslandLyricService）。
+          HyperOS 超级岛歌词的载体（见 XiaomiSuperIslandLyricService）。
 
           ⚠️ `specialUse` + `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` 是硬要求：HyperOS 只把
           从**专用前台服务**里发出的焦点通知当作超级岛载荷，从播放进程直接 notify() 只会
@@ -119,7 +119,7 @@
           （KMP library 插件下它的清单不参与合并），服务类本身在 core 里，靠全限定名引用。
         -->
         <service
-            android:name="cp.player.core.lyricpush.XiaomiSuperIslandLyricService"
+            android:name="cp.player.app.platform.lyricpush.XiaomiSuperIslandLyricService"
             android:foregroundServiceType="specialUse"
             android:exported="false">
             <property

@@ -48,7 +48,7 @@ class PlaybackMediaSessionService : MediaSessionService() {
         // 读的都是它的 currentMediaItem.mediaMetadata。
         val sink = LyricMetadataSink { sessionPlayer }
         lyricSink = sink
-        cp.player.core.lyricpush.LyricPushSinks.metadataSink = sink
+        cp.player.app.platform.lyricpush.LyricPushSinks.metadataSink = sink
         // 通知栏那个小图标：media3 默认用它自带的占位图（media3_notification_small_icon），
         // 在状态栏里和本应用没有任何关系。换成自己的单色播放三角。
         // ⚠️ 状态栏图标必须是**白色剪影 + 透明底**，系统会统一着色 —— 带颜色的图会被糊成色块。
@@ -165,8 +165,8 @@ class PlaybackMediaSessionService : MediaSessionService() {
     override fun onDestroy() {
         // 先摘歌词通道再释放会话：否则会话销毁后 sink 仍被 core 持有，
         // 下一帧歌词会对着已释放的播放器调 replaceMediaItem。
-        if (cp.player.core.lyricpush.LyricPushSinks.metadataSink === lyricSink) {
-            cp.player.core.lyricpush.LyricPushSinks.metadataSink = null
+        if (cp.player.app.platform.lyricpush.LyricPushSinks.metadataSink === lyricSink) {
+            cp.player.app.platform.lyricpush.LyricPushSinks.metadataSink = null
         }
         lyricSink?.release()
         lyricSink = null

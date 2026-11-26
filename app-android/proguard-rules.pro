@@ -103,7 +103,7 @@
 -dontwarn com.xzakota.hyper.notification.**
 
 # 超级岛前台服务由 AndroidManifest 按全限定名实例化，必须保留。
--keep class cp.player.core.lyricpush.XiaomiSuperIslandLyricService { *; }
+-keep class cp.player.app.platform.lyricpush.XiaomiSuperIslandLyricService { *; }
 
 # ---------------------------------------------------------------------------
 # 9. Shizuku（超级岛歌词的 XMSF 断网隔离）
@@ -113,7 +113,7 @@
 # - `ShizukuProvider` 由清单按全限定名引用。
 # - Shizuku / HiddenApiBypass 内部大量走反射（`ServiceManager.getService`、
 #   `Class.getDeclaredField("TRANSACTION_…")`、`MethodHandle`），逐类 keep 最省心。
--keep class cp.player.core.lyricpush.ShizukuKeepAliveService { *; }
+-keep class cp.player.app.platform.lyricpush.ShizukuKeepAliveService { *; }
 -keep class rikka.shizuku.ShizukuProvider { *; }
 -keep class rikka.shizuku.** { *; }
 -keep class org.lsposed.hiddenapibypass.** { *; }

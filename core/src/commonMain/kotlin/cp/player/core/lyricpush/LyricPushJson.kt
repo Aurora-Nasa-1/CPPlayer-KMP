@@ -17,7 +17,7 @@ package cp.player.core.lyricpush
  * 为什么不用 `kotlinx.serialization`：这些字符串是写给**系统进程 / 第三方模块**读的，
  * 字段顺序与转义必须稳定可预测；用通用序列化器等于把兼容性交给框架的默认行为。
  */
-internal object LyricPushJson {
+object LyricPushJson {
 
     /** 构造 `{"a":"1","b":"2"}`。字段顺序 = 传入顺序（接收端依赖顺序的时候才可控）。 */
     fun buildObject(vararg fields: Pair<String, String>): String =

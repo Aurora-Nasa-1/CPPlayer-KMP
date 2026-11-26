@@ -17,7 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
@@ -42,7 +42,7 @@ import cp.player.core.lyricpush.LyricPushConfig
 import cp.player.core.lyricpush.LyricSecondaryMode
 import cp.player.core.lyricpush.OPlusLyricMode
 import cp.player.core.lyricpush.XiaomiSuperIslandConfig
-import cp.player.core.lyricpush.isSuperIslandSupported
+import cp.player.app.platform.lyricpush.isSuperIslandSupported
 import kotlin.math.roundToInt
 
 /**
@@ -64,7 +64,7 @@ import kotlin.math.roundToInt
  * 在桌面打开这里不会影响 Android 端。因此本页在桌面上根本不可达
  * （`SettingsRegistry` 里标了 `androidOnly`），而不是显示一堆永远不生效的开关。
  */
-class LyricPushSettingsScreen : Screen {
+class LyricPushSettingsScreen : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current

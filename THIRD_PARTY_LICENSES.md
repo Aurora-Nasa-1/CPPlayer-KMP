@@ -43,7 +43,7 @@
 - **许可证**：Apache-2.0（上游 LICENSE 无单列版权行、无 NOTICE 文件）
 - **本仓库落点**：
   - `core/src/commonMain/kotlin/cp/player/core/lyricpush/**`（配置模型与纯协议层）
-  - `core/src/androidMain/kotlin/cp/player/core/lyricpush/**`（各渠道 bridge）
+  - `app/src/{androidMain,commonMain,jvmMain}/kotlin/cp/player/app/platform/lyricpush/**`（渠道、呈现及协议适配）
   - `app-android/src/main/kotlin/cp/player/app/LyricMetadataSink.kt`
 - **移植了什么**：词幕（Lyricon）、SuperLyric、Lyric Getter、HyperOS 超级岛、
   ColorOS 锁屏岛、Flyme 状态栏歌词 / 浮动通知歌词、Android 16 实时活动歌词、
@@ -57,9 +57,9 @@
      - 超级岛的媒体控制按钮与分享卡片（需要上游的 `R.drawable` 矢量资源）；
      - `PlaybackTickerState`（上游用于就地改写自家播放通知，本仓库的通知归 media3
        `DefaultMediaNotificationProvider` 管，改写的入口是 `LyricMetadataSink`）。
-  4. 专辑封面改为**可选注入**（`LyricPushArtworkProvider`）：`core` 不引入图片加载依赖，
+  4. 专辑封面改为**可选注入**（`LyricPushArtworkProvider`），
      未注入时超级岛/通知走无封面 + 默认强调色的退化路径。
-  5. 小图标由 `Canvas` 合成（`core` 没有 `res/drawable`）。
+  5. 小图标由 Android 渠道用 `Canvas` 合成。
 - **反向依赖说明**：词幕 Provider API（`io.github.proify.lyricon:provider`）、
   SuperLyric（`com.github.HChenX:SuperLyricApi`）、Lyric Getter
   （`com.github.HChenX:Lyric-Getter-Api`）、HyperOS 焦点通知
@@ -76,7 +76,7 @@
   https://github.com/RikkaApps/Shizuku-API ）、
   `org.lsposed.hiddenapibypass:hiddenapibypass`（Apache-2.0，
   https://github.com/LSPosed/AndroidHiddenApiBypass ）。
-- **本仓库落点**：`core/src/androidMain/kotlin/cp/player/core/lyricpush/`
+- **本仓库落点**：`app/src/androidMain/kotlin/cp/player/app/platform/lyricpush/`
   （`XmsfFirewall.kt` / `XmsfIsolationController.kt` / `ShizukuPermissions.kt` /
   `ShizukuKeepAlive.kt` / `HiddenApiExemptions.kt`）。
 - **实现方式与许可边界（重要）**：移植指南
