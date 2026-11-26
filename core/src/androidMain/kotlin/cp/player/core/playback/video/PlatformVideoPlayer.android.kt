@@ -4,8 +4,6 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.view.Surface
-import android.view.SurfaceView
-import android.view.TextureView
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -43,7 +41,7 @@ import kotlinx.coroutines.launch
  * 2. 动态画幅与分辨率监测 ([VideoSize] -> [VideoResolution])；
  * 3. 支持无缝清晰度热切换 ([switchQuality])；
  * 4. 跨平台状态机与 Seek 防回弹状态机 ([PendingSeekTracker]) 深度复用；
- * 5. 渲染载体可灵活挂载 [PlayerView]、[SurfaceView]、[TextureView] 或原始 [Surface]。
+ * 5. 通过原始 [Surface] 输出视频。
  */
 class Media3VideoPlayer(context: Context) : PlatformVideoPlayer {
 
@@ -264,25 +262,15 @@ class Media3VideoPlayer(context: Context) : PlatformVideoPlayer {
 
     override fun getVolume(): Float = player.volume
 
-    /** 供 Android 上层 UI 或 Compose AndroidView 直接访问底层播放实例（如 PlayerView 绑定） */
-    val rawExoPlayer: ExoPlayer get() = player
-
     override fun attachSurface(surfaceTarget: Any?) {
+        require(surfaceTarget == null || surfaceTarget is Surface)
         runOnMainThread {
-            when (surfaceTarget) {
-                is SurfaceView -> player.setVideoSurfaceView(surfaceTarget)
-                is TextureView -> player.setVideoTextureView(surfaceTarget)
-                is Surface -> player.setVideoSurface(surfaceTarget)
-                null -> player.clearVideoSurface()
-                else -> {
-                    // 支持上层传来 androidx.media3.ui.PlayerView 等扩展视图
-                    runCatching {
-                        val method = surfaceTarget.javaClass.getMethod("setPlayer", Player::class.java)
-                        method.invoke(surfaceTarget, player)
-                    }
-                }
-            }
+            player.setVideoSurface(surfaceTarget as Surface?)
         }
+    }
+
+    override fun detachSurface(surfaceTarget: Any) {
+        if (surfaceTarget is Surface) runOnMainThread { player.clearVideoSurface(surfaceTarget) }
     }
 }
 

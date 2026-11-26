@@ -31,11 +31,14 @@ interface PlatformVideoPlayer : PlatformMediaPlayer {
     /**
      * 挂载平台特定的渲染承载体。
      *
-     * - Android: 支持传入 `SurfaceView`、`TextureView` 或 `androidx.media3.ui.PlayerView`
+     * - Android: 传入原生渲染目标 `android.view.Surface`
      * - Desktop: 传入原生窗口句柄 (HWND / Window ID)
      * - 传入 null 表示解绑（组件 dispose 或页面退出时调用）
      */
     fun attachSurface(surfaceTarget: Any?)
+
+    /** 解绑该目标；已切换到另一目标时，平台实现可忽略旧目标的解绑。 */
+    fun detachSurface(surfaceTarget: Any) = attachSurface(null)
 }
 
 /**

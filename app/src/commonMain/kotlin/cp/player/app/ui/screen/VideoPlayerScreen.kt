@@ -12,7 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.ui.component.video.VideoPlayerView
 
@@ -30,7 +30,7 @@ import cp.player.app.ui.component.video.VideoPlayerView
 data class VideoPlayerScreen(
     val mediaId: String,
     val title: String? = null,
-) : Screen {
+) : RoutePage {
 
     @Composable
     override fun Content() {

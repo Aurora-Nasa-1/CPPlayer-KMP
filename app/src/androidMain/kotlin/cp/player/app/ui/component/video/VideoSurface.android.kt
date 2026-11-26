@@ -6,9 +6,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
@@ -34,32 +34,26 @@ actual fun VideoSurface(
             Modifier.fillMaxSize()
         }
 
-        AndroidView(
-            modifier = aspectModifier,
-            factory = { context ->
-                SurfaceView(context).apply {
-                    holder.addCallback(object : SurfaceHolder.Callback {
-                        override fun surfaceCreated(holder: SurfaceHolder) {
-                            player.attachSurface(this@apply)
-                        }
+        key(player) {
+            AndroidView(
+                modifier = aspectModifier,
+                factory = { context ->
+                    SurfaceView(context).apply {
+                        holder.addCallback(object : SurfaceHolder.Callback {
+                            override fun surfaceCreated(holder: SurfaceHolder) {
+                                player.attachSurface(holder.surface)
+                            }
 
-                        override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+                            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
 
-                        override fun surfaceDestroyed(holder: SurfaceHolder) {
-                            player.attachSurface(null)
-                        }
-                    })
-                }
-            },
-            onReset = {
-                player.attachSurface(null)
-            },
-        )
-    }
-
-    DisposableEffect(player) {
-        onDispose {
-            player.attachSurface(null)
+                            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                                player.detachSurface(holder.surface)
+                            }
+                        })
+                    }
+                },
+                onRelease = { player.detachSurface(it.holder.surface) },
+            )
         }
     }
 }
