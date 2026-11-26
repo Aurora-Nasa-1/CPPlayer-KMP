@@ -585,17 +585,9 @@ jobs:
           fi
           echo "--- 将发布 ${#keep[@]} 个文件 ---"
           printf '  %s\n' "${keep[@]}"
-      - name: Generate release notes
-        if: github.event_name != 'workflow_dispatch'
-        shell: bash
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || secrets.OPENAI_BASE_URL }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || secrets.OPENAI_MODEL }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL }}
-        run: |
-          bash scripts/generate_release_notes.sh "${{ needs.meta.outputs.tag }}" "${{ runner.temp }}/RELEASE_NOTES.md"
+      # 正文由 Android 工作流（release.yml / debug-release.yml）独家生成，本 job 不调 AI、
+      # 也不传 body/body_path —— softprops 对已存在的 release 不传正文就会保留原样，
+      # 于是无论本 job 与 Android job 谁先跑完，最终正文都是 Android 那份（含下载说明）。
       - name: Publish desktop assets
         if: github.event_name != 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
@@ -604,7 +596,6 @@ jobs:
           tag_name: ${{ needs.meta.outputs.tag }}
           name: "CPPlayer ${{ needs.meta.outputs.version }}${{ needs.meta.outputs.channel == 'debug' && ' (debug)' || '' }}"
           prerelease: ${{ needs.meta.outputs.channel != 'stable' }}
-          body_path: ${{ runner.temp }}/RELEASE_NOTES.md
           files: release-assets/**/*
       - name: Attach assets to existing release only
         if: github.event_name == 'workflow_dispatch'

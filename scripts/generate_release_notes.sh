@@ -81,6 +81,33 @@ generate() {
     else
         echo "**完整变更记录**: https://github.com/${REPO}/commits/${CURRENT_TAG:-HEAD}"
     fi
+
+    # 下载说明：只给稳定版（release.yml / desktop-release.yml 的 v* tag）追加。
+    # 三个发布 workflow 共用本脚本，desktop-release.yml 会用同一份 body 覆盖
+    # release.yml 的正文，所以必须写在这里才能保证稳定 release 始终带下载说明；
+    # debug-v* 预发布只有 debug APK、没有桌面资产，沿用原正文不加。
+    case "${CURRENT_TAG}" in
+        v[0-9]*)
+            cat <<'DOWNLOAD_NOTES'
+
+---
+
+## 下载
+
+在本页面下方的 **Assets** 中按平台下载：
+
+| 平台 | 文件 | 说明 |
+|---|---|---|
+| Windows | `CPPlayer-*Setup.exe` | 安装版（推荐） |
+| Windows | `CPPlayer-*Portable.zip` | 免安装版，解压即用 |
+| Linux | `cpplayer-*-linux-amd64.deb` | Debian / Ubuntu 等发行版 |
+| Linux | `CPPlayer-*-linux-x64.tar.gz` | 通用包，解压即用 |
+| Android | `CPPlayer-*-android.apk` | 直接安装 |
+
+Linux 用户也可通过 AUR 安装：`yay -S cpplayer-bin`。应用内置自动更新，发布新版本时会提示。
+DOWNLOAD_NOTES
+            ;;
+    esac
 }
 
 if [ -n "$OUTPUT_FILE" ]; then
