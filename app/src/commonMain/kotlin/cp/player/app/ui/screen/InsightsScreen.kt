@@ -41,7 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
@@ -88,11 +88,11 @@ import kotlinx.coroutines.launch
  * 现在收敛成一页三 tab：**概览 / 习惯 / 最近**。
  *
  * ### 为什么不用新 tab 代替「我的」
- * `MAIN_TABS` 的三个 Screen 是会话级单例，动 tab 列表要同步牵动 `MainScreen` 标题栏、
+ * `MAIN_TABS` 的三个 RoutePage 是会话级单例，动 tab 列表要同步牵动 `MainScreen` 标题栏、
  * `App.kt` Esc 兜底、`MainScreen` 消费这三处返回链判据。习惯页是「低频深看」，
  * 走 push 进内容层栈更合适，也让入口保持两个（仪表盘的「聆听统计」与「最近播放」两张卡）。
  */
-class InsightsScreen(private val initialTab: Int = TAB_OVERVIEW) : Screen {
+class InsightsScreen(private val initialTab: Int = TAB_OVERVIEW) : RoutePage {
 
     @Composable
     override fun Content() {

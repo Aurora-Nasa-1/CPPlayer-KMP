@@ -13,7 +13,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.desktopPlatform
@@ -49,7 +49,7 @@ import cp.player.app.ui.component.CpText
  */
 class PlaybackSettingsScreen(
     private val targetSettingId: String? = null,
-) : Screen {
+) : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current

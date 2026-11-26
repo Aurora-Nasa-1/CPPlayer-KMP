@@ -24,7 +24,7 @@ import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WavingHand
 import androidx.compose.ui.graphics.vector.ImageVector
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.i18n.CpStrings
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.version.AppVersion
@@ -99,7 +99,7 @@ data class SettingsEntry(
     val androidOnly: Boolean = false,
     val debugOnly: Boolean = false,
     val subItems: List<SettingsSubItem> = emptyList(),
-    val screen: (targetSettingId: String?) -> Screen,
+    val screen: (targetSettingId: String?) -> RoutePage,
 )
 
 /**

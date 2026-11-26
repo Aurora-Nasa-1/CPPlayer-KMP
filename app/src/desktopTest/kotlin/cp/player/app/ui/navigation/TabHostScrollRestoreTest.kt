@@ -24,9 +24,9 @@ import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Density
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.Navigator
-import cafe.adriel.voyager.transitions.ScreenTransition
+import cp.player.app.ui.navigation.PageStack
+import cp.player.app.ui.navigation.RouteDisplay
+import cp.player.app.ui.navigation.rememberPageStack
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -42,11 +42,11 @@ import kotlin.test.assertNotNull
 // 测试状态挂钩：文件级，测试开始时重置。
 private var stateA: LazyListState? = null
 private var stateB: LazyListState? = null
-private var capturedNav2: Navigator? = null
+private var capturedNav2: PageStack? = null
 private val scrollTargetA = mutableIntStateOf(-1)
 private val scrollTargetB = mutableIntStateOf(-1)
 
-private class ListScreenA : Screen {
+private class ListScreenA : RoutePage {
     @Composable
     override fun Content() {
         val st = rememberLazyListState()
@@ -60,7 +60,7 @@ private class ListScreenA : Screen {
     }
 }
 
-private class ListScreenB : Screen {
+private class ListScreenB : RoutePage {
     @Composable
     override fun Content() {
         val st = rememberLazyListState()
@@ -74,7 +74,7 @@ private class ListScreenB : Screen {
     }
 }
 
-private class BlankScreen2 : Screen {
+private class BlankScreen2 : RoutePage {
     @Composable
     override fun Content() {
         Text("blank")
@@ -83,9 +83,9 @@ private class BlankScreen2 : Screen {
 
 /** 复刻 MainScreen + TabContent 的 tab 宿主。 */
 private class TabHostScreen(
-    private val tabs: List<Screen>,
+    private val tabs: List<RoutePage>,
     private val onSelectorReady: ((Int) -> Unit) -> Unit,
-) : Screen {
+) : RoutePage {
     @Composable
     override fun Content() {
         val selectedIndexState = rememberSaveable { mutableIntStateOf(0) }
@@ -123,11 +123,12 @@ class TabHostScrollRestoreTest {
         var selectTab: (Int) -> Unit = {}
 
         val scene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
-            Navigator(TabHostScreen(listOf(ListScreenA(), ListScreenB())) { selectTab = it }) { nav ->
+            val nav = rememberPageStack(TabHostScreen(listOf(ListScreenA(), ListScreenB())) { selectTab = it }, "test-routes")
+            run {
                 capturedNav2 = nav
-                ScreenTransition(
-                    navigator = nav,
-                    transition = { fadeIn(tween(300)) togetherWith fadeOut(tween(220)) },
+                RouteDisplay(
+                    stack = nav,
+                    transition = { _, _, _ -> fadeIn(tween(300)) togetherWith fadeOut(tween(220)) },
                 )
             }
         }

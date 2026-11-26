@@ -79,8 +79,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.pageModel
+import cp.player.app.ui.navigation.RoutePage
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.ui.util.rememberCoverImageRequest
@@ -146,11 +146,11 @@ import kotlinx.coroutines.launch
 class LocalLibraryScreen(
     private val embedded: Boolean = false,
     private val initialTab: Int = 0,
-) : Screen {
+) : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
-        val model = rememberScreenModel { DownloadsScreenModel() }
+        val model = pageModel { DownloadsScreenModel() }
         val state by model.state.collectAsState()
         val s = cpStrings()
 

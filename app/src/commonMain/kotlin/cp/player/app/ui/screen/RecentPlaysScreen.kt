@@ -39,7 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.shareText
@@ -130,7 +130,7 @@ fun LazyListScope.recentPlaysRows(
  *   为真时不画页内返回键 —— 那种形态下标题与返回都由窗口标题栏 / 宿主提供，
  *   而且 `pop()` 会退出 [MainScreen] 本身。
  */
-class RecentPlaysScreen(private val embedded: Boolean = false) : Screen {
+class RecentPlaysScreen(private val embedded: Boolean = false) : RoutePage {
     @Composable
     override fun Content() {
         val s = cpStrings()

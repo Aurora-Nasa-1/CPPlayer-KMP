@@ -37,7 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.openUrl
@@ -60,7 +60,7 @@ import kotlinx.coroutines.launch
 /**
  * 听歌打卡与外部同步设置页面（Last.fm 等音乐社交与记录平台）。
  */
-class ScrobbleSettingsScreen : Screen {
+class ScrobbleSettingsScreen : RoutePage {
 
     @Composable
     override fun Content() {

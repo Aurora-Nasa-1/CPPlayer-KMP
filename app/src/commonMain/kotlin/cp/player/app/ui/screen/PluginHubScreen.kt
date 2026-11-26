@@ -45,8 +45,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.pageModel
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.AppModel
@@ -101,14 +101,14 @@ import kotlinx.coroutines.flow.first
  */
 class PluginHubScreen(
     private val initialView: PluginHubView = PluginHubView.INSTALLED,
-) : Screen {
+) : RoutePage {
 
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
         val scope = rememberCoroutineScope()
-        val repoModel = rememberScreenModel { PluginRepositoryScreenModel() }
-        val providerModel = rememberScreenModel { ProviderManagementModel() }
+        val repoModel = pageModel { PluginRepositoryScreenModel() }
+        val providerModel = pageModel { ProviderManagementModel() }
         val p = cpStrings().providerManagement
         val t = cpStrings().pluginRepository
 

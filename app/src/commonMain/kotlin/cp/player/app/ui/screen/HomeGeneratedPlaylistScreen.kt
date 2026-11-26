@@ -7,9 +7,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.core.screen.ScreenKey
+import cp.player.app.ui.navigation.pageModel
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.model.PlaylistDetailScreenModel
@@ -37,13 +36,13 @@ class HomeGeneratedPlaylistScreen(
      */
     private val seedPlaylistId: Long? = null,
     private val instanceToken: Long = cp.player.core.util.currentTimeMillis(),
-) : Screen {
-    override val key: ScreenKey =
+) : RoutePage {
+    override val key: String =
         "HomeGeneratedPlaylist_${playlist.id}_${kind}_${seedTrackId}_${instanceToken}"
 
     @Composable
     override fun Content() {
-        val model = rememberScreenModel { PlaylistDetailScreenModel() }
+        val model = pageModel { PlaylistDetailScreenModel() }
         val sourceTracks by rememberUpdatedState(initialTracks)
         var autoPlayConsumed by rememberSaveable(key) { mutableStateOf(false) }
         val effectiveStartIndex = if (!autoPlayConsumed) startIndex else null
@@ -79,7 +78,7 @@ class HomeGeneratedPlaylistScreen(
                         )
                     }
                     // 拉完**原地**换数据，不再 navigator.replace 到新实例：
-                    // Voyager 默认 Screen.key 是「类名」（getUniqueScreenKey，javap 核实），
+                    // Voyager 默认 RoutePage.key 是「类名」（getUniqueScreenKey，javap 核实），
                     // 与实例无关 ⇒ replace 出的新实例 key 相同，会**复用同一个**
                     // PlaylistDetailScreenModel；loadLocal 的 loadedPlaylistId 守卫
                     // 直接拦下更新，state 停在 tracks=[] + loading=true ⇒ 永久转圈。

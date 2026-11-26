@@ -50,9 +50,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.stack.StackEvent
-import cafe.adriel.voyager.navigator.Navigator
-import cafe.adriel.voyager.transitions.ScreenTransition
+import cp.player.app.ui.navigation.PageMotion
+import cp.player.app.ui.navigation.PageStack
+import cp.player.app.ui.navigation.RouteDisplay
+import cp.player.app.ui.navigation.rememberPageStack
 import cp.player.app.ui.anim.CoverFlightHost
 import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.CpTitleBarHeight
@@ -77,7 +78,7 @@ import kotlinx.coroutines.flow.map
  * 应用根 Composable。
  *
  * 假定平台入口已在调用前完成 [MusicBackend.init]（由 androidMain/desktopMain 执行）。
- * 负责主题应用与 Voyager 根 Navigator 的初始路由判定：
+ * 负责主题应用与 Nav3 根栈的初始路由判定：
  * - `onboarding_done` 未置位 → [OnboardingScreen]（首次使用引导；音源导入是**可选**一步，
  *   用户可以不导入音源、只播本机音乐）
  * - 其余（含 `BackendState.NoProvider` 的本地模式）→ [MainScreen]
@@ -94,7 +95,7 @@ import kotlinx.coroutines.flow.map
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun App(
-    titleBar: (@Composable (Navigator) -> Unit)? = null,
+    titleBar: (@Composable (PageStack) -> Unit)? = null,
 ) {
     PlaybackMediaControlsBridge()
     NextTrackCoverPrefetchEffect()
@@ -116,6 +117,7 @@ fun App(
         AppModel.syncPlaybackQuality()
         AppModel.syncAudioEffect()
         AppModel.syncFade()
+        AppModel.syncFlickEngineToggles()
         AppModel.syncSmartKaraokeLrc()
         AppModel.restoreLocalServer()
         AppModel.restoreLyricPush()
@@ -162,21 +164,18 @@ fun App(
                     is AppStartDestination.Error -> BackendErrorScreen(startDestination.message)
                 }
             }
-            Navigator(start) { navigator ->
+            val navigator = rememberPageStack(start, "window-routes")
+            run {
                 val appNavigator = remember(navigator) {
-                    cp.player.app.ui.navigation.VoyagerAppNavigator(navigator, navigator)
+                    cp.player.app.ui.navigation.StackAppNavigator(navigator, navigator)
                 }
-                // 当 state 变为 Ready 时自动替换为 MainScreen
+                // Backend startup changes the root, independently of pages above it.
                 LaunchedEffect(startDestination) {
-                    val target = when (startDestination) {
-                        AppStartDestination.Loading -> StartupScreen(s.common.initializingBackend)
-                        AppStartDestination.Onboarding -> OnboardingScreen()
-                        AppStartDestination.Main -> MainScreen()
-                        is AppStartDestination.Error -> BackendErrorScreen(startDestination.message)
-                    }
-                    val current = runCatching { navigator.lastItem }.getOrNull()
-                    if (current?.javaClass != target.javaClass) {
-                        navigator.replaceAll(target)
+                    val current = navigator.firstItem
+                    if (current::class != start::class ||
+                        (startDestination is AppStartDestination.Error && current !== start)
+                    ) {
+                        navigator.replaceAll(start)
                     }
                 }
 
@@ -248,7 +247,7 @@ fun App(
                 // 纳入 enabled 判据，并让兜底动作与标题栏返回键**同链**：内嵌 pop → 根 pop →
                 // 收面板。两处各写一套判据的话，「Esc 能退、点返回键不能退」的漂移迟早出现。
                 //
-                // 安卓端不注册：Voyager 的 `Navigator` 已经接管了系统返回键，再加一条会双重出栈。
+                // 安卓端由 Nav3 接管系统返回键，避免再注册一个全局处理器。
                 if (!cp.player.app.platform.isAndroidPlatform()) {
                     cp.player.app.platform.BackHandler(
                         enabled = navigator.size > 1 || cp.player.app.ui.util.DesktopShell.pageCanGoBack,
@@ -405,19 +404,17 @@ fun App(
                                                 // 转场规格只在组合期取一次：`transition` 是普通 lambda，
                                                 // 里面不能调用 @Composable 的 CpMotion 取值函数。
                                                 val pageTransitions = cp.player.app.ui.theme.rememberCpPageTransitions()
-                                                ScreenTransition(
-                                                    navigator = navigator,
-                                                    transition = {
+                                                RouteDisplay(
+                                                    stack = navigator,
+                                                    transition = { from, to, isPop ->
                                                         // 播放页路由（从全局 MiniPlayer 展开）：
                                                         // 桌面端保持双端淡入淡出，由窗口沉浸态协调顶栏；
                                                         // 手机端应用背景沉底（scale/slide/dim）与浮起动效，sharedBounds 的「小卡片长成全屏」形变唱主角。
-                                                        if (targetState is PlayerScreen ||
-                                                            initialState is PlayerScreen
-                                                        ) {
+                                                        if (to == PageMotion.Player || from == PageMotion.Player) {
                                                             if (isDesktop) {
                                                                 fadeIn(tween(CpMotion.PlayerExpandMs)) togetherWith
                                                                     fadeOut(tween(CpMotion.PlayerExpandMs))
-                                                            } else if (targetState is PlayerScreen) {
+                                                            } else if (to == PageMotion.Player) {
                                                                 val enter = fadeIn(tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing))
                                                                 val exit = scaleOut(
                                                                     animationSpec = tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing),
@@ -450,28 +447,24 @@ fun App(
                                                                     targetContentZIndex = -1f
                                                                 }
                                                             }
-                                                        } else if (targetState is cp.player.app.ui.screen.PlaylistDetailScreen ||
-                                                            initialState is cp.player.app.ui.screen.PlaylistDetailScreen ||
-                                                            targetState is cp.player.app.ui.screen.HomeGeneratedPlaylistScreen ||
-                                                            initialState is cp.player.app.ui.screen.HomeGeneratedPlaylistScreen
-                                                        ) {
+                                                        } else if (to == PageMotion.Playlist || from == PageMotion.Playlist) {
                                                             // 歌单详情 fade 转场：配合 CoverFlight 封面飞行器平滑衔接，
                                                             // 避免整个页面横向硬滑导致封面与主页脱节。
                                                             fadeIn(tween(300)) togetherWith fadeOut(tween(220))
                                                         } else {
                                                             // 统一遵循 M3 Expressive Shared Axis (X 轴) 动效体系规范
-                                                            if (!isDesktop && initialState is MainScreen && targetState !is MainScreen) {
+                                                            if (!isDesktop && from == PageMotion.Main && to != PageMotion.Main) {
                                                                 // 手机端从主页进入无底栏子页面：Shared Axis X 推进并维持层级
                                                                 pageTransitions.sharedAxisX(isPop = false).apply {
                                                                     targetContentZIndex = 1f
                                                                 }
-                                                            } else if (!isDesktop && targetState is MainScreen && initialState !is MainScreen) {
+                                                            } else if (!isDesktop && to == PageMotion.Main && from != PageMotion.Main) {
                                                                 // 手机端从无底栏子页面返回主页：Shared Axis X 回退并维持层级
                                                                 pageTransitions.sharedAxisX(isPop = true).apply {
                                                                     targetContentZIndex = -1f
                                                                 }
                                                             } else {
-                                                                pageTransitions.sharedAxisX(isPop = navigator.lastEvent == StackEvent.Pop)
+                                                                pageTransitions.sharedAxisX(isPop = isPop)
                                                             }
                                                         }
                                                     },

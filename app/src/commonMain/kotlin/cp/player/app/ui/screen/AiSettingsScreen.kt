@@ -13,7 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsButtonItem
@@ -57,7 +57,7 @@ import kotlinx.coroutines.launch
  * 诊断结果只出现在 [SettingsNote] 一处，按钮副标题保持静态说明 ——
  * 同一句话在行内和页尾各写一遍，读起来像两条不同的状态。
  */
-class AiSettingsScreen : Screen {
+class AiSettingsScreen : RoutePage {
 
     @Composable
     override fun Content() {

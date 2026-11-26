@@ -68,7 +68,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.ApiCallRecord
 import cp.player.app.AppModel
 import cp.player.app.HealthLevel
@@ -130,7 +130,7 @@ private enum class HealthTab(val icon: ImageVector) {
 /**
  * 诊断与健康监控页面：系统体检、主动接口测试、排障工具箱、概览指标、方法统计、调用日志、Provider 状态。
  */
-class HealthScreen : Screen {
+class HealthScreen : RoutePage {
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable

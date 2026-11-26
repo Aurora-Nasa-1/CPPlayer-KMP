@@ -43,10 +43,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
+import androidx.lifecycle.ViewModel
+import cp.player.app.ui.navigation.pageModel
+import androidx.lifecycle.viewModelScope
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.i18n.PluginRepositoryStrings
 import cp.player.app.i18n.cpStrings
 import cp.player.app.presentation.navigation.AppRoute
@@ -72,11 +72,11 @@ import cp.player.core.pluginrepo.PluginVersion
 import cp.player.core.pluginrepo.RepositoryPluginKind
 import cp.player.core.pluginrepo.requireRepositoryHttpsUrl
 
-class PluginRepositoryScreen : Screen {
+class PluginRepositoryScreen : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
-        val model = rememberScreenModel { PluginRepositoryScreenModel() }
+        val model = pageModel { PluginRepositoryScreenModel() }
         LaunchedEffect(model) { model.load() }
         val state by model.repository.state.collectAsState()
         val error by model.error.collectAsState()
@@ -105,9 +105,9 @@ class PluginRepositoryScreen : Screen {
 
 class PluginRepositoryScreenModel(
     val repository: PluginRepository = PluginRepository.current(),
-) : ScreenModel {
+) : ViewModel() {
     private val presenter = cp.player.app.presentation.pluginrepository.PluginRepositoryPresenter(
-        scope = screenModelScope,
+        scope = viewModelScope,
         repository = repository,
     )
 

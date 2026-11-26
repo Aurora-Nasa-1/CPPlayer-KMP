@@ -16,7 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CpRouteScaffold
@@ -42,7 +42,7 @@ import cp.player.app.ui.navigation.LocalAppNavigator
  * - AMOLED 纯黑极致省电与对比度增强开关
  * - Android Material You (Monet) 动态壁纸与封面取色配置
  */
-class DarkThemeSettingsScreen : Screen {
+class DarkThemeSettingsScreen : RoutePage {
 
     @Composable
     override fun Content() {

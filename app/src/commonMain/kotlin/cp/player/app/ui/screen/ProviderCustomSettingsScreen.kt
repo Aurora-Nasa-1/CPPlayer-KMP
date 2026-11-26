@@ -22,7 +22,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.SettingsClickItem
 import cp.player.app.ui.component.SettingsDropdownItem
@@ -47,7 +47,7 @@ class ProviderCustomSettingsScreen(
     private val providerId: String,
     private val providerName: String,
     private val schemas: List<ProviderSettingItemSchema>
-) : Screen {
+) : RoutePage {
 
     @Composable
     override fun Content() {

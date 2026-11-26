@@ -59,8 +59,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.pageModel
+import cp.player.app.ui.navigation.RoutePage
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
@@ -113,12 +113,12 @@ import kotlin.math.roundToInt
  * - **桌面面板**：[embedded] 为真，由 `MainScreen` 的 `DesktopPane.Downloads` 盖在内容层上。
  *   标题与返回归外壳（窗口 chrome，或宽屏平板壳层自己的顶栏），页内再画一条就是双顶栏。
  */
-class DownloadsScreen(private val embedded: Boolean = false) : Screen {
+class DownloadsScreen(private val embedded: Boolean = false) : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
-        // rememberScreenModel 是 Screen 的扩展函数，只能在 Content() 里调用（见 AGENTS.md）。
-        val model = rememberScreenModel { DownloadsScreenModel() }
+        // pageModel 是 RoutePage 的扩展函数，只能在 Content() 里调用（见 AGENTS.md）。
+        val model = pageModel { DownloadsScreenModel() }
         CpRouteScaffold(
             title = cpStrings().downloads.screenTitle,
             onBack = { navigator.pop() },

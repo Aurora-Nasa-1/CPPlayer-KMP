@@ -33,8 +33,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.pageModel
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.presentation.navigation.AppRoute
@@ -68,7 +68,7 @@ import cp.player.app.ui.util.UiEvents
  */
 class AppearanceSettingsScreen(
     private val targetSettingId: String? = null,
-) : Screen {
+) : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
@@ -324,12 +324,12 @@ class AppearanceSettingsScreen(
  * 后者是用户显式下载的资产。两者都是磁盘上的音频文件，用户极易混淆，
  * 因此每个清理动作的副标题与确认文案里都写死了这一句。
  */
-class StorageSettingsScreen : Screen {
+class StorageSettingsScreen : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
-        // rememberScreenModel 是 Screen 的扩展函数，只能在 Content() 里调用（见 AGENTS.md）。
-        val model = rememberScreenModel { StorageSettingsModel() }
+        // pageModel 是 RoutePage 的扩展函数，只能在 Content() 里调用（见 AGENTS.md）。
+        val model = pageModel { StorageSettingsModel() }
         StorageSettingsContent(
             model = model,
             onBack = { navigator.pop() },

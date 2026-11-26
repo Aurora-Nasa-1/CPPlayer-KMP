@@ -1,7 +1,7 @@
 package cp.player.app.ui.model
 
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import cp.player.app.presentation.librarysearch.LibrarySearchContract
 import cp.player.app.presentation.librarysearch.LibrarySearchPresenter
 import cp.player.core.music.PlaylistSummary
@@ -13,9 +13,9 @@ typealias LibraryTrackHit = cp.player.app.presentation.librarysearch.LibraryTrac
 typealias LibrarySearchUiState = cp.player.app.presentation.librarysearch.LibrarySearchUiState
 
 /** 歌单歌曲搜索的 Voyager 适配层（Thin Adapter）。 */
-class LibrarySearchScreenModel : ScreenModel, LibrarySearchContract {
+class LibrarySearchScreenModel : ViewModel(), LibrarySearchContract {
 
-    private val presenter = LibrarySearchPresenter(scope = screenModelScope)
+    private val presenter = LibrarySearchPresenter(scope = viewModelScope)
 
     override val state: StateFlow<LibrarySearchUiState> get() = presenter.state
     override val scope: CoroutineScope get() = presenter.scope

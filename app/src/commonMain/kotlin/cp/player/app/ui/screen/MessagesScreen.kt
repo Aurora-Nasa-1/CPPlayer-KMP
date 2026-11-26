@@ -34,10 +34,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
+import androidx.lifecycle.ViewModel
+import cp.player.app.ui.navigation.pageModel
+import androidx.lifecycle.viewModelScope
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
@@ -69,14 +69,14 @@ import kotlinx.coroutines.launch
 /**
  * 消息与私信列表页面。
  */
-class MessagesScreen : Screen {
+class MessagesScreen : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
         MessagesContent(
-            // `rememberScreenModel` 是定义在 `Screen` 上的**扩展函数**，必须在 Screen
+            // `pageModel` 是定义在 `RoutePage` 上的**扩展函数**，必须在 RoutePage
             // 子类的成员里调用（顶层的 @Composable 里没有接收者）。
-            model = rememberScreenModel { MessagesModel() },
+            model = pageModel { MessagesModel() },
             onBack = { navigator.pop() },
             onOpenChat = { contact -> navigator.push(AppRoute.Chat(contact.userId, contact.nickname)) },
         )
@@ -90,8 +90,8 @@ internal typealias MessagesSessionKey = cp.player.app.presentation.messages.Mess
  * 会话列表的数据源。
  *
  * ⚠️ **刻意是 `ScreenModel` 但被两处共用**：`MessagesScreen`（窄屏整页）与
- * `MessagesPane`（桌面双栏左栏）各 `rememberScreenModel { }` 一份 —— 它们是**两个
- * 不同的 Screen / 不同的组合位置**，共用实例反而会在宽窄切换时把加载态搅在一起。
+ * `MessagesPane`（桌面双栏左栏）各 `pageModel { }` 一份 —— 它们是**两个
+ * 不同的 RoutePage / 不同的组合位置**，共用实例反而会在宽窄切换时把加载态搅在一起。
  * 这里提升成 `internal` 只是为了让 `MessagesPane` 够得到，不是共享实例。
  */
 internal class MessagesModel(
@@ -100,9 +100,9 @@ internal class MessagesModel(
     },
     subscribedUids: () -> Set<Long> = { AppModel.messageNotifySubscribedUids() },
     requestScope: CoroutineScope? = null,
-) : ScreenModel {
+) : ViewModel() {
     private val presenter = cp.player.app.presentation.messages.MessagesPresenter(
-        scope = requestScope ?: screenModelScope,
+        scope = requestScope ?: viewModelScope,
         fetchContacts = fetchContacts,
         subscribedUids = subscribedUids,
     )

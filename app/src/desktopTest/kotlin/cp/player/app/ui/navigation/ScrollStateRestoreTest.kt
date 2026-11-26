@@ -18,9 +18,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Density
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.Navigator
-import cafe.adriel.voyager.transitions.ScreenTransition
+import cp.player.app.ui.navigation.PageStack
+import cp.player.app.ui.navigation.RouteDisplay
+import cp.player.app.ui.navigation.rememberPageStack
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -39,10 +39,10 @@ import kotlin.test.assertNotNull
 
 // 测试状态挂钩：文件级，测试开始时重置。
 private var capturedListState: LazyListState? = null
-private var capturedNav: Navigator? = null
+private var capturedNav: PageStack? = null
 private val scrollTarget = mutableIntStateOf(-1)
 
-private class ListScreen : Screen {
+private class ListScreen : RoutePage {
     @Composable
     override fun Content() {
         val st = rememberLazyListState()
@@ -57,7 +57,7 @@ private class ListScreen : Screen {
     }
 }
 
-private class BlankScreen : Screen {
+private class BlankScreen : RoutePage {
     @Composable
     override fun Content() {
         Text("blank")
@@ -74,11 +74,12 @@ class ScrollStateRestoreTest {
         var frameTimeNanos = 0L
 
         val scene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
-            Navigator(ListScreen()) { nav ->
+            val nav = rememberPageStack(ListScreen(), "test-routes")
+            run {
                 capturedNav = nav
-                ScreenTransition(
-                    navigator = nav,
-                    transition = {
+                RouteDisplay(
+                    stack = nav,
+                    transition = { _, _, _ ->
                         fadeIn(tween(300)) togetherWith fadeOut(tween(220))
                     },
                 )

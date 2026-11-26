@@ -1,7 +1,7 @@
 package cp.player.app.ui.model
 
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import cp.player.app.i18n.CpStrings
 import cp.player.app.presentation.downloads.DownloadsContract
 import cp.player.app.presentation.downloads.DownloadsPresenter
@@ -22,19 +22,19 @@ typealias DownloadsUiState = cp.player.app.presentation.downloads.DownloadsUiSta
 /**
  * 下载管理页的 Voyager 适配层（Thin Adapter）。
  */
-class DownloadsScreenModel : ScreenModel, DownloadsContract {
+class DownloadsScreenModel : ViewModel(), DownloadsContract {
 
     private val presenter = DownloadsPresenter(
-        scope = screenModelScope,
+        scope = viewModelScope,
         notify = UiEvents::notify,
     )
 
     override val state: StateFlow<DownloadsUiState> get() = presenter.state
     override val scope: CoroutineScope get() = presenter.scope
 
-    override fun onDispose() {
+    override fun onCleared() {
         presenter.dispose()
-        super.onDispose()
+        super.onCleared()
     }
 
     override fun setLibraryTab(index: Int) = presenter.setLibraryTab(index)

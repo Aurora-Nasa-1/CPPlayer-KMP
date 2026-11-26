@@ -17,7 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.isAggressiveStandbyActive
@@ -54,7 +54,7 @@ import cp.player.app.ui.component.CpText
  * `DisposableEffect` 只是兜底 —— 可见性关闭时本页临时拉起发现，离开即还。
  * 设备列表因此不再要求「两台设备都停留在这页」，只要求两端都在运行 CPPlayer。
  */
-class StandbySettingsScreen : Screen {
+class StandbySettingsScreen : RoutePage {
 
     @Composable
     override fun Content() {

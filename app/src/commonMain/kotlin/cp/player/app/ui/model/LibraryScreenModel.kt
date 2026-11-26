@@ -1,7 +1,7 @@
 package cp.player.app.ui.model
 
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import cp.player.app.presentation.library.LibraryPresenter
 import cp.player.app.ui.util.UiEvents
 import cp.player.core.music.PlaylistSummary
@@ -15,11 +15,11 @@ typealias LibraryUiState = cp.player.app.presentation.library.LibraryUiState
  *
  * 核心状态机交由框架中立的 [LibraryPresenter] 处理。
  */
-class LibraryScreenModel(initialPlaylistId: Long? = null) : ScreenModel {
+class LibraryScreenModel(initialPlaylistId: Long? = null) : ViewModel() {
 
     private val presenter = LibraryPresenter(
         initialPlaylistId = initialPlaylistId,
-        scope = screenModelScope,
+        scope = viewModelScope,
         notify = UiEvents::notify,
     )
 

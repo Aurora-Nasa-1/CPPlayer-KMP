@@ -27,8 +27,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.Navigator
+import cp.player.app.ui.navigation.PageStack
+import cp.player.app.ui.navigation.RouteDisplay
+import cp.player.app.ui.navigation.rememberPageStack
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.test.Test
@@ -36,7 +37,7 @@ import kotlin.test.assertTrue
 
 private var placedScreens = mutableSetOf<String>()
 
-private class TrackedScreen(val name: String) : Screen {
+private class TrackedScreen(val name: String) : RoutePage {
     @Composable
     override fun Content() {
         placedScreens.add(name)
@@ -122,7 +123,7 @@ private fun TestTabContent(
 private val LocalDesktopTabIndexTest = compositionLocalOf { 0 }
 private val LocalDesktopVisitedTabsTest = compositionLocalOf<List<Int>> { listOf(0) }
 
-private object DesktopContentRootScreenTest : Screen {
+private object DesktopContentRootScreenTest : RoutePage {
     @Composable
     override fun Content() {
         val selectedIndex = LocalDesktopTabIndexTest.current
@@ -131,10 +132,10 @@ private object DesktopContentRootScreenTest : Screen {
     }
 }
 
-private var testRootNavigator: Navigator? = null
+private var testRootNavigator: PageStack? = null
 private var selectTabHook: ((Int) -> Unit)? = null
 
-private class TestMainScreen : Screen {
+private class TestMainScreen : RoutePage {
     @Composable
     override fun Content() {
         val selectedIndexState = rememberSaveable { mutableIntStateOf(0) }
@@ -155,12 +156,12 @@ private class TestMainScreen : Screen {
             LocalDesktopTabIndexTest provides selectedIndex,
             LocalDesktopVisitedTabsTest provides visitedTabs.toList(),
         ) {
-            Navigator(DesktopContentRootScreenTest)
+            RouteDisplay(rememberPageStack(DesktopContentRootScreenTest, "test-content"))
         }
     }
 }
 
-private class DummyScreen(val name: String) : Screen {
+private class DummyScreen(val name: String) : RoutePage {
     @Composable
     override fun Content() {
         Text("Dummy: $name")
@@ -176,9 +177,10 @@ class SettingsTabBlankRegressionTest {
         var frameTimeNanos = 0L
 
         val scene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
-            Navigator(TestMainScreen()) { nav ->
+            val nav = rememberPageStack(TestMainScreen(), "test-routes")
+            run {
                 testRootNavigator = nav
-                nav.lastItem.Content()
+                RouteDisplay(nav)
             }
         }
 

@@ -1,7 +1,7 @@
 package cp.player.app.ui.model
 
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import cp.player.app.i18n.CpStrings
 import cp.player.app.presentation.playlistdetail.PlaylistDetailContract
 import cp.player.app.presentation.playlistdetail.PlaylistDetailPresenter
@@ -21,12 +21,12 @@ typealias PlaylistDetailUiState = cp.player.app.presentation.playlistdetail.Play
  *
  * 全部状态机与业务逻辑位于框架中立的
  * [cp.player.app.presentation.playlistdetail.PlaylistDetailPresenter]，
- * 本类只桥接 `screenModelScope`、操作提示与封面飞行动画。
+ * 本类只桥接 `viewModelScope`、操作提示与封面飞行动画。
  */
-class PlaylistDetailScreenModel : ScreenModel, PlaylistDetailContract {
+class PlaylistDetailScreenModel : ViewModel(), PlaylistDetailContract {
 
     private val presenter = PlaylistDetailPresenter(
-        scope = screenModelScope,
+        scope = viewModelScope,
         notify = UiEvents::notify,
         playCoverFlight = { track -> CoverFlight.play(track.id, track.coverUrl) },
     )

@@ -1,7 +1,7 @@
 package cp.player.app.ui.model
 
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import cp.player.app.presentation.storage.StorageSettingsContract
 import cp.player.app.presentation.storage.StorageSettingsPresenter
 import cp.player.app.ui.util.UiEvents
@@ -12,10 +12,10 @@ import kotlinx.coroutines.flow.StateFlow
 typealias StorageUiState = cp.player.app.presentation.storage.StorageUiState
 
 /** 存储管理页的 Voyager 适配层（Thin Adapter）。 */
-class StorageSettingsModel : ScreenModel, StorageSettingsContract {
+class StorageSettingsModel : ViewModel(), StorageSettingsContract {
 
     private val presenter = StorageSettingsPresenter(
-        scope = screenModelScope,
+        scope = viewModelScope,
         notify = UiEvents::notify,
     )
 

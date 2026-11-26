@@ -35,8 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.pageModel
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.presentation.navigation.AppRoute
@@ -66,10 +66,10 @@ import cp.player.app.ui.component.CpText
  * 入口在「我的 → 曲库」标题行（[cp.player.app.ui.screen.LibraryScreen]）：
  * 桌面在页面标题下的分体按钮，手机在曲库标题行右侧。
  */
-class ImportPlaylistScreen : Screen {
+class ImportPlaylistScreen : RoutePage {
     @Composable
     override fun Content() {
-        val model = rememberScreenModel { ImportPlaylistScreenModel() }
+        val model = pageModel { ImportPlaylistScreenModel() }
         val navigator = LocalAppNavigator.current
         ImportPlaylistContent(
             model = model,

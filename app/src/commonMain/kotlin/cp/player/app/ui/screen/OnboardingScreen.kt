@@ -58,8 +58,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.pageModel
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.OnboardingStrings
 import cp.player.app.i18n.cpStrings
@@ -98,7 +98,7 @@ import kotlinx.coroutines.withContext
  * @param replay 从设置里「重看一遍」进入时为 true：结束时**只返回**，
  *   不重写 `onboarding_done`，也不会把首屏路由顶掉。
  */
-class OnboardingScreen(private val replay: Boolean = false) : Screen {
+class OnboardingScreen(private val replay: Boolean = false) : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
@@ -114,7 +114,7 @@ class OnboardingScreen(private val replay: Boolean = false) : Screen {
         val hasProvider = providers.isNotEmpty()
         // 有音源才创建登录模型：没有音源时既没有可登录的账号，也不该发二维码请求。
         val accountModel = if (hasProvider) {
-            rememberScreenModel { AccountScreenModel(s.account) }
+            pageModel { AccountScreenModel(s.account) }
         } else {
             null
         }

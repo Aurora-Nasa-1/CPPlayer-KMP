@@ -31,10 +31,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
+import androidx.lifecycle.ViewModel
+import cp.player.app.ui.navigation.pageModel
+import androidx.lifecycle.viewModelScope
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
@@ -80,16 +80,16 @@ class UserProfileScreen(
     private val uid: Long,
     private val displayName: String? = null,
     private val resourceId: String = uid.toString(),
-) : Screen {
+) : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
         UserProfileContent(
             uid = resourceId,
             displayName = displayName,
-            // `rememberScreenModel` 是定义在 `Screen` 上的**扩展函数**，只有 Screen 子类的
+            // `pageModel` 是定义在 `RoutePage` 上的**扩展函数**，只有 RoutePage 子类的
             // 成员里才有接收者；顶层的 @Composable 里调用会报 `Unresolved reference`。
-            model = rememberScreenModel { UserProfileModel() },
+            model = pageModel { UserProfileModel() },
             onBack = { navigator.pop() },
             onOpenChat = if (uid > 0L && resourceId == uid.toString()) {
                 { name -> navigator.push(AppRoute.Chat(uid, name)) }
@@ -103,9 +103,9 @@ private typealias ProfileUiState = cp.player.app.presentation.userprofile.Profil
 /** 歌手主页默认展开的热门歌曲条数（超出部分折叠，避免把「专辑」推到很下面）。 */
 private const val SONG_PREVIEW = 10
 
-private class UserProfileModel : ScreenModel {
+private class UserProfileModel : ViewModel() {
     private val presenter = cp.player.app.presentation.userprofile.UserProfilePresenter(
-        scope = screenModelScope,
+        scope = viewModelScope,
     )
 
     val state: StateFlow<ProfileUiState> get() = presenter.state
@@ -142,8 +142,8 @@ private fun UserProfileContent(
     // 借 HomeScreenModel 现成的歌单动作（播放 / 队列 / 下载 / 分享 / 删除或取消收藏）：
     // 与侧栏、歌单详情页共用「先取详情再拿曲目」的那条取数路径。
     // ⚠️ 不能用 `remember { HomeScreenModel(...) }`：Voyager 的 ScreenModel 只有在
-    // `rememberScreenModel` 托管时才会被 dispose，直接 remember 会让它的
-    // screenModelScope 永久留在全局表里。这里用页面自己的 scope 托管纯 Presenter。
+    // `pageModel` 托管时才会被 dispose，直接 remember 会让它的
+    // viewModelScope 永久留在全局表里。这里用页面自己的 scope 托管纯 Presenter。
     val playlistActions = remember(scope) {
         cp.player.app.presentation.home.HomePresenter(
             scope = scope,

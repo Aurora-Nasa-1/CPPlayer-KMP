@@ -34,10 +34,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
+import androidx.lifecycle.ViewModel
+import cp.player.app.ui.navigation.pageModel
+import androidx.lifecycle.viewModelScope
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
@@ -74,16 +74,16 @@ import cp.player.app.ui.theme.cpSheetSurface
 class ChatScreen(
     private val peerUid: Long,
     private val peerName: String? = null,
-) : Screen {
+) : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
         ChatContent(
             peerUid = peerUid,
             peerName = peerName,
-            // `rememberScreenModel` 是定义在 `Screen` 上的**扩展函数**，只有 Screen 子类的
+            // `pageModel` 是定义在 `RoutePage` 上的**扩展函数**，只有 RoutePage 子类的
             // 成员里才有接收者（顶层 @Composable 里会报 `Unresolved reference`）。
-            model = rememberScreenModel { ChatModel() },
+            model = pageModel { ChatModel() },
             onBack = { navigator.pop() },
         )
     }
@@ -98,9 +98,9 @@ internal class ChatModel(
     sendText: suspend (peerUid: Long, text: String) -> Boolean =
         { peerUid, text -> AppModel.socialRepository.sendMessage(peerUid, text) },
     requestScope: CoroutineScope? = null,
-) : ScreenModel {
+) : ViewModel() {
     private val presenter = cp.player.app.presentation.chat.ChatPresenter(
-        scope = requestScope ?: screenModelScope,
+        scope = requestScope ?: viewModelScope,
         fetchMessages = fetchMessages,
         sendText = sendText,
     )

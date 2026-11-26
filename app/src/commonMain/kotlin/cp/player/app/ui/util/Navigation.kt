@@ -1,21 +1,12 @@
 package cp.player.app.ui.util
 
 import androidx.compose.runtime.staticCompositionLocalOf
-import cafe.adriel.voyager.navigator.Navigator
+import cp.player.app.ui.navigation.PageStack
 
 /**
- * **根** Navigator（`App.kt` 里那一条），由 `App` 在整棵树外层 provide。
- *
- * 桌面宽屏的内容区里有**内嵌 Navigator**（`MainScreen` 的 `DesktopContentRootScreen`），
- * 页面里读 `LocalNavigator.current` 拿到的是**最近的**那一个 —— 详情页 push 全落内容区，
- * 左侧导航栏因此常驻。这是大多数页面的正确行为，但**全屏体验**是例外：播放页这类
- * 要盖住整个窗口（含侧栏）的页面，必须显式 push 到根 Navigator，否则会被塞进内容区、
- * 贴着侧栏渲染。调用点极少（`HomeScreen` 的「打开播放页」、全局 MiniPlayer），统一改读本 local。
- *
- * 平台上，内嵌 Navigator 不存在，本 local 与 `LocalNavigator.current` 是同一个 Navigator，
- * 两条写法行为一致。
+ * 整窗根栈由 App 提供。宽屏内容宿主需要它来把全屏路由送到正确的栈。
  */
-val LocalRootNavigator = staticCompositionLocalOf<Navigator?> { null }
+val LocalRootNavigator = staticCompositionLocalOf<PageStack?> { null }
 
 /**
  * 把根 Navigator 弹回**主壳层**（`MainScreen`），返回是否真的需要回退。
@@ -26,7 +17,7 @@ val LocalRootNavigator = staticCompositionLocalOf<Navigator?> { null }
  * `MainScreen` 的局部状态 `desktopPane`，靠 `LaunchedEffect` 消费 `DesktopShell` 里
  * 的单向指令（`settingsRequested` / `messagesRequested` / `pendingSearchQuery`）。
  *
- * 而 `MainScreen` 是根 Navigator 的**起点**，Voyager 只渲染栈顶 —— 从曲库 push 到
+ * 而 `MainScreen` 是根 Navigator 的**起点**，导航宿主只渲染栈顶 —— 从曲库 push 到
  * `PlaylistDetailScreen` 之后，`MainScreen` 就**离开组合了**（这一点 `Main.kt` 的
  * 标题栏 KDoc 里已经写明：「被 push 出去的页面盖住后会离开组合、不再发布」）。
  *
@@ -38,22 +29,6 @@ val LocalRootNavigator = staticCompositionLocalOf<Navigator?> { null }
  *
  * 所以任何走 `DesktopShell` 单向指令的入口，发指令前都必须先确保主壳层在栈顶。
  *
- * ## 为什么用 `popUntilRoot()` 而不是循环 `pop()`
- *
- * `popUntilRoot()` 是 Voyager 提供的原子操作（已 `javap` 核实签名），
- * 一次调用清空到只剩根页；循环 `pop()` 每调用一次都会触发一帧重组，
- * 深栈时会看到中间的页面一闪而过。
- *
  * @return 是否执行了回退（`false` 表示本来就在主壳层，无需回退）。
  */
-fun Navigator?.popToMainShell(): Boolean {
-    if (this == null) return false
-    if (size <= 1) return false // 已经在根页（通常就是 MainScreen）
-    return runCatching {
-        popUntilRoot()
-        true
-    }.getOrElse {
-        // Navigator 已 dispose：没法保证主壳层可见，但也不该崩。
-        false
-    }
-}
+fun PageStack?.popToMainShell(): Boolean = this?.popUntilRoot() ?: false

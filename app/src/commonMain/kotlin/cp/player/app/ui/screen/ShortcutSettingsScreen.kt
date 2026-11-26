@@ -40,7 +40,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
@@ -61,7 +61,7 @@ import cp.player.app.ui.component.CpText
 /**
  * 快捷键设置页面（桌面端专属）：自定义全局与应用内快捷键。
  */
-class ShortcutSettingsScreen : Screen {
+class ShortcutSettingsScreen : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current

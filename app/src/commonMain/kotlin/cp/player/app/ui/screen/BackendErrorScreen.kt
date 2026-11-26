@@ -34,10 +34,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
+import androidx.lifecycle.ViewModel
+import cp.player.app.ui.navigation.pageModel
+import androidx.lifecycle.viewModelScope
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.ProviderManagementStrings
 import cp.player.app.i18n.cpStrings
@@ -62,12 +62,12 @@ import cp.player.app.ui.component.CpText
  *   导入即自动激活，成功后 stateFlow 迁移到 Ready，[cp.player.app.App] 的
  *   LaunchedEffect 会自动 replaceAll 到主界面。
  */
-class BackendErrorScreen(private val message: String) : Screen {
+class BackendErrorScreen(private val message: String) : RoutePage {
     @Composable
     override fun Content() {
-        // rememberScreenModel 是 Screen 的扩展函数，只能在 Screen 子类成员里调用；
+        // pageModel 是 RoutePage 的扩展函数，只能在 RoutePage 子类成员里调用；
         // 模型作为参数传给下面的纯 composable（同 PlaylistDetailScreen 的做法）。
-        val model = rememberScreenModel { BackendErrorScreenModel() }
+        val model = pageModel { BackendErrorScreenModel() }
         val providers by model.providers.collectAsState()
         val busy by model.busy.collectAsState()
         val actionMessage by model.actionMessage.collectAsState()
@@ -76,7 +76,7 @@ class BackendErrorScreen(private val message: String) : Screen {
         val pickZip = rememberZipPicker(onPicked = { model.importModule(it, p) })
         val active by AppModel.activeProviderFlow.collectAsState()
         // 「删除音源」的二次确认：删掉的是模块本体（含它的登录态与本地目录），
-        // 这一步不可撤回。确认框挂在 Screen.Content 这一层 —— 内部的
+        // 这一步不可撤回。确认框挂在 RoutePage.Content 这一层 —— 内部的
         // [BackendErrorContent] 是离屏渲染测试在用的纯 composable，签名不动。
         val confirm = cp.player.app.ui.component.rememberConfirmState()
 
@@ -102,8 +102,8 @@ class BackendErrorScreen(private val message: String) : Screen {
     }
 }
 
-class BackendErrorScreenModel : ScreenModel {
-    private val presenter = BackendErrorPresenter(scope = screenModelScope)
+class BackendErrorScreenModel : ViewModel() {
+    private val presenter = BackendErrorPresenter(scope = viewModelScope)
 
     val providers = presenter.providers
     /** 非 null 时显示「正在处理」遮罩（导入 / 删除共用，文案随操作变化）。 */

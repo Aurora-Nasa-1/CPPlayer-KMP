@@ -43,8 +43,9 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.zIndex
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.core.model.rememberScreenModel
+import cp.player.app.ui.navigation.RoutePage
+import cp.player.app.ui.navigation.LocalDisplayedRoutePage
+import cp.player.app.ui.navigation.pageModel
 import cp.player.app.AppModel
 import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.i18n.cpStrings
@@ -111,30 +112,11 @@ private fun historyCardWidth(keyword: String): Dp = when (keyword.length) {
     else -> 228.dp
 }
 
-class SearchScreen(private val initialQuery: String = "") : Screen {
-    /**
-     * 本实例在 Voyager `ScreenModelStore` 里的槽位后缀 —— 让**每个实例各有一份**
-     * [SearchScreenModel]。
-     *
-     * ⚠️ 不传 `tag` 就是**共用一份**：Voyager 的 ScreenModel 按 **Screen 类名**键控
-     * （`Screen.getKey()` 默认返回类全名，`ScreenModelStore.getKey(screen, tag)` =
-     * `类名/模型类名/(tag ?: "default")`，底层还是 static 表），于是 `MAIN_TABS` 里那个
-     * **常驻**的搜索 tab 与首页 banner / 专辑卡 / 歌手卡 `push(SearchScreen(名字))` 出来的
-     * 路由页会撞进同一个模型。而工厂只在**第一次**调用 ⇒ `initialQuery` 被静默丢弃：
-     * 从首页点专辑打开的，是「搜索 tab 里上次那批结果 / 空框占位符」。
-     *
-     * tag 取**实例身份**而不是关键词：tab 的关键词恒为空串，按关键词区分就会与
-     * 「标题为空的那张 banner」push 出来的页面撞槽。实例由 `MAIN_TABS` 与导航栈持有
-     * ⇒ tag 在整个会话里稳定，模型也就跟着稳定（push 覆盖再返回时不会重建，
-     * 用户改过的关键词还在）。⚠️ 因此本类**不能改成 `data class`** —— 那时
-     * `hashCode()` 变成按内容相等，上面那两种空关键词的实例又会撞回同一个槽。
-     */
-    private val modelTag = "search-${hashCode()}"
-
+class SearchScreen(private val initialQuery: String = "") : RoutePage {
     @OptIn(ExperimentalLayoutApi::class)
     @Composable
     override fun Content() {
-        val model = rememberScreenModel(tag = modelTag) { SearchScreenModel(initialQuery) }
+        val model = pageModel { SearchScreenModel(initialQuery) }
         val state by model.state.collectAsState()
         val scope = rememberCoroutineScope()
         val activeProvider by AppModel.activeProviderFlow.collectAsState()
@@ -146,9 +128,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         // ScreenModel，就借 HomeScreenModel 现成的那几个歌单动作（播放 / 队列 /
         // 下载 / 分享 / 删除或取消收藏）—— 与侧栏、歌单详情页共用同一套实现，
         // 不必在这里再抄一遍「先取详情再拿曲目」的取数逻辑。
-        // ⚠️ 必须用 `remember`：写成 `rememberScreenModel { … }` 也行（本页是 Screen），
-        // 但 SearchScreenModel 已经占了那个槽，两个模型指同一个 key 只会互相顶掉。
-        val playlistActions = androidx.compose.runtime.remember {
+        val playlistActions = pageModel {
             cp.player.app.ui.model.HomeScreenModel(loadDiscovery = false)
         }
         val s = cpStrings()
@@ -161,8 +141,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         //      这里再套一层路由外壳就是**双顶栏**，所以必须原样输出正文；
         //  (b) 被首页 push 出来的路由页 —— 需要自己的标题与返回键（否则宽屏平板无顶栏、
         //      无返回，桌面窗口标题也会停在「首页」）。
-        // 判据用「本实例是不是导航栈顶」：tab 形态下栈顶是 tab 宿主，不是本页。
-        val isRoutePage = navigator.currentKey == key
+        val isRoutePage = LocalDisplayedRoutePage.current === this
 
         // 桌面标题栏的全局搜索框把关键词投递到这里。它是唯一消费者（MainScreen 只负责切 tab，
         // 不消费），所以这里喂给 ScreenModel 后立刻置回 null。见 DesktopShell 的 KDoc。

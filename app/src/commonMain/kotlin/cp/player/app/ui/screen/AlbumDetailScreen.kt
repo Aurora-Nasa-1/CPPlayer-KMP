@@ -28,10 +28,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
+import androidx.lifecycle.ViewModel
+import cp.player.app.ui.navigation.pageModel
+import androidx.lifecycle.viewModelScope
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
 import cp.player.app.presentation.navigation.AppRoute
@@ -68,7 +68,7 @@ import kotlinx.coroutines.launch
 class AlbumDetailScreen(
     private val albumId: Long,
     private val fallback: AlbumSummary? = null,
-) : Screen {
+) : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
@@ -76,12 +76,12 @@ class AlbumDetailScreen(
         AlbumDetailContent(
             albumId = resolvedId,
             fallback = fallback,
-            // ⚠️ `rememberScreenModel` 是**定义在 `Screen` 上的扩展函数**
-            // （`javap` 核实：`rememberScreenModel(Screen, String, Function0, ...)`），
-            // 只有在 Screen 子类的成员里才有接收者。放到顶层的私有 @Composable 里会
+            // ⚠️ `pageModel` 是**定义在 `RoutePage` 上的扩展函数**
+            // （`javap` 核实：`pageModel(RoutePage, String, Function0, ...)`），
+            // 只有在 RoutePage 子类的成员里才有接收者。放到顶层的私有 @Composable 里会
             // 直接报 `Unresolved reference`。所以模型一律在这里建好往下传 ——
             // 与 [PlaylistDetailScreen] 同一套写法。
-            model = rememberScreenModel { AlbumDetailModel().apply { primeFromCache(resolvedId) } },
+            model = pageModel { AlbumDetailModel().apply { primeFromCache(resolvedId) } },
             onBack = { navigator.pop() },
         )
     }
@@ -90,9 +90,9 @@ class AlbumDetailScreen(
 private typealias AlbumUiState = cp.player.app.presentation.albumdetail.AlbumUiState
 
 /** 专辑详情页的 Voyager 适配层（Thin Adapter）。 */
-private class AlbumDetailModel : ScreenModel {
+private class AlbumDetailModel : ViewModel() {
     private val presenter = cp.player.app.presentation.albumdetail.AlbumDetailPresenter(
-        scope = screenModelScope,
+        scope = viewModelScope,
         notify = UiEvents::notify,
     )
 

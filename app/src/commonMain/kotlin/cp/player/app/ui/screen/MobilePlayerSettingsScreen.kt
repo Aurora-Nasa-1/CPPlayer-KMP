@@ -12,7 +12,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.isAndroidPlatform
@@ -39,7 +39,7 @@ import kotlin.math.roundToInt
  * 但它只影响播放页的呈现，跟着播放器样式走更符合用户心智；这里集中后
  * 三段式与标准播放器都能拿到同一组开关。
  */
-class MobilePlayerSettingsScreen(private val targetSettingId: String? = null) : Screen {
+class MobilePlayerSettingsScreen(private val targetSettingId: String? = null) : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current

@@ -1,7 +1,7 @@
 package cp.player.app.ui.model
 
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import cp.player.app.i18n.CpStrings
 import cp.player.app.presentation.songcache.SongCacheContract
 import cp.player.app.presentation.songcache.SongCachePresenter
@@ -15,10 +15,10 @@ import kotlinx.coroutines.flow.StateFlow
 typealias SongCacheUiState = cp.player.app.presentation.songcache.SongCacheUiState
 
 /** 歌曲缓存明细页的 Voyager 适配层（Thin Adapter）。 */
-class SongCacheModel : ScreenModel, SongCacheContract {
+class SongCacheModel : ViewModel(), SongCacheContract {
 
     private val presenter = SongCachePresenter(
-        scope = screenModelScope,
+        scope = viewModelScope,
         notify = UiEvents::notify,
     )
 

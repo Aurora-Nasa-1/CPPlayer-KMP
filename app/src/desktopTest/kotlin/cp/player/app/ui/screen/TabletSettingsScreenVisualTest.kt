@@ -8,7 +8,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Density
-import cafe.adriel.voyager.navigator.Navigator
+import cp.player.app.ui.navigation.RouteDisplay
+import cp.player.app.ui.navigation.rememberPageStack
 import cp.player.app.i18n.AppLanguage
 import cp.player.app.i18n.ProvideCpStrings
 import cp.player.app.presentation.navigation.AppNavigator
@@ -69,7 +70,7 @@ class TabletSettingsScreenVisualTest {
             CompositionLocalProvider(
                 LocalAppNavigator provides mockNavigator,
             ) {
-                Navigator(SettingsScreen(embedded = false))
+                RouteDisplay(rememberPageStack(SettingsScreen(embedded = false), "test-settings"))
             }
         }
 

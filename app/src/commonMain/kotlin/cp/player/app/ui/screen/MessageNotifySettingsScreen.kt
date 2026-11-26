@@ -5,10 +5,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
+import androidx.lifecycle.ViewModel
+import cp.player.app.ui.navigation.pageModel
+import androidx.lifecycle.viewModelScope
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.PlatformCloseBehaviorSetting
 import cp.player.app.platform.canPostMessageNotifications
@@ -42,11 +42,11 @@ import kotlinx.coroutines.flow.StateFlow
  * 2. **系统通知权限**可能被用户在系统里关掉 —— 那时应用侧开关是开的但一条也收不到，
  *    所以这里要如实提示并提供「去授权」。
  */
-class MessageNotifySettingsScreen : Screen {
+class MessageNotifySettingsScreen : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
-        val model = rememberScreenModel { MessageNotifySettingsModel() }
+        val model = pageModel { MessageNotifySettingsModel() }
         val state by model.state.collectAsState()
         val allStrings = cpStrings()
         val strings = allStrings.messageNotify
@@ -113,8 +113,8 @@ class MessageNotifySettingsScreen : Screen {
 internal typealias MessageNotifySettingsState =
     cp.player.app.presentation.messagenotify.MessageNotifySettingsState
 
-internal class MessageNotifySettingsModel : ScreenModel, MessageNotifyContract {
-    private val presenter = MessageNotifyPresenter(scope = screenModelScope)
+internal class MessageNotifySettingsModel : ViewModel(), MessageNotifyContract {
+    private val presenter = MessageNotifyPresenter(scope = viewModelScope)
 
     override val state: StateFlow<MessageNotifySettingsState> get() = presenter.state
     override val scope: CoroutineScope get() = presenter.scope

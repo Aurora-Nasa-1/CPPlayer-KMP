@@ -69,8 +69,9 @@ fun MessagesPane(
     onChatOpenChanged: (Boolean) -> Unit = {},
 ) {
     val navigator = LocalAppNavigator.current
-    val model = remember { MessagesModel() }
-    val chatModel = remember { ChatModel() }
+    val scope = rememberCoroutineScope()
+    val model = remember(scope) { MessagesModel(requestScope = scope) }
+    val chatModel = remember(scope) { ChatModel(requestScope = scope) }
     val observedState by model.state.collectAsState()
     val profile by AppModel.userProfileFlow.collectAsState()
     val loggedIn = profile != null
@@ -80,7 +81,6 @@ fun MessagesPane(
     val sourceGeneration by AppModel.sourceGeneration.collectAsState()
     val sessionKey = MessagesSessionKey(providerId, sourceGeneration, profile?.uid)
     val state = model.stateFor(sessionKey, observedState)
-    val scope = rememberCoroutineScope()
     val strings = cpStrings()
 
     // 当前选中的会话。刻意**不自动选第一个**：进消息面板先看到一句「选择左侧会话」，

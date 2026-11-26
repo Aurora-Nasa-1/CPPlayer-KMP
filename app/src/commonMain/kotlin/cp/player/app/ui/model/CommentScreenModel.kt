@@ -1,7 +1,7 @@
 package cp.player.app.ui.model
 
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import cp.player.app.presentation.comment.CommentContract
 import cp.player.app.presentation.comment.CommentPresenter
 import cp.player.core.music.Comment
@@ -22,12 +22,12 @@ typealias CommentUiState = cp.player.app.presentation.comment.CommentUiState
 class CommentScreenModel(
     id: String,
     type: String,
-) : ScreenModel, CommentContract {
+) : ViewModel(), CommentContract {
 
     private val presenter = CommentPresenter(
         id = id,
         type = type,
-        scope = screenModelScope,
+        scope = viewModelScope,
     )
 
     override val state: StateFlow<CommentUiState> get() = presenter.state

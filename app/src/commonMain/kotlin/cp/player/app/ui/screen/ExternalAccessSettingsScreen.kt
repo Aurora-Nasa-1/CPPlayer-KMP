@@ -18,7 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.i18n.cpStrings
@@ -45,7 +45,7 @@ import cp.player.app.ui.component.CpText
 /**
  * 外部访问与本地服务设置页面：本地 HTTP 流媒体服务、访问令牌与外部推送集成。
  */
-class ExternalAccessSettingsScreen : Screen {
+class ExternalAccessSettingsScreen : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current

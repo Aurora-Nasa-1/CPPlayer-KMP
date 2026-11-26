@@ -11,12 +11,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.MorphingShape
 import cp.player.app.ui.component.CpText
 
-class StartupScreen(private val message: String) : Screen {
+class StartupScreen(private val message: String) : RoutePage {
     @Composable
     override fun Content() {
         Column(

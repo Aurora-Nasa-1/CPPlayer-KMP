@@ -34,8 +34,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.pageModel
+import cp.player.app.ui.navigation.RoutePage
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
@@ -86,20 +86,12 @@ import kotlinx.coroutines.launch
  *
  * 底部留一个「在在线音乐中搜索」的跳板：本地找不到时一键转在线搜索。
  */
-class LibrarySearchScreen(private val initialQuery: String = "") : Screen {
-    /**
-     * 每个实例一份模型（Voyager 默认按 Screen 类名键控）。
-     *
-     * 与 [SearchScreen] 同理：不带 tag 时两次进入会共用同一份模型，
-     * [initialQuery] 在第二次被静默丢弃。⚠️ 因此本类不能改成 `data class`。
-     */
-    private val modelTag = "library-search-${hashCode()}"
-
+class LibrarySearchScreen(private val initialQuery: String = "") : RoutePage {
     @Composable
     override fun Content() {
-        val library = rememberScreenModel(tag = "$modelTag-library") { LibraryScreenModel() }
-        val downloads = rememberScreenModel(tag = "$modelTag-downloads") { DownloadsScreenModel() }
-        val search = rememberScreenModel(tag = "$modelTag-tracks") { LibrarySearchScreenModel() }
+        val library = pageModel { LibraryScreenModel() }
+        val downloads = pageModel { DownloadsScreenModel() }
+        val search = pageModel { LibrarySearchScreenModel() }
         LibrarySearchContent(library, downloads, search, initialQuery)
     }
 }

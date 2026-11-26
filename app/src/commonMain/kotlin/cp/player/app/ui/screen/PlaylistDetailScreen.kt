@@ -96,8 +96,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.core.model.rememberScreenModel
+import cp.player.app.ui.navigation.RoutePage
+import cp.player.app.ui.navigation.pageModel
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
 import cp.player.app.AppModel
@@ -167,10 +167,10 @@ class PlaylistDetailScreen(
     val playlist: PlaylistSummary,
     private val embedded: Boolean = false,
     private val onEmbeddedBack: (() -> Unit)? = null,
-) : Screen {
+) : RoutePage {
     @Composable
     override fun Content() {
-        val model = rememberScreenModel {
+        val model = pageModel {
             PlaylistDetailScreenModel().apply { primeFromCache(playlist) }
         }
         PlaylistDetailContent(

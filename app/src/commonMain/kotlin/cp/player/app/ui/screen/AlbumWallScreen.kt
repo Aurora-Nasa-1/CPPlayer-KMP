@@ -1,10 +1,10 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.runtime.Composable
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.ui.navigation.LocalAppNavigator
 
-class AlbumWallScreen(private val initialSource: String = "queue") : Screen {
+class AlbumWallScreen(private val initialSource: String = "queue") : RoutePage {
 
     @Composable
     override fun Content() {

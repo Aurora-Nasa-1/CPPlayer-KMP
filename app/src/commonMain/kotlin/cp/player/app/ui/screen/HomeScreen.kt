@@ -83,8 +83,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.pageModel
+import cp.player.app.ui.navigation.RoutePage
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.presentation.navigation.AppRoute
@@ -156,10 +156,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-class HomeScreen : Screen {
+class HomeScreen : RoutePage {
     @Composable
     override fun Content() {
-        HomeScreenContent(rememberScreenModel { HomeScreenModel() })
+        HomeScreenContent(pageModel { HomeScreenModel() })
     }
 }
 

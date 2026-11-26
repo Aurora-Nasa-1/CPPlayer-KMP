@@ -14,7 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.auth.AccountStore
 import cp.player.app.i18n.cpStrings
@@ -40,7 +40,7 @@ import kotlinx.coroutines.launch
  * - 缓存：音频落盘缓存按 `providerId + 账号 + 凭据 + 设置` 命名空间隔离，A 音源不会串到 B
  * - 账号列表：`AccountStore` 的 `saved_accounts_<providerId>` / `active_account_<providerId>`
  */
-class ProviderIsolationScreen : Screen {
+class ProviderIsolationScreen : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current

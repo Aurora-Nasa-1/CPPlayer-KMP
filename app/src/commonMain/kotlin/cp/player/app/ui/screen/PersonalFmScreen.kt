@@ -24,7 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.platform.shareText
 import cp.player.app.ui.component.AddToPlaylistSheet
@@ -48,7 +48,7 @@ import cp.player.core.music.CPMediaId
 import cp.player.core.music.TrackSummary
 import kotlinx.coroutines.launch
 
-class PersonalFmScreen : Screen {
+class PersonalFmScreen : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current

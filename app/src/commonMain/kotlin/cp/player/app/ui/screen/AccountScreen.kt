@@ -93,10 +93,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
+import androidx.lifecycle.ViewModel
+import cp.player.app.ui.navigation.pageModel
+import androidx.lifecycle.viewModelScope
+import cp.player.app.ui.navigation.RoutePage
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.auth.AccountStore
@@ -148,12 +148,12 @@ import kotlinx.coroutines.launch
  * 3. **无用与晦涩设置清理**：
  *    - 移除暴露内部技术细节的「音源账号隔离」设置开关与说明，音源底层自动隔离保持默认良好运作，不在界面滋扰用户。
  */
-class AccountScreen : Screen {
+class AccountScreen : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
         val s = cpStrings()
-        val model = rememberScreenModel { AccountScreenModel(s.account) }
+        val model = pageModel { AccountScreenModel(s.account) }
         val provider by model.activeProvider.collectAsState()
         val profile by AppModel.userProfileFlow.collectAsState()
         val isLogged by model.isLogged.collectAsState()
@@ -1402,10 +1402,10 @@ private fun cookieFieldCount(normalized: String): Int =
     normalized.split(';').count { it.contains('=') }
 
 /** 账号页的 Voyager 适配层（Thin Adapter）。状态机在 [cp.player.app.presentation.account.AccountPresenter]。 */
-class AccountScreenModel(account: AccountStrings) : ScreenModel {
+class AccountScreenModel(account: AccountStrings) : ViewModel() {
     private val presenter = cp.player.app.presentation.account.AccountPresenter(
         account = account,
-        scope = screenModelScope,
+        scope = viewModelScope,
         qrPngBytes = ::qrCodePngBytes,
     )
 

@@ -21,7 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.presentation.SocialAvailability
 import cp.player.app.ui.component.CpRouteScaffold
@@ -48,7 +48,7 @@ import cp.player.core.provider.ProviderCapability
  * 所有开关都写 [AppModel] 的 [androidx.compose.runtime.StateFlow]，`MainScreen` 收集后即时生效，
  * 不需要重启。音源能力是 `activeProviderFlow` 的派生值，切音源后本页自动刷新。
  */
-class NavigationSettingsScreen(private val targetSettingId: String? = null) : Screen {
+class NavigationSettingsScreen(private val targetSettingId: String? = null) : RoutePage {
     @Composable
     override fun Content() {
         val provider by AppModel.activeProviderFlow.collectAsState()

@@ -9,10 +9,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
+import androidx.lifecycle.ViewModel
+import cp.player.app.ui.navigation.pageModel
+import androidx.lifecycle.viewModelScope
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.platform.shareText
 import cp.player.app.ui.anim.CoverFlight
@@ -67,11 +67,11 @@ import kotlinx.coroutines.launch
  *    标准歌曲 id（`song/url/v1` 正常返回），因此补齐加入队列 / 下一首播放 /
  *    收藏 / 下载，并新增**从云盘删除**（走 [CpConfirmHost] 二次确认）。
  */
-class CloudDriveScreen(private val embedded: Boolean = false) : Screen {
+class CloudDriveScreen(private val embedded: Boolean = false) : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
-        val model = rememberScreenModel { CloudDriveScreenModel() }
+        val model = pageModel { CloudDriveScreenModel() }
         CloudDriveContent(
             model = model,
             embedded = embedded,
@@ -88,9 +88,9 @@ typealias CloudDriveUiState = cp.player.app.presentation.clouddrive.CloudDriveUi
  * 状态机在 [cp.player.app.presentation.clouddrive.CloudDrivePresenter]，
  * 这里只负责生命周期绑定与 UI 副作用注入。
  */
-class CloudDriveScreenModel : ScreenModel {
+class CloudDriveScreenModel : ViewModel() {
     private val presenter = cp.player.app.presentation.clouddrive.CloudDrivePresenter(
-        scope = screenModelScope,
+        scope = viewModelScope,
         notify = UiEvents::notify,
         playCoverFlight = { CoverFlight.play(it.id, it.coverUrl) },
     )

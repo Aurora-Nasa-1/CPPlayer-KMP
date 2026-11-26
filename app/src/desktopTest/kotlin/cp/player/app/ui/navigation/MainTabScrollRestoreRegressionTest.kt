@@ -27,9 +27,9 @@ import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Density
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.Navigator
-import cafe.adriel.voyager.transitions.ScreenTransition
+import cp.player.app.ui.navigation.PageStack
+import cp.player.app.ui.navigation.RouteDisplay
+import cp.player.app.ui.navigation.rememberPageStack
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -45,7 +45,7 @@ import kotlin.test.assertNotNull
  * 这正是「各种界面来回切换后不保留滑动位置」的复现序列。
  */
 
-private var navR: Navigator? = null
+private var navR: PageStack? = null
 private val capturedR = mutableMapOf<String, LazyListState>()
 private val scrollR = mutableStateMapOf<String, Int>()
 private var selectHookR: ((Int) -> Unit)? = null
@@ -60,7 +60,7 @@ private class FakeModelR {
     }
 }
 
-private class StableScreenR(private val tag: String) : Screen {
+private class StableScreenR(private val tag: String) : RoutePage {
     @Composable
     override fun Content() {
         val model = remember { FakeModelR() }
@@ -84,7 +84,7 @@ private class StableScreenR(private val tag: String) : Screen {
 /** 与 MainScreen 的 MAIN_TABS 同款：会话级稳定，只建一次。 */
 private val STABLE_TABS_R = listOf(StableScreenR("A"), StableScreenR("B"))
 
-private class BlankScreenR : Screen {
+private class BlankScreenR : RoutePage {
     @Composable
     override fun Content() {
         Text("blank")
@@ -92,7 +92,7 @@ private class BlankScreenR : Screen {
 }
 
 /** 修复后的 tab 宿主：visitedTabs saveable + 稳定实例。 */
-private class FixedTabHostR : Screen {
+private class FixedTabHostR : RoutePage {
     @Composable
     override fun Content() {
         val selectedIndexState = rememberSaveable { mutableIntStateOf(0) }
@@ -133,11 +133,12 @@ class MainTabScrollRestoreRegressionTest {
         var frameTimeNanos = 0L
 
         val scene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
-            Navigator(FixedTabHostR()) { nav ->
+            val nav = rememberPageStack(FixedTabHostR(), "test-routes")
+            run {
                 navR = nav
-                ScreenTransition(
-                    navigator = nav,
-                    transition = { fadeIn(tween(300)) togetherWith fadeOut(tween(220)) },
+                RouteDisplay(
+                    stack = nav,
+                    transition = { _, _, _ -> fadeIn(tween(300)) togetherWith fadeOut(tween(220)) },
                 )
             }
         }

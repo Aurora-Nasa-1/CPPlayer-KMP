@@ -1,7 +1,7 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.runtime.Composable
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.platform.PlatformRenderTuningContent
 
 /**
@@ -13,7 +13,7 @@ import cp.player.app.platform.PlatformRenderTuningContent
  * 放在 commonMain 只是为了让 `SettingsRegistry` 的入口表两端通用；真正有意义的逻辑
  * 全在 desktopMain 的 `DesktopRenderTuning` 里。
  */
-class RenderTuningSettingsScreen : Screen {
+class RenderTuningSettingsScreen : RoutePage {
     @Composable
     override fun Content() {
         PlatformRenderTuningContent()

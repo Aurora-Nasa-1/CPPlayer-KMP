@@ -1,7 +1,7 @@
 package cp.player.app.ui.model
 
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import cp.player.app.AppModel
 import cp.player.app.presentation.search.SearchPresenter
 import kotlinx.coroutines.flow.StateFlow
@@ -15,17 +15,17 @@ typealias SearchUiState = cp.player.app.presentation.search.SearchUiState
  * 搜索页的 Voyager 适配层（Thin Adapter）。
  *
  * 核心状态机与业务逻辑全部交由 [SearchPresenter]（UI 框架无关层），
- * 本类只负责在 Voyager 的 [screenModelScope] 中桥接生命周期。
+ * 本类只负责在 Voyager 的 [viewModelScope] 中桥接生命周期。
  */
-class SearchScreenModel(initialQuery: String = "") : ScreenModel {
+class SearchScreenModel(initialQuery: String = "") : ViewModel() {
 
     private val presenter = SearchPresenter(
         initialQuery = initialQuery,
-        scope = screenModelScope,
+        scope = viewModelScope,
     )
 
     init {
-        screenModelScope.launch {
+        viewModelScope.launch {
             AppModel.sourceGeneration.drop(1).collect {
                 presenter.onProviderChanged()
             }

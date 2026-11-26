@@ -4,8 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.Navigator
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.presentation.navigation.AppNavigator
 import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.screen.AccountScreen
@@ -48,8 +47,7 @@ import cp.player.app.ui.util.UiEvents
 /**
  * UI 树中的通用导航控制器。
  *
- * 页面与子组件只依赖本 Local 与 [AppRoute]，不再直接依赖 Voyager 的 `LocalNavigator`
- * 或具体 `Screen` 类。缺少 Provider 时会明确提示，绝不静默吞掉导航。
+ * 页面与子组件通过本 Local 和 [AppRoute] 发出跳转。缺少 Provider 时给出操作提示。
  */
 val LocalAppNavigator = staticCompositionLocalOf<AppNavigator> { UnavailableAppNavigator }
 
@@ -84,9 +82,9 @@ private object UnavailableAppNavigator : AppNavigator {
 }
 
 /**
- * 将通用的 [AppRoute] 转换为 Voyager 的 [Screen]。仅本适配层允许引用具体页面类。
+ * 将通用的 [AppRoute] 转换为 应用的 [RoutePage]。仅本适配层允许引用具体页面类。
  */
-fun AppRoute.toVoyagerScreen(): Screen = when (this) {
+fun AppRoute.toRoutePage(): RoutePage = when (this) {
     is AppRoute.Search -> SearchScreen(initialQuery)
     is AppRoute.PlaylistDetail -> PlaylistDetailScreen(playlist)
     is AppRoute.AlbumDetail -> AlbumDetailScreen(albumId, fallback)
@@ -160,14 +158,14 @@ fun AppRoute.toVoyagerScreen(): Screen = when (this) {
 }
 
 /**
- * 将 Voyager 的 [Navigator] 适配为框架无关的 [AppNavigator]。
+ * 将 [PageStack] 适配为框架无关的 [AppNavigator]。
  *
  * @param navigator 当前内容栈（桌面宽屏为侧栏旁的内嵌栈）
  * @param rootNavigator 根栈；[pushRoot] 用它承载播放页等全屏路由
  */
-class VoyagerAppNavigator(
-    private val navigator: Navigator,
-    private val rootNavigator: Navigator = navigator,
+class StackAppNavigator(
+    private val navigator: PageStack,
+    private val rootNavigator: PageStack = navigator,
 ) : AppNavigator {
     override val depth: Int
         get() = runCatching { navigator.size }.getOrDefault(0)
@@ -176,22 +174,22 @@ class VoyagerAppNavigator(
         get() = runCatching { navigator.lastItem.key }.getOrNull()
 
     override fun push(route: AppRoute) {
-        runCatching { navigator.push(route.toVoyagerScreen()) }
+        runCatching { navigator.push(route.toRoutePage()) }
             .onFailure { UiEvents.notify("暂时无法打开这个页面") }
     }
 
     override fun pushRoot(route: AppRoute) {
-        runCatching { rootNavigator.push(route.toVoyagerScreen()) }
+        runCatching { rootNavigator.push(route.toRoutePage()) }
             .onFailure { UiEvents.notify("暂时无法打开这个页面") }
     }
 
     override fun replace(route: AppRoute) {
-        runCatching { navigator.replace(route.toVoyagerScreen()) }
+        runCatching { navigator.replace(route.toRoutePage()) }
             .onFailure { UiEvents.notify("暂时无法打开这个页面") }
     }
 
     override fun replaceAll(route: AppRoute) {
-        runCatching { navigator.replaceAll(route.toVoyagerScreen()) }
+        runCatching { navigator.replaceAll(route.toRoutePage()) }
             .onFailure { UiEvents.notify("暂时无法打开这个页面") }
     }
 
@@ -216,16 +214,16 @@ class VoyagerAppNavigator(
 }
 
 /**
- * 在当前 Voyager 导航层之下为组件树注入通用的 [LocalAppNavigator]。
+ * 在内容栈下提供导航入口，保留覆盖整窗的根栈入口。
  */
 @Composable
 fun ProvideAppNavigator(
-    navigator: Navigator,
-    rootNavigator: Navigator = navigator,
+    navigator: PageStack,
+    rootNavigator: PageStack = navigator,
     content: @Composable () -> Unit,
 ) {
     val appNavigator = remember(navigator, rootNavigator) {
-        VoyagerAppNavigator(navigator, rootNavigator)
+        StackAppNavigator(navigator, rootNavigator)
     }
     CompositionLocalProvider(
         LocalAppNavigator provides appNavigator,

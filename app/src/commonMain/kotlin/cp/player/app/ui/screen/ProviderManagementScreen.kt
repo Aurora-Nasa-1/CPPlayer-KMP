@@ -51,10 +51,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
-import cafe.adriel.voyager.core.screen.Screen
+import androidx.lifecycle.ViewModel
+import cp.player.app.ui.navigation.pageModel
+import androidx.lifecycle.viewModelScope
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.ProviderManagementStrings
 import cp.player.app.i18n.cpStrings
@@ -97,7 +97,7 @@ import kotlinx.coroutines.launch
  */
 class ProviderManagementScreen(
     private val initialTab: Int = 0,
-) : Screen {
+) : RoutePage {
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
@@ -110,7 +110,7 @@ class ProviderManagementScreen(
 
         var selectedTab by remember { mutableIntStateOf(initialTab.coerceIn(0, 1)) }
 
-        val model = rememberScreenModel { ProviderManagementModel() }
+        val model = pageModel { ProviderManagementModel() }
         val providers by model.providers.collectAsState()
         val active by model.active.collectAsState()
         val busy by model.busy.collectAsState()
@@ -476,9 +476,9 @@ class ProviderManagementScreen(
     }
 }
 
-class ProviderManagementModel : ScreenModel {
+class ProviderManagementModel : ViewModel() {
     private val presenter = cp.player.app.presentation.providermanagement.ProviderManagementPresenter(
-        scope = screenModelScope,
+        scope = viewModelScope,
     )
 
     val providers: StateFlow<List<BackendProvider>> get() = presenter.providers

@@ -1,7 +1,7 @@
 package cp.player.app.ui.model
 
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import cp.player.app.i18n.CpStrings
 import cp.player.app.presentation.home.HomeContract
 import cp.player.app.presentation.home.HomePresenter
@@ -19,14 +19,14 @@ typealias NewSongRegion = cp.player.app.presentation.home.NewSongRegion
  * 首页的 Voyager 适配层（Thin Adapter）。
  *
  * 全部状态机与业务逻辑位于框架中立的 [HomePresenter]，
- * 本类只桥接 `screenModelScope` 与操作提示。
+ * 本类只桥接 `viewModelScope` 与操作提示。
  */
 class HomeScreenModel(
     loadDiscovery: Boolean = true,
-) : ScreenModel, HomeContract {
+) : ViewModel(), HomeContract {
 
     private val presenter = HomePresenter(
-        scope = screenModelScope,
+        scope = viewModelScope,
         loadDiscovery = loadDiscovery,
         notify = UiEvents::notify,
     )

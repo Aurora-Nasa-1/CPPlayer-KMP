@@ -53,7 +53,7 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.platform.isAndroidPlatform
@@ -94,7 +94,7 @@ import kotlin.math.sqrt
  * 4. **参数频点微调折叠面板**：支持逐段调整中心频点（Hz）；
  * 5. **混音与响度均衡**：声道平衡调节与音量归一化/防爆音控制。
  */
-class AudioEffectSettingsScreen : Screen {
+class AudioEffectSettingsScreen : RoutePage {
 
     @Composable
     override fun Content() {

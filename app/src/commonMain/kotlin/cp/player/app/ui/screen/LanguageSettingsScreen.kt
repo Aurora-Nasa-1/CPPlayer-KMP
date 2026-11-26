@@ -7,7 +7,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.AppLanguage
 import cp.player.app.i18n.cpStrings
@@ -36,7 +36,7 @@ import cp.player.app.ui.navigation.LocalAppNavigator
  * 就变成 "Language"。留在页面上会让人以为是随机跳变；返回设置列表则能看到整片换语言，
  * 反馈明确。
  */
-class LanguageSettingsScreen : Screen {
+class LanguageSettingsScreen : RoutePage {
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current

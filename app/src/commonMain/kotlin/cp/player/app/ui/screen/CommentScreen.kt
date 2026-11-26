@@ -3,8 +3,8 @@ package cp.player.app.ui.screen
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.pageModel
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.component.CommentPane
@@ -18,10 +18,10 @@ import cp.player.app.ui.model.CommentScreenModel
  * 列表 / 楼层 / 回复输入条全部在共享组件 [CommentPane] 里 —— 桌面评论弹层复用同一份，
  * 本类只负责「外壳」：标题、返回、路由标题发布。
  */
-class CommentScreen(val id: String, val type: String = "music") : Screen {
+class CommentScreen(val id: String, val type: String = "music") : RoutePage {
     @Composable
     override fun Content() {
-        val model = rememberScreenModel { CommentScreenModel(id, type) }
+        val model = pageModel { CommentScreenModel(id, type) }
         val navigator = LocalAppNavigator.current
         val s = cpStrings()
         val playbackState by AppModel.playback.state.collectAsState()

@@ -20,7 +20,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.RoutePage
 import cp.player.app.AppModel
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.shareText
@@ -68,7 +68,7 @@ import kotlinx.coroutines.launch
  * （[ListenTogetherEngine.POLL_INTERVAL_MS]，协议决定，实现优化不掉）。
  * 所以页面如实写「每 N 秒同步」，**不写「实时」**。
  */
-class ListenTogetherScreen : Screen {
+class ListenTogetherScreen : RoutePage {
 
     @Composable
     override fun Content() {

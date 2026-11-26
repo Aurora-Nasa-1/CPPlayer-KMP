@@ -1,7 +1,7 @@
 package cp.player.app.ui.model
 
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import cp.player.app.i18n.CpStrings
 import cp.player.app.presentation.importplaylist.ImportPlaylistContract
 import cp.player.app.presentation.importplaylist.ImportPlaylistPresenter
@@ -20,10 +20,10 @@ typealias ImportPlaylistUiState = cp.player.app.presentation.importplaylist.Impo
  */
 class ImportPlaylistScreenModel(
     initialState: ImportPlaylistUiState = ImportPlaylistUiState(),
-) : ScreenModel, ImportPlaylistContract {
+) : ViewModel(), ImportPlaylistContract {
 
     private val presenter = ImportPlaylistPresenter(
-        scope = screenModelScope,
+        scope = viewModelScope,
         initialState = initialState,
         notify = UiEvents::notify,
     )

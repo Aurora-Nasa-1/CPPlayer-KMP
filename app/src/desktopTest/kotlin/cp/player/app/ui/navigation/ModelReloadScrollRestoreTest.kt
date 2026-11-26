@@ -25,9 +25,9 @@ import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Density
-import cafe.adriel.voyager.core.screen.Screen
-import cafe.adriel.voyager.navigator.Navigator
-import cafe.adriel.voyager.transitions.ScreenTransition
+import cp.player.app.ui.navigation.PageStack
+import cp.player.app.ui.navigation.RouteDisplay
+import cp.player.app.ui.navigation.rememberPageStack
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -44,7 +44,7 @@ import kotlin.test.assertNotNull
  */
 
 private val captured3 = mutableMapOf<String, LazyListState>()
-private var capturedNav3: Navigator? = null
+private var capturedNav3: PageStack? = null
 private val scrollTarget3 = androidx.compose.runtime.mutableStateMapOf<String, Int>()
 private val selectHooks = mutableMapOf<String, MutableList<(Int) -> Unit>>()
 
@@ -58,7 +58,7 @@ private class FakeModel {
     }
 }
 
-private class ModelScreen(private val tag: String) : Screen {
+private class ModelScreen(private val tag: String) : RoutePage {
     @Composable
     override fun Content() {
         // ⚠️ 按**实例** remember（等价 rememberScreenModel 的 per-instance store）
@@ -80,7 +80,7 @@ private class ModelScreen(private val tag: String) : Screen {
     }
 }
 
-private class BlankScreen3 : Screen {
+private class BlankScreen3 : RoutePage {
     @Composable
     override fun Content() {
         Text("blank")
@@ -88,7 +88,7 @@ private class BlankScreen3 : Screen {
 }
 
 /** 复刻 MainScreen + TabContent：tabs 用 remember（离开组合即丢），visitedTabs 同样。 */
-private class TabHostScreen3(private val selectHook: (String, (Int) -> Unit) -> Unit) : Screen {
+private class TabHostScreen3(private val selectHook: (String, (Int) -> Unit) -> Unit) : RoutePage {
     @Composable
     override fun Content() {
         val selectedIndexState = rememberSaveable { mutableIntStateOf(0) }
@@ -125,11 +125,12 @@ class ModelReloadScrollRestoreTest {
         var frameTimeNanos = 0L
 
         val scene = ImageComposeScene(width = 800, height = 600, density = Density(1f)) {
-            Navigator(TabHostScreen3 { key, hook -> selectHooks.getOrPut(key) { mutableListOf() }.add(hook) }) { nav ->
+            val nav = rememberPageStack(TabHostScreen3 { key, hook -> selectHooks.getOrPut(key) { mutableListOf() }.add(hook) }, "test-routes")
+            run {
                 capturedNav3 = nav
-                ScreenTransition(
-                    navigator = nav,
-                    transition = { fadeIn(tween(300)) togetherWith fadeOut(tween(220)) },
+                RouteDisplay(
+                    stack = nav,
+                    transition = { _, _, _ -> fadeIn(tween(300)) togetherWith fadeOut(tween(220)) },
                 )
             }
         }
