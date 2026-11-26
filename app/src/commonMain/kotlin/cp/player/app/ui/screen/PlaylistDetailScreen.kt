@@ -1111,13 +1111,14 @@ private fun NarrowLayout(
                                     color = cpNestedSurface(),
                                 ) {
                                     CpText(
-                            text = when {
-                                isCloudDrive -> s.library.cloudDrive
-                                isOwner -> "我创建的"
-                                isFavorite -> "已收藏"
-                                else -> "公开歌单"
-                            },
-                                        style = MaterialTheme.typography.labelSmall,
+                                        // 与右侧「N 首歌曲」共用 12sp / 16sp 字阶，避免标签基线偏高。
+                                        text = when {
+                                            isCloudDrive -> s.library.cloudDrive
+                                            isOwner -> "我创建的"
+                                            isFavorite -> "已收藏"
+                                            else -> "公开歌单"
+                                        },
+                                        style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                     )
