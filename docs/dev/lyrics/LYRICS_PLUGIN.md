@@ -6,9 +6,9 @@
 
 ## 1. 概述
 
-插件是一个 JavaScript 脚本包，遵循 [Lyrico Plugin API](https://github.com/Replica0110/Lyrico)（Apache-2.0），由 Mozilla Rhino（JVM JS 引擎，Android 与桌面共用同一实现）执行。
+插件是一个 JavaScript 脚本包，采用 [Lyrico Plugin API](https://github.com/Replica0110/Lyrico)（Apache-2.0）的包结构与歌词回调，由 QuickJS 执行，Android 与桌面共用同一实现。
 
-宿主对 Lyrico 契约逐字复刻：`Platform.*` 引导层与全局 `__invoke` 调度器都与上游一致，按 Lyrico Plugin API 写的插件无需修改即可导入。
+CPPlayer 实现了 Lyrico 的歌词插件接口子集。通过导入校验只表示包结构和版本可接受，运行时还取决于脚本使用的宿主 API 和返回的歌词格式。
 
 | 解决的问题 | 内容 |
 |---|---|
@@ -21,7 +21,7 @@
 |---|---|---|
 | manifest 数据类 | `cp.player.core.lyricsplugin.PluginManifest` | `cp.player.core.provider.ModuleManifest` |
 | 关键字段 | `versionCode` / `entry` / `capabilities` | `contract` / `type` / `entryPoint` / `sdkOrigins` |
-| 执行体 | JS（Rhino，Android + 桌面同一实现） | QuickJS（JS 包）、JNI、C ABI |
+| 执行体 | JS（QuickJS，Android + 桌面同一实现） | QuickJS（JS 包）、JNI、C ABI |
 | 版本编号 | 插件 `apiVersion` 1–5，宿主 `HOST_API_VERSION = 4` | 契约版本 `kmp-sdk-v1`（字符串） |
 | 管理界面 | 设置 → 账号与音源 → 歌词来源 | 设置 → 账号与音源 → 音源 |
 
@@ -124,7 +124,7 @@ my-lyrics-plugin.zip
 
 | 值 | 语义 | 宿主行为 |
 |---|---|---|
-| `searchSongs` | 实现 `globalThis.searchSongs` | 声明 `getLyrics` 时必需配套：取词链路先搜歌再取词 |
+| `searchSongs` | 实现 `globalThis.searchSongs` | 同时声明 `getLyrics` 时，取词链路先搜歌；独立歌词源可以省略 |
 | `getLyrics` | 实现 `globalThis.getLyrics` | 取词闸门：未声明则宿主从不调用（`fetchLyricsFrom` 直接返回未命中） |
 | `searchCovers` | 实现 `globalThis.searchCovers` | 当前无任何宿主代码调用，只在管理页显示「搜索封面」标签 |
 
@@ -265,7 +265,7 @@ var text = Platform.http.getText('https://example.com/api');
 
 ### 5.1 入口与求值模型
 
-脚本在一个常驻 Rhino 运行时里求值一次，宿主通过全局调度器调入口。
+脚本在一个常驻 QuickJS 运行时里求值一次，宿主通过全局调度器调入口。
 
 ```js
 // 宿主注入的调度器（逐字）：
@@ -288,7 +288,7 @@ globalThis.getLyrics = function (request) { /* ... */ return {...}; };
 |---|---|
 | 返回值 | 宿主 `JSON.stringify` 后再解析；返回 `undefined` 视为 null（未命中） |
 | 入口不存在 | 同样按未命中处理，不报错 |
-| JS 能力 | ES6（Rhino `VERSION_ES6`，解释执行）；不要依赖 Node API、`fetch`、浏览器 DOM |
+| JS 能力 | QuickJS，支持 `async` / `await`；不要依赖 Node API、`fetch`、浏览器 DOM |
 
 ### 5.2 searchSongs
 
@@ -355,7 +355,7 @@ globalThis.getLyrics = function (request) { /* ... */ return {...}; };
 }
 ```
 
-`song` 即 `searchSongs` 返回的那条命中（含你塞的 `fields` / `internal`）。
+`song` 取决于声明的能力：同时声明 `searchSongs` 时，传入搜索命中（含 `fields` / `internal`）；只声明 `getLyrics` 时，直接传入正在播放的歌曲信息，`song.id` 为空，可用的媒体 ID 通过 `mediaId` 传入。
 
 四种可接受返回形状：
 
@@ -363,7 +363,7 @@ globalThis.getLyrics = function (request) { /* ... */ return {...}; };
 |---|---|
 | `"[00:01.00]..."`（纯字符串） | 按 plain LRC 解析 |
 | `null` / `{ "notFound": true }` | 未命中，下一条来源继续 |
-| `[ {...}, {...} ]` | API 4 多候选：宿主取第一个可解析出内容的项 |
+| `[ {...}, {...} ]` | API 4 多候选：已通过 `searchSongs` 匹配歌曲时取第一个可解析的项；独立歌词源按 `tags.ti` / `tags.ar` 匹配当前歌曲再选取可解析的歌词 |
 | `{ "type": "...", ... }` | 主路径 |
 
 对象形态的 `type`（大小写不敏感）与负载字段：
@@ -403,7 +403,8 @@ structured 行格式（时间单位毫秒）：
 
 | manifest `capabilities` | 宿主行为 |
 |---|---|
-| 含 `getLyrics` | 正常参与取词（前提：同时实现并能被 `searchSongs` 找到候选） |
+| `searchSongs` + `getLyrics` | 先搜歌再取词；组合关键词没有可信匹配时，会用歌名重试 |
+| `getLyrics`（无 `searchSongs`） | 以当前歌曲信息直接请求歌词，API 4–5 候选需要提供歌曲标签以供匹配 |
 | 只含 `searchSongs`（或缺省） | 永不参与取词，仅在管理页可见 |
 | 含 `searchCovers` | 只显示能力标签，暂无调用方 |
 
@@ -413,7 +414,7 @@ structured 行格式（时间单位毫秒）：
 
 | 项 | 内容 |
 |---|---|
-| 创建 | 每插件一个常驻 Rhino 运行时，首次取词时惰性创建（创建即求值整份脚本：include 拼在前、入口在后），之后复用 |
+| 创建 | 每插件一个常驻 QuickJS 运行时，首次取词时惰性创建（创建即求值整份脚本：include 拼在前、入口在后），之后复用 |
 | 销毁 | 删除插件即关闭并销毁其运行时；应用退出时全部随服务关闭 |
 | 热替换 | 重新导入同 id 插件不会热替换运行中的旧脚本（运行时缓存按 id 驻留）；管理页删除再导入可强制刷新 |
 
@@ -421,7 +422,7 @@ structured 行格式（时间单位毫秒）：
 
 | 项 | 内容 |
 |---|---|
-| 单线程 | Rhino 运行时非线程安全，所有求值 / 调用收敛到一个专属线程（线程名 `cpplayer-lyrics-plugin`，栈 4 MiB） |
+| 单线程 | 取词服务串行调度；每个 QuickJS 实例有自己的专属执行线程 |
 | 串行 | 多个插件也串行执行；脚本里无需考虑并发，也别指望并行提速 |
 | 解释执行 | `optimizationLevel = -1`，兼容 Android，无字节码生成 |
 
@@ -557,7 +558,7 @@ zip -r example-lrc-hub.zip example-lrc-hub/
 | 症状 | 可能原因 | 判据 / 解法 |
 |---|---|---|
 | 导入即失败（「文件不是有效的插件包」） | zip 里没有 `manifest.json`；JSON 不合法（注释 / 尾逗号 / 单引号）；`apiVersion` / `minHostApiVersion` 越界；`entry` 缺失或文件不存在；超出大小限制 | 先过 JSON 校验器；核对版本区间 1–5 / 1–4；`apiVersion: 99` 这类越界连列表都进不去，且是静默的 |
-| 导入成功但取词从不调用 | `capabilities` 未声明 `getLyrics` | 加 `"capabilities": ["searchSongs", "getLyrics"]` |
+| 导入成功但取词从不调用 | `capabilities` 未声明 `getLyrics` | 声明 `getLyrics` 并实现对应入口；如果需要先搜歌，再声明 `searchSongs` |
 | 插件没被执行 | 开关没打开；排序在前的来源已命中 | 管理页确认开关与顺序（首个命中即胜出） |
 | 搜索有结果但整体未命中 | 候选缺 `id`（整条丢弃）；打分器全不达标；`internal` 超限被裁剪 | 填准 `id` 与毫秒 `duration` |
 | `getLyrics` 返回了但显示无歌词 | 负载字段名不在别名表；structured 的 `original` 为空或行文本全空；raw 文本为空 | 对照 5.3 的表核字段名 |
@@ -586,7 +587,7 @@ zip -r example-lrc-hub.zip example-lrc-hub/
 | 不变量 | 内容 |
 |---|---|
 | 默认停用 | 插件全部停用（含内置 `lunabeat-ttml-hub`）；未启用的不参与调度，不产生任何网络请求 —— 启用动作本身就是用户对访问该数据源的授权 |
-| 串行 | 插件串行参与回退链，不做并发竞速：Rhino 运行时非线程安全，竞速还会让同一首歌两次显示不同来源的词 |
+| 串行 | 插件按配置顺序参与回退链，先命中的来源提供歌词 |
 | 不越权 | 插件永远只是来源之一，不会盖过用户排在前面的 AMLL / 音源 / 本地歌词 |
 
 历史路径备查：未装配注册表的最小环境（主要是测试）里存在一条旧回退链（AMLL → 音源 API → 插件兜底），插件固定位于 AMLL 与音源 API 之后。应用本体总是装配注册表，正常用户走不到。
@@ -609,7 +610,7 @@ zip -r example-lrc-hub.zip example-lrc-hub/
 | 插件 API 版本（manifest `apiVersion`） | 接受 1–5 |
 | 宿主 API 版本（`runtime.getInfo().hostApiVersion`） | 4 |
 | 要求的宿主版本（manifest `minHostApiVersion`） | 接受 1–4 |
-| JS 语法 | ES6（Rhino 解释执行） |
+| JS 语法 | QuickJS，支持 `async` / `await` |
 | 歌词格式 | TTML / plain LRC / 增强（逐字）LRC / 多人增强 LRC / structured |
 | 时间单位 | 毫秒（`duration`、`start` / `end` 一律毫秒） |
 | 与 Lyrico 的差异 | 未实现 `xml.*` 与 AES 系列；i18n 是桩实现；cache TTL 被忽略；日志无出口 |
@@ -626,7 +627,7 @@ zip -r example-lrc-hub.zip example-lrc-hub/
 | 两套独立版本编号的 KDoc；`HOST_PROVIDER_API_VERSION = 3` | `core/src/commonMain/kotlin/cp/player/core/provider/ModuleManifest.kt` L89-104 |
 | JS 引导层全部 `Platform.*` 签名 | `core/src/jvmMain/kotlin/cp/player/core/lyricsplugin/RhinoPluginRuntime.kt` L127-283 |
 | `__invoke` 调度器与入口约定 | 同上 L55-64、L115-124 |
-| Rhino 解释模式 / ES6 / 非线程安全 | 同上 L40-41、L71-83 |
+| QuickJS 实例、线程与异步调度 | 同上 L40-88 |
 | `{"value": ...}` 返回包装 | `core/src/jvmMain/kotlin/cp/player/core/lyricsplugin/JvmPluginHostApi.kt` L33-38、L165 |
 | i18n 桩（zh-CN / 原样返回 key） | 同上 L70-71 |
 | app.info / userAgent / runtime.info | 同上 L61-69 |

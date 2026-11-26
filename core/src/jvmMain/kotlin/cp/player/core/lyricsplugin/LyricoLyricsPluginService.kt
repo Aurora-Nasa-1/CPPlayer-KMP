@@ -154,13 +154,81 @@ class LyricoLyricsPluginService(
     ): PluginLyricsOutcome? {
         val runtime = runtimeFor(source)
         val config = store.pluginConfig(source.manifest.id)
+        val target = LyricsMatchScorer.Target(
+            title = title,
+            artist = artist.takeIf { it.isNotBlank() },
+            album = album.takeIf { it.isNotBlank() },
+            durationMs = durationMs,
+        )
+        val searchesSongs = PluginCapability.SEARCH_SONGS in source.manifest.capabilities
+        val hit = if (searchesSongs) {
+            findSong(runtime, source, target, config, mediaId) ?: return null
+        } else {
+            null
+        }
+        val pluginId = source.manifest.id
+        val song = hit?.toPluginSongRequest(mediaId = mediaId) ?: PluginSongRequest(
+            id = "",
+            title = title,
+            artist = artist,
+            album = album,
+            duration = durationMs,
+            sourceId = pluginId,
+            pluginId = pluginId,
+            mediaId = mediaId,
+        )
+        val request = PluginGetLyricsRequest(song = song, config = config, mediaId = mediaId)
+        val raw = runtime.call("getLyrics", pluginJson.encodeToString(request))
+        val lines: List<SyncedLyricLine> = if (searchesSongs) {
+            LyricsPluginJsonParser.toSyncedLines(parser.parseLyrics(raw) ?: return null)
+        } else {
+            parser.parseLyricsCandidates(raw)
+                .mapNotNull { candidate ->
+                    val tags = candidate.tags
+                    val candidateTitle = tags["ti"].orEmpty()
+                    val score = if (candidateTitle.isBlank() && source.manifest.apiVersion < 4) {
+                        // API 1–3 also allowed untagged lyrics and raw LRC strings.
+                        0
+                    } else {
+                        LyricsMatchScorer.score(
+                            target,
+                            LyricsMatchScorer.Candidate(
+                                titles = listOf(candidateTitle),
+                                artists = listOf(tags["ar"].orEmpty()),
+                                albums = listOf(tags["al"].orEmpty()),
+                            ),
+                        ).takeIf { it >= LyricsMatchScorer.MIN_ACCEPTABLE_SCORE } ?: return@mapNotNull null
+                    }
+                    score to candidate
+                }
+                .sortedByDescending { it.first }
+                .firstNotNullOfOrNull { (_, candidate) ->
+                    LyricsPluginJsonParser.toSyncedLines(candidate).takeIf { it.isNotEmpty() }
+                }.orEmpty()
+        }
+        if (lines.isEmpty()) return null
+        return PluginLyricsOutcome(
+            sourceId = pluginId,
+            sourceName = source.manifest.name,
+            lines = lines,
+            hasWordLevel = lines.any { it.words.isNotEmpty() },
+            coverUrl = hit?.picUrl?.takeIf { it.isNotBlank() },
+        )
+    }
 
-        val rawKeyword = listOf(title, artist).filter { it.isNotBlank() }.joinToString(" ")
-        // 优先使用清洗后的关键词；如果没搜到且原词不同，用原词再试一次
+    private fun findSong(
+        runtime: RhinoPluginRuntime,
+        source: LyricoPluginSource,
+        target: LyricsMatchScorer.Target,
+        config: Map<String, String>,
+        mediaId: String?,
+    ): PluginSongSearchResult? {
+        val rawKeyword = listOfNotNull(target.title, target.artist).joinToString(" ")
         val sanitized = cp.player.core.util.MusicSearchSanitizer.sanitize(rawKeyword)
-        val candidateKeywords = listOf(sanitized.cleanKeyword, rawKeyword).distinct().filter { it.isNotBlank() }
+        // Some indexes match single fields only. Keep the artist in the scorer when retrying by title.
+        val candidateKeywords = listOf(sanitized.cleanKeyword, rawKeyword, target.title)
+            .distinct().filter { it.isNotBlank() }
 
-        var hits = emptyList<PluginSongSearchResult>()
         for (kw in candidateKeywords) {
             val searchRequest = PluginSearchSongsRequest(
                 keyword = kw,
@@ -169,57 +237,22 @@ class LyricoLyricsPluginService(
                 config = config,
                 mediaId = mediaId,
             )
-            val parsedHits = parser.parseSongResults(
+            val hits = parser.parseSongResults(
                 rawJson = runtime.call("searchSongs", pluginJson.encodeToString(searchRequest)),
                 pluginId = source.manifest.id,
                 pluginName = source.manifest.name,
             )
-            if (parsedHits.isNotEmpty()) {
-                hits = parsedHits
-                break
+            val hit = LyricsMatchScorer.findBestMatch(target, hits) { song ->
+                LyricsMatchScorer.Candidate(
+                    titles = listOf(song.title),
+                    artists = listOf(song.artist),
+                    albums = listOf(song.album),
+                    durationMs = song.duration,
+                )
             }
+            if (hit != null) return hit
         }
-        if (hits.isEmpty()) return null
-
-        // 利用打分器综合评定歌名、歌手、时长及负向惩罚（伴奏/翻唱/Live），挑选最高置信度候选
-        val target = LyricsMatchScorer.Target(
-            title = title,
-            artist = artist.takeIf { it.isNotBlank() },
-            album = album.takeIf { it.isNotBlank() },
-            durationMs = durationMs,
-        )
-        val hit = LyricsMatchScorer.findBestMatch(
-            target = target,
-            candidates = hits,
-        ) { song ->
-            LyricsMatchScorer.Candidate(
-                titles = listOf(song.title),
-                artists = listOf(song.artist),
-                albums = listOf(song.album),
-                durationMs = song.duration,
-            )
-        } ?: return null
-
-        val lyricsRequest = PluginGetLyricsRequest(
-            song = hit.toPluginSongRequest(mediaId = mediaId),
-            config = config,
-            mediaId = mediaId,
-        )
-        val raw = runtime.call(
-            "getLyrics",
-            pluginJson.encodeToString(lyricsRequest),
-        )
-        val lyrics = parser.parseLyrics(raw) ?: return null
-        val lines: List<SyncedLyricLine> = LyricsPluginJsonParser.toSyncedLines(lyrics)
-        if (lines.isEmpty()) return null
-
-        return PluginLyricsOutcome(
-            sourceId = source.manifest.id,
-            sourceName = source.manifest.name,
-            lines = lines,
-            hasWordLevel = lines.any { it.words.isNotEmpty() },
-            coverUrl = hit.picUrl.takeIf { it.isNotBlank() },
-        )
+        return null
     }
 
     override fun close() {

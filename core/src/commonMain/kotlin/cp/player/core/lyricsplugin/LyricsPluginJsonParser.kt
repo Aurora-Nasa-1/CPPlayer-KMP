@@ -72,6 +72,12 @@ class LyricsPluginJsonParser(private val json: Json = pluginJson) {
     fun parseLyrics(rawJson: String): PluginLyricsResult? =
         parseLyricsElement(runCatching { json.parseToJsonElement(rawJson) }.getOrNull() ?: return null)
 
+    fun parseLyricsCandidates(rawJson: String): List<PluginLyricsResult> {
+        val root = runCatching { json.parseToJsonElement(rawJson) }.getOrNull() ?: return emptyList()
+        return if (root is JsonArray) root.mapNotNull(::parseLyricsElement)
+        else listOfNotNull(parseLyricsElement(root))
+    }
+
     private fun parseLyricsElement(root: JsonElement): PluginLyricsResult? {
         if (root is JsonArray) {
             // API 4 允许 getLyrics 返回多个候选；本宿主取第一个可用项。
