@@ -226,17 +226,17 @@ fun DesktopTitleBar(
         windowState.placement = if (maximized) WindowPlacement.Floating else WindowPlacement.Maximized
     }
 
-    // 右侧按钮组总宽：账号 + 消息 + 动态 + (仅 desktopRun/debug: 手机预览) + 迷你模式
-    // + 设置 + 分隔线 + 三颗窗口钮。消息 / 动态被隐藏时**连槽位一起消失**，
+    // 右侧按钮组总宽：账号 + 消息 + 动态 + (仅 desktopRun/debug: 手机预览)
+    // + 设置 + 分隔线 + 四颗窗口钮。消息 / 动态被隐藏时**连槽位一起消失**，
     // 否则搜索框会为一个看不见的按钮保留 44dp，左右不再对称。
     val showMobilePreview = AppVersion.isDesktopRunOrDebug
-    val businessSlots = 2 +
+    val businessSlots = 1 +
         (if (showMessages) 1 else 0) +
         (if (showDynamic) 1 else 0) +
         (if (showMobilePreview) 1 else 0) +
         (if (showSettings) 1 else 0)
     val rightGroupWidth =
-        ChromeSlotWidth * (businessSlots + 3) + ChromeSeparatorWidth
+        ChromeSlotWidth * (businessSlots + 4) + ChromeSeparatorWidth
 
     Box(
         modifier = modifier
@@ -361,12 +361,6 @@ fun DesktopTitleBar(
                             Icon(Icons.Filled.PhoneAndroid, "手机版界面预览", modifier = Modifier.size(18.dp))
                         }
                     }
-                    ChromeSlot(
-                        onClick = onToggleMiniMode,
-                        modifier = Modifier.chromeFade(chromeAlpha, interactive = !immersive),
-                    ) {
-                        Icon(Icons.Filled.PictureInPictureAlt, "迷你模式", modifier = Modifier.size(18.dp))
-                    }
                     if (showSettings) {
                         ChromeSlot(
                             onClick = onOpenSettings,
@@ -386,7 +380,7 @@ fun DesktopTitleBar(
                     // （hover 光标走 `pointerHoverIcon` 这条独立链路，不认消费）。
                     // 所以淡完之后直接把节点摘掉：命中测试、光标、焦点随之一起消失。
                     //
-                    // 摘掉就必须自己把宽度补回来 —— 这一段决定了右侧三颗窗口钮的横向位置。
+                    // 摘掉就必须自己把宽度补回来 —— 这一段决定了右侧窗口钮的横向位置。
                     // 左侧块 = 右侧按钮组宽度，中间是原来的 weight(1f)，
                     // 右侧业务槽按 businessSlots 补。沉浸态下窗口顶边仍然可以拖。
                     WindowDragRegion(
@@ -404,6 +398,7 @@ fun DesktopTitleBar(
                 // 只剩一条孤零零的竖线压在窗口钮左边，比没有更显脏。
                 ChromeSeparator(Modifier.chromeFade(chromeAlpha, interactive = true))
 
+                WindowControlButton(Icons.Filled.PictureInPictureAlt, s.player.miniPlayer, onClick = onToggleMiniMode)
                 // ⚠️ 刻意用 `Remove`（居中横线）而不是 `Minimize`：后者的横线贴在该字形框
                 // 底部，与相邻的 CropSquare / Close 不在同一条水平线上（实测低了约 5px，
                 // 肉眼扫过去只是「有点歪」，量像素才看得出来）。
