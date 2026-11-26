@@ -19,6 +19,21 @@ import java.nio.charset.StandardCharsets
  */
 private const val JapaneseFontPath = "fonts/noto_sans_jp.ttf"
 private const val MiSansFontPath = "fonts/misans_vf.ttf"
+private const val GoogleSansFontPath = "fonts/google_sans_flex.ttf"
+
+@Composable
+internal actual fun rememberExternalGoogleSansFlexFamily(roundness: Int?): FontFamily? {
+    if (System.getProperty("org.graalvm.nativeimage.imagecode") != "runtime" ||
+        !System.getProperty("os.name").startsWith("Windows")) return null
+    val file = remember { resolveFontDiskFile(GoogleSansFontPath) }
+    return remember(file, roundness) {
+        if (file == null) FontFamily.Default else FontFamily(
+            AppFontWeights.map { (weight, fontWeight) ->
+                Font(file, fontWeight, FontStyle.Normal, googleSansFlexVariation(weight, roundness))
+            },
+        )
+    }
+}
 
 /** classpath 查询的锚点（顶层的 `expect fun` 拿不到 `javaClass`）。 */
 private object DesktopFontAnchor

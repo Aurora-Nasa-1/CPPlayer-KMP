@@ -214,7 +214,16 @@ Nucleus 固定在 `gradle/libs.versions.toml` 的 `3.0.0-dev-202611222143`。3.0
 |---|---|
 | `headless = false` | 保留 L3 的 GUI 元数据（Compose / Skiko 必需） |
 | `autoIncludeResources = true` | 注册工程资源根 |
+| `-H:ExcludeResources=…` | Windows 原生版排除三款外置字体；打包时须放入 EXE 同级 `fonts/` |
 | `detectOrphanProjectClasses = true` | 为注解处理器产物补无参构造器 |
+
+用 `-Pcp.graalvm.buildReport=true` 输出 GraalVM 构建报告，区分代码、镜像堆和资源。比较工作集时，用同一份 Windows 原生包、同一窗口尺寸和同一首歌；分别用 `CPPLAYER_RENDER_API=DIRECT3D` 和 `CPPLAYER_RENDER_API=SOFTWARE_FAST` 重启，并各采集首页空闲 60 秒、播放页 300 秒和托盘 60 秒。逐项比较 Total WS、Private WS、Private Commit 和动画流畅度：
+
+```powershell
+.\scripts\measure-windows-memory.ps1 -ProcessId 1234 -Scenario d3d-idle -Seconds 60 -CsvPath d3d-idle.csv -RequireSingleNativeProvider
+```
+
+切换音源时可另采一轮，检查已加载的音源快照最多一个，并确认切换前后的快照不同。单个音源所带的依赖 DLL 归入同一个快照计数。确认渲染后端确实生效后，再单独调整图片缓存上限做第二轮对照；不要把渲染和缓存的变化混在一次采样里。
 
 不要先手写反射条目：先跑 `:app:cleanupGraalvmMetadata`，它会报告已被 L1–L3 或静态分析覆盖的条目。
 

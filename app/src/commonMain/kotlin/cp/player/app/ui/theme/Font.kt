@@ -49,6 +49,8 @@ internal val AppFontWeights: List<Pair<Int, FontWeight>> = listOf(
  */
 @Composable
 internal fun googleSansFlexFamily(roundness: Int?): FontFamily {
+    val external = rememberExternalGoogleSansFlexFamily(roundness)
+    if (external != null) return external
     val light = googleSansFlex(300, FontWeight.Light, roundness)
     val normal = googleSansFlex(400, FontWeight.Normal, roundness)
     val medium = googleSansFlex(500, FontWeight.Medium, roundness)
@@ -64,6 +66,9 @@ internal fun googleSansFlexFamily(roundness: Int?): FontFamily {
     }
 }
 
+@Composable
+internal expect fun rememberExternalGoogleSansFlexFamily(roundness: Int?): FontFamily?
+
 /**
  * 取 Google Sans Flex 的一个字重实例。
  *
@@ -78,6 +83,10 @@ private fun googleSansFlex(weight: Int, fontWeight: FontWeight, roundness: Int?)
     Res.font.google_sans_flex,
     fontWeight,
     FontStyle.Normal,
+    googleSansFlexVariation(weight, roundness),
+)
+
+internal fun googleSansFlexVariation(weight: Int, roundness: Int?): FontVariation.Settings =
     if (roundness != null && roundness > 0) {
         FontVariation.Settings(
             FontVariation.weight(weight),
@@ -87,8 +96,7 @@ private fun googleSansFlex(weight: Int, fontWeight: FontWeight, roundness: Int?)
         )
     } else {
         FontVariation.Settings(FontVariation.weight(weight))
-    },
-)
+    }
 
 
 

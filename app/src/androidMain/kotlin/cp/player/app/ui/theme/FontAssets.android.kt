@@ -234,6 +234,9 @@ internal object AndroidFontPacks {
 }
 
 @Composable
+internal actual fun rememberExternalGoogleSansFlexFamily(roundness: Int?): FontFamily? = null
+
+@Composable
 actual fun rememberAppFontFamilies(): AppFontFamilies {
     val context = LocalContext.current
     AndroidFontPacks.attach(context)

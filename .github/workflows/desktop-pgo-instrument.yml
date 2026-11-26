@@ -89,12 +89,7 @@ jobs:
           if (-not (Test-Path "$appDir/CPPlayer.exe")) {
             throw "CPPlayer.exe not found in $appDir"
           }
-          if (Test-Path "app/native/rust_lib_flick_player.dll") {
-            Copy-Item "app/native/rust_lib_flick_player.dll" -Destination $appDir -Force
-            New-Item -ItemType Directory -Path "$appDir/native" -Force | Out-Null
-            Copy-Item "app/native/rust_lib_flick_player.dll" -Destination "$appDir/native" -Force
-            Write-Host "Ensured rust_lib_flick_player.dll is present in $appDir"
-          } else {
+          if (-not (Test-Path "$appDir/rust_lib_flick_player.dll")) {
             Write-Warning "app/native/rust_lib_flick_player.dll not found; FlickEngine will not be bundled."
           }
           $zipPath = "CPPlayer-win-x64-pgo-instrument.zip"

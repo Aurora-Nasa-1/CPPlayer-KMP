@@ -847,6 +847,9 @@ nucleus {
             // 项目自身资源按 resource roots 自动登记：动态 getResourceAsStream(computedPath)
             // 无法被 native-image 静态发现，漏登记就是运行时静默少文件。
             autoIncludeResources.set(true)
+            if (findProperty("cp.graalvm.buildReport") == "true") {
+                buildArgs.addAll("--emit", "build-report")
+            }
             // 注解处理器按命名约定产出的类（Room *_Impl、Dagger/Hilt *_Factory 等）
             // 静态分析看不见，由插件补 public no-arg <init> 注册。
             detectOrphanProjectClasses.set(true)
@@ -891,6 +894,8 @@ nucleus {
             }
             buildArgs.addAll(
                 "-H:+UnlockExperimentalVMOptions",
+                // Windows 镜像从 exe 同级 fonts/ 读取这三款字体；保留 JVM / Android 的资源。
+                "-H:ExcludeResources=(.*/)?(google_sans_flex|misans_vf|noto_sans_jp)[.]ttf",
                 "-H:+CompactingOldGen",
                 // 线程栈大小 512 KB（524288 字节，对应 JVM 侧的 -Xss512k；依赖上面的 UnlockExperimentalVMOptions）。
                 "-H:StackSize=524288",
@@ -1158,6 +1163,32 @@ val packageLinuxTarGz = tasks.register<Tar>("packageLinuxTarGz") {
 // 让 Velopack 写进自己的快捷方式，值必须与代码里的 `WindowsSmtcIdentity.APP_ID` 一致；
 // 改代码里的 APP_ID 时这里要同步（两处不一致 = SMTC 身份失效）。
 // ⚠️ 别改成 StartMenu 子目录「错开」——那只是让两个同名入口互相看不见，AUMID 仍然对不上。
+fun stageWindowsNativeAssets(appDir: File) {
+    val fonts = mapOf(
+        "google_sans_flex.ttf" to "src/commonMain/composeResources/font/google_sans_flex.ttf",
+        "misans_vf.ttf" to "src/desktopMain/resources/fonts/misans_vf.ttf",
+        "noto_sans_jp.ttf" to "src/desktopMain/resources/fonts/noto_sans_jp.ttf",
+    )
+    val fontDir = appDir.resolve("fonts").also { it.mkdirs() }
+    fonts.forEach { (name, path) ->
+        val source = project.file(path)
+        check(source.isFile && source.length() > 0) { "缺少 Windows 原生版字体：${source.absolutePath}" }
+        source.copyTo(fontDir.resolve(name), overwrite = true)
+        val duplicate = appDir.resolve("resources/fonts/$name")
+        check(!duplicate.exists() || duplicate.delete()) { "无法移除重复字体：$duplicate" }
+    }
+    val flick = "rust_lib_flick_player.dll"
+    val source = listOf(project.file("native/$flick"), rootProject.file("native/$flick"))
+        .firstOrNull { it.isFile }
+    if (source != null) {
+        source.copyTo(appDir.resolve(flick), overwrite = true)
+        listOf("native", "app", "runtime/bin").forEach { dir ->
+            val duplicate = appDir.resolve("$dir/$flick")
+            check(!duplicate.exists() || duplicate.delete()) { "无法移除重复音频库：$duplicate" }
+        }
+    }
+}
+
 val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
     group = "compose desktop"
     description =
@@ -1228,7 +1259,8 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
 
         // 生产发版（Windows）：优先采用 GraalVM Native Image 编译产出的独立原生应用镜像
         val graalvmAppDir = layout.buildDirectory.dir("compose/binaries/main/graalvm-app/$cpPackageName").get().asFile
-        if (graalvmAppDir.resolve("$cpPackageName.exe").isFile) {
+        var hasNativeApp = graalvmAppDir.resolve("$cpPackageName.exe").isFile
+        if (hasNativeApp) {
             appDir.mkdirs()
             graalvmAppDir.copyRecursively(appDir, overwrite = true)
             logger.lifecycle("已装配 GraalVM Native Image 原生应用镜像: ${graalvmAppDir.absolutePath} -> ${appDir.absolutePath}")
@@ -1242,6 +1274,7 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
             )
             val foundNativeExe = nativeCandidates.firstOrNull { it.isFile }
             if (foundNativeExe != null) {
+                hasNativeApp = true
                 appDir.mkdirs()
                 val destExe = appDir.resolve("$cpPackageName.exe")
                 foundNativeExe.copyTo(destExe, overwrite = true)
@@ -1269,7 +1302,7 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
                 appDir.resolve("app"),
                 appDir.resolve("runtime/bin"),
             )
-            nativeFiles.forEach { f ->
+            nativeFiles.filterNot { hasNativeApp && it.name == "rust_lib_flick_player.dll" }.forEach { f ->
                 targets.forEach { targetDir ->
                     targetDir.mkdirs()
                     val dest = targetDir.resolve(f.name)
@@ -1288,7 +1321,9 @@ val packageWindowsVelopack = tasks.register<Exec>("packageWindowsVelopack") {
             .associateBy { it.name }
             .values
 
-        if (fontFiles.isNotEmpty()) {
+        if (hasNativeApp) {
+            stageWindowsNativeAssets(appDir)
+        } else if (fontFiles.isNotEmpty()) {
             val fontTargets = listOf(
                 appDir.resolve("fonts"),
                 appDir.resolve("resources/fonts"),
@@ -1324,28 +1359,7 @@ tasks.matching { it.name == "packageGraalvmNative" }.configureEach {
     doLast {
         val graalvmAppDir = layout.buildDirectory.dir("compose/binaries/main/graalvm-app/$cpPackageName").get().asFile
         if (graalvmAppDir.isDirectory) {
-            val nativeFiles = listOf(
-                project.file("native"),
-                rootProject.file("native"),
-            ).filter { it.isDirectory }
-                .flatMap { it.listFiles()?.filter { f -> f.isFile }?.toList() ?: emptyList() }
-                .associateBy { it.name }
-                .values
-
-            if (nativeFiles.isNotEmpty()) {
-                val targets = listOf(
-                    graalvmAppDir,
-                    graalvmAppDir.resolve("native"),
-                )
-                nativeFiles.forEach { f ->
-                    targets.forEach { targetDir ->
-                        targetDir.mkdirs()
-                        val dest = targetDir.resolve(f.name)
-                        f.copyTo(dest, overwrite = true)
-                        logger.lifecycle("已注入原生动态库至 GraalVM 应用镜像: ${f.name} -> ${dest.absolutePath}")
-                    }
-                }
-            }
+            stageWindowsNativeAssets(graalvmAppDir)
         }
     }
 }
