@@ -154,22 +154,26 @@ internal fun DesktopLibraryLayout(
                     if (playlistList) playlistGap else CpSpacing.section,
                 ),
             ) {
-                item(key = "heading") {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        CpText(
-                            subtitle,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 2,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        DesktopLibraryActionButton(s.library.searchLibrary, Icons.Filled.Search, actions.onSearch)
-                        DesktopLibraryActionButton(s.library.importPlaylist, Icons.Filled.FileUpload, actions.onImport)
-                        DesktopLibraryActionButton(s.library.newPlaylist, Icons.Filled.Add, actions.onCreatePlaylist)
+                // 手机端不展示页头统计行：「共 N 个歌单 · 收藏 M 首」属于仪表盘文字，
+                // 三个动作按钮下移到「歌单 / 本地媒体库」分段右侧（紧凑且不占整行）。
+                if (!compact) {
+                    item(key = "heading") {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CpText(
+                                subtitle,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 2,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            DesktopLibraryActionButton(s.library.searchLibrary, Icons.Filled.Search, actions.onSearch)
+                            DesktopLibraryActionButton(s.library.importPlaylist, Icons.Filled.FileUpload, actions.onImport)
+                            DesktopLibraryActionButton(s.library.newPlaylist, Icons.Filled.Add, actions.onCreatePlaylist)
+                        }
                     }
                 }
                 item(key = "shortcuts") {
@@ -221,7 +225,9 @@ internal fun DesktopLibraryLayout(
                             CpText(
                                 s.library.libraryTitle,
                                 style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
+                                // 手机端标题降一档字重：这一行与下方分段控件同处一屏，
+                                // 过粗会压过分段；桌面保持 Bold 维持页头分量。
+                                fontWeight = if (compact) FontWeight.SemiBold else FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                             if (state.selectedTab != 0) {
@@ -232,14 +238,23 @@ internal fun DesktopLibraryLayout(
                                 )
                             }
                         }
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             CpConnectedChoice(
                                 selectedIndex = state.selectedTab.coerceIn(0, 1),
                                 labels = listOf(s.library.tabPlaylists, s.downloads.tabLocalLibrary),
                                 onSelect = actions.onSelectTab,
                             )
                             Spacer(Modifier.weight(1f))
-                            if (!compact && state.selectedTab == 0) {
+                            if (compact) {
+                                // 手机端：三个动作按钮回到分段右侧，沿用之前的行内位置。
+                                DesktopLibraryActionButton(s.library.searchLibrary, Icons.Filled.Search, actions.onSearch)
+                                DesktopLibraryActionButton(s.library.importPlaylist, Icons.Filled.FileUpload, actions.onImport)
+                                DesktopLibraryActionButton(s.library.newPlaylist, Icons.Filled.Add, actions.onCreatePlaylist)
+                            } else if (state.selectedTab == 0) {
                                 DesktopLibraryViewToggle(gridView, onGridViewChange)
                             }
                         }
