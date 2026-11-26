@@ -137,21 +137,6 @@ kotlin {
             implementation(libs.androidx.media3.datasource.okhttp)
             // SimpleCache / StandaloneDatabaseProvider —— 音频流磁盘缓存
             implementation(libs.androidx.media3.database)
-            // —— 歌词对外投放（系统级歌词渠道）——
-            // 只放 androidMain：桌面端无对应生态，commonMain 只保留可测的纯协议层。
-            // 用 implementation 而非 api：消费方（app / app-android）只通过
-            // cp.player.core.lyricpush.LyricPusher 这个自家接口打交道，不直接碰 SDK 类型。
-            implementation(libs.lyricon.provider)      // 词幕（Lyricon）
-            implementation(libs.superlyric.api)        // SuperLyric
-            implementation(libs.lyric.getter.api)      // Lyric Getter
-            implementation(libs.hyper.focus.api)       // HyperOS 超级小岛
-            // —— 超级岛歌词的 XMSF 临时断网隔离（联网显示的关键）——
-            // shizuku-api 传递引入 aidl + shared（`moe.shizuku.server.IShizukuService` 在 aidl 里）；
-            // shizuku-provider 只为 `rikka.shizuku.ShizukuProvider` 这个类能被宿主清单按名字找到，
-            // core 的代码不直接引用它。
-            implementation(libs.shizuku.api)
-            implementation(libs.shizuku.provider)
-            implementation(libs.hidden.api.bypass)
         }
 
         // 注意：这里曾声明 org.openjfx:javafx-graphics / javafx-base，但全仓 Kotlin 源码

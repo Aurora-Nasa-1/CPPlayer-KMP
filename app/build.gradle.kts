@@ -341,6 +341,9 @@ tasks.withType<JavaCompile>().configureEach {
 
 
     sourceSets {
+        val jvmMain by creating {
+            dependsOn(commonMain.get())
+        }
         val commonMain by getting {
             dependencies {
                 api(project(":core"))
@@ -359,9 +362,8 @@ tasks.withType<JavaCompile>().configureEach {
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.datetime)
-                implementation(libs.voyager.navigator)
-                implementation(libs.voyager.screenmodel)
-                implementation(libs.voyager.transitions)
+                implementation(libs.navigation3.ui)
+                implementation(libs.navigation3.viewmodel)
                 implementation(libs.qrose)
                 implementation(libs.coil.compose)
                 implementation(libs.coil.network.okhttp)
@@ -381,6 +383,7 @@ tasks.withType<JavaCompile>().configureEach {
             }
         }
         val androidMain by getting {
+            dependsOn(jvmMain)
             dependencies {
                 implementation(libs.androidx.activity.compose)
                 // FileProvider（本地歌曲「在文件管理器中打开」的私有目录兜底）。
@@ -390,9 +393,17 @@ tasks.withType<JavaCompile>().configureEach {
                 implementation(libs.androidx.media.compat)
                 implementation(libs.kotlinx.coroutines.android)
                 implementation(libs.ktor.client.okhttp)
+                implementation(libs.lyricon.provider)
+                implementation(libs.superlyric.api)
+                implementation(libs.lyric.getter.api)
+                implementation(libs.hyper.focus.api)
+                implementation(libs.shizuku.api)
+                implementation(libs.shizuku.provider)
+                implementation(libs.hidden.api.bypass)
             }
         }
         val desktopMain by getting {
+            dependsOn(jvmMain)
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.nucleus.application)
@@ -578,6 +589,7 @@ val desktopCommonJvmArgs = (listOf(
     "--enable-native-access=ALL-UNNAMED",
     "-Xms64m",
     "-Xmx256m",
+    "-Xss512k",
     "-Dcp.player.versionName=$appVersionName",
     "-Dcp.player.versionCode=$appVersionCode",
     "-Dcp.player.releaseChannel=$appReleaseChannel",
@@ -597,11 +609,41 @@ val desktopCommonJvmArgs = (listOf(
 // peak limits for dense image/control pages that otherwise churn the young gen.
 val desktopRunHeapArgs = listOf("-Xms64m", "-Xmx192m", "-Xmn48m")
 
+// ---------------------------------------------------------------------------
+// FlickEngine 原生动态库：随 app-image 一起进安装包
+//
+// jpackage 的 `--app-content` 会把目录内容原样拷进应用目录（Linux: `lib/app`，
+// Windows: `app/`），正是 `DesktopHiResEngine` 从 jar 位置反推的搜索目录。
+//
+// 为什么需要这一层：`packageLinuxTarGz` 的注入发生在 createDistributable **之后**，
+// 只覆盖 tar.gz；而 `packageDeb` 是另一次 jpackage 调用，从零生成自己的应用镜像，
+// 事后注入碰不到它 ⇒ deb 装出来没有引擎、Linux 上完全没有声音。
+//
+// ⚠️ 只带**当前宿主平台**的库：Linux runner 只拷 .so、Windows 只拷 .dll，
+// 不把 6 MB 的异构二进制塞进另一个平台的包里。
+// ⚠️ 目录由本任务生成，jpackage 任务必须显式依赖它 —— Gradle 不会自动连线，
+// 漏了就会「目录为空但构建成功」，装出来依旧无声。
+val nativeLibExt = when {
+    System.getProperty("os.name").lowercase().contains("win") -> "dll"
+    System.getProperty("os.name").lowercase().contains("mac") -> "dylib"
+    else -> "so"
+}
+val prepareDesktopAppResources = tasks.register<Sync>("prepareDesktopAppResources") {
+    group = "compose desktop"
+    description = "把当前平台的 FlickEngine 动态库整理到 build/app-resources（jpackage --app-content 的输入）。"
+    into(layout.buildDirectory.dir("app-resources"))
+    from(project.file("native")) {
+        include("*.$nativeLibExt")
+    }
+}
+tasks.matching { it.name == "createDistributable" || it.name.startsWith("package") }.configureEach {
+    dependsOn(prepareDesktopAppResources)
+}
+
 nucleus {
     application {
         mainClass = "cp.player.app.MainKt"
         logger.lifecycle("CPPlayer: 桌面端 JVM 调优模式: GC=$chosenGc, CompactHeaders=$enableCompactHeaders, JDK25+=$isJdk25OrNewer")
-
         // 换 JBR：让 jpackage 用 JetBrains Runtime 做运行时镜像。
         //
         // ⚠️ **没解析到就不设**，不能设成 null / 不存在的路径 ——
@@ -664,6 +706,11 @@ nucleus {
             // 「目录选择框是老式对话框」「向导步骤多」这些都属于 MSI 的固有行为，
             // 在本仓库的配置层面改不动。详见 RELEASE.md「Windows 安装包」。
             targetFormats(TargetFormat.Dmg, TargetFormat.Deb)
+
+            // FlickEngine 动态库（见上面 prepareDesktopAppResources 的说明）。
+            // jpackage `--app-content` ⇒ Linux 落到 lib/app、Windows 落到 app/，
+            // 两条搜索路径都在 DesktopHiResEngine 的候选列表里。
+            appResourcesRootDir.set(layout.buildDirectory.dir("app-resources"))
 
             // ⚠️ release 的 jlink 镜像是**按模块清单裁剪**的，这份清单必须手工维护
             // （2026-10-05 真实事故：1.4.3 安装包启动即死，本地 `desktopRun` 完全复现不了）。
@@ -837,6 +884,8 @@ nucleus {
             buildArgs.addAll(
                 "-H:+UnlockExperimentalVMOptions",
                 "-H:+CompactingOldGen",
+                // 线程栈大小 512 KB（524288 字节，对应 JVM 侧的 -Xss512k；依赖上面的 UnlockExperimentalVMOptions）。
+                "-H:StackSize=524288",
                 // ── Serial GC 的帧率优先参数（Compose / Skiko）──────────────────
                 // Native Image 的 Serial GC 只有 STW 的 minor / major 两种停顿：
                 // 单次 minor 停顿主要取决于实际存活对象量，而过小的新生代会导致高频
@@ -1019,6 +1068,35 @@ val packageLinuxTarGz = tasks.register<Tar>("packageLinuxTarGz") {
                         logger.lifecycle("已注入原生动态库至 Linux 安装镜像: ${f.name} -> ${dest.absolutePath}")
                     }
                 }
+            }
+        }
+
+        // 引擎库是 Linux **出声的前提**：缺它时包能装、能启动，但任何音乐都放不出声
+        // （DesktopHiResPlatformPlayer 会退回 Noop）。CI 有独立的产物断言，
+        // 本地 makepkg / 手动跑任务同样必须早失败，别等到用户报「Linux 版没声音」。
+        val flickSo = appDir.resolve("lib/app/librust_lib_flick_player.so")
+        check(flickSo.isFile) {
+            "Linux 安装镜像里没有 librust_lib_flick_player.so：CI 会从 " +
+                "FLICK_NATIVE_RELEASE_TAG 下载 librust_lib_flick_player-linux-x64.so；" +
+                "本地构建先把它放到 app/native/（见 docs/dev/FLICK_ENGINE.md §7.5）。"
+        }
+        // 只查结构，不算 hash：这个库随仓库走，git blob 已经是版本锚点；
+        // 这里要挡的是「把 Android arm64 的 .so 同名放进来」——那样 JVM 能 dlopen 成功，
+        // 但 JNI 调用会全部失败，现象是 Linux 版静音且不报错。
+        flickSo.inputStream().use { input ->
+            val magic = ByteArray(4)
+            val machine = ByteArray(2)
+            check(
+                input.read(magic) == 4 &&
+                    magic.contentEquals(byteArrayOf(0x7f, 0x45, 0x4c, 0x46)),
+            ) { "librust_lib_flick_player.so 不是 ELF 文件（别把 Android 的 .so 放进来）" }
+            input.skip(12) // 跳过 e_ident 剩余 12 字节，当前位置 = 偏移 16（e_type）
+            val elfType = ByteArray(2)
+            check(input.read(elfType) == 2 && elfType.contentEquals(byteArrayOf(0x03, 0x00))) {
+                "librust_lib_flick_player.so 不是共享库（e_type 应为 ET_DYN=3）"
+            }
+            check(input.read(machine) == 2 && machine.contentEquals(byteArrayOf(0x3e, 0x00))) {
+                "librust_lib_flick_player.so 不是 x86_64（e_machine 应为 0x3e，别放 Android arm64 的库）"
             }
         }
     }

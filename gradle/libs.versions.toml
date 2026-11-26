@@ -22,7 +22,8 @@ a2ui = "1.0.0-alpha02"
 # （`Screen$DefaultImpls` 承载默认实现）换成了 `all`（真 default 方法 + `access$…$jd` 桥接）。
 # 字节码等价，尤其 `Screen.getKey()` 前后都在调同一个 `ScreenKt.commonKeyGeneration`，
 # 所以「同类 Screen 共享 ScreenModel」那条结论不受影响（见 MEMORY「关键坑」）。
-voyager = "2.2.21-1.10.3"
+navigation3 = "1.2.0"
+navigation3-lifecycle = "2.11.0"
 androidx-activity = "1.9.3"
 androidx-profileinstaller = "1.4.1"
 qrose = "1.3.1"
@@ -145,9 +146,8 @@ ktor-client-websockets = { module = "io.ktor:ktor-client-websockets", version.re
 androidx-core-ktx = { module = "androidx.core:core-ktx", version = "1.17.0" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
 androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "androidx-profileinstaller" }
-voyager-navigator = { module = "cafe.adriel.voyager:voyager-navigator", version.ref = "voyager" }
-voyager-screenmodel = { module = "cafe.adriel.voyager:voyager-screenmodel", version.ref = "voyager" }
-voyager-transitions = { module = "cafe.adriel.voyager:voyager-transitions", version.ref = "voyager" }
+navigation3-ui = { module = "org.jetbrains.androidx.navigation3:navigation3-ui", version.ref = "navigation3" }
+navigation3-viewmodel = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3", version.ref = "navigation3-lifecycle" }
 qrose = { module = "io.github.alexzhirkevich:qrose", version.ref = "qrose" }
 androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
 androidx-media3-exoplayer-hls = { group = "androidx.media3", name = "media3-exoplayer-hls", version.ref = "media3" }

@@ -257,6 +257,44 @@ jobs:
           mkdir -p app/native
           cp "$dll" app/native/rust_lib_flick_player.dll
 
+      # Linux 版**必须**带 FlickEngine：桌面端没有 rodio / 系统播放器回退路径，
+      # 缺这个 .so 的包能装能启动，但任何音乐都放不出声（NoopDesktopPlatformPlayer）。
+      #
+      # 引擎库只放 Release、不进 git：复用已有的 FLICK_NATIVE_RELEASE_TAG，
+      # **不新增 sha256 变量**。GitHub Release 资产是平铺的，Android arm64 已经
+      # 占用 librust_lib_flick_player.so，所以 x86_64 版本必须用另一个资产名，
+      # 下载落地时再改回 JVM 期望的文件名。
+      # 不做 hash 校验，改为结构校验：ELF/架构、JNI 验签入口、VIP 公钥。
+      - name: Fetch FLICK Linux runtime from release
+        if: matrix.platform == 'linux'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FLICK_TAG: ${{ vars.FLICK_NATIVE_RELEASE_TAG }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${FLICK_TAG:?Missing FLICK_NATIVE_RELEASE_TAG}"
+          : "${FLICK_VIP_PUBLIC_KEY:?Missing FLICK_VIP_PUBLIC_KEY}"
+          dir="$RUNNER_TEMP/flick-linux"
+          mkdir -p "$dir"
+          gh release download "$FLICK_TAG" --repo "$GITHUB_REPOSITORY" --dir "$dir" \
+            --pattern librust_lib_flick_player-linux-x64.so
+          so="$dir/librust_lib_flick_player-linux-x64.so"
+          test -s "$so" || { echo "::error::Linux 引擎资产为空"; exit 1; }
+          # 必须先确认是 x86_64 ELF：Android 的 arm64 库同名且 JVM 一样能 dlopen，
+          # 错了的表现是全盘静音、不报错，比直接缺库更难查。
+          magic="$(od -An -tx1 -N4 "$so" | tr -d ' \n')"
+          machine="$(od -An -tx1 -j18 -N2 "$so" | tr -d ' \n')"
+          [[ "$magic" == "7f454c46" && "$machine" == "3e00" ]] || {
+            echo "::error::不是 x86_64 ELF 共享库（magic=$magic machine=$machine）"
+            exit 1
+          }
+          grep -aFq -- 'Java_cp_player_core_playback_DesktopHiResEngine_nativeSetVipLicenseV2' "$so"
+          grep -aFq -- "$FLICK_VIP_PUBLIC_KEY" "$so"
+          sha256sum "$so"   # 只留一条可追溯记录，不做校验
+          mkdir -p app/native
+          cp "$so" app/native/librust_lib_flick_player.so
+
       - name: Build desktop package
         shell: bash
         run: |
@@ -360,7 +398,8 @@ jobs:
           for p in \
             'CPPlayer/bin/CPPlayer' \
             'CPPlayer/lib/runtime/release' \
-            'CPPlayer/lib/runtime/lib/modules'
+            'CPPlayer/lib/runtime/lib/modules' \
+            'CPPlayer/lib/app/librust_lib_flick_player.so'
           do
             grep -qx "$p" <<<"$listing" || {
               echo "::error::tar.gz 里缺 $p"
@@ -369,6 +408,8 @@ jobs:
               grep '^CPPlayer/bin/' <<<"$listing" | head -20 || true
               echo "--- 实际 CPPlayer/lib/runtime/（前 30 条）---"
               grep '^CPPlayer/lib/runtime/' <<<"$listing" | head -30 || true
+              echo "--- 实际 CPPlayer/lib/app/（前 30 条）---"
+              grep '^CPPlayer/lib/app/' <<<"$listing" | head -30 || true
               exit 1
             }
           done
@@ -397,6 +438,28 @@ jobs:
             }
           done
           echo "tar.gz 布局 OK"
+
+      # deb 是**另一次** jpackage 调用（自己生成应用镜像），tar.gz 的注入碰不到它。
+      # 引擎库靠 nativeDistributions.appResourcesRootDir → `--app-content` 进入
+      # lib/app；这条断言就是那个假设的唯一物证：没有它，包能装、启动、但一点声都没有。
+      - name: Verify deb contains FlickEngine
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb="$(ls app/build/compose/binaries/main/deb/CPPlayer-*.deb)"
+          echo "deb: $deb"
+          tmp="$(mktemp -d)"
+          ( cd "$tmp" && ar x "$OLDPWD/$deb" )
+          data="$(ls "$tmp"/data.tar.*)"
+          listing="$(tar -tf "$data")"
+          grep -q 'opt/CPPlayer/lib/app/librust_lib_flick_player\.so$' <<<"$listing" || {
+            echo "::error::deb 里缺 /opt/CPPlayer/lib/app/librust_lib_flick_player.so —— Linux 版会静音"
+            echo "--- 实际 lib/app 内容 ---"
+            grep 'opt/CPPlayer/lib/app/' <<<"$listing" | head -30 || true
+            exit 1
+          }
+          echo "deb 引擎库 OK"
       - name: Stage release artifacts
         # 把匹配到的安装包**平铺**到一个目录再上传。upload-artifact 会保留匹配路径的
         # 公共父目录结构：Linux 的 deb/*.deb 与 targz/*.tar.gz 没有共同文件层，
