@@ -26,10 +26,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DynamicFeed
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.LocationOn
@@ -37,12 +37,12 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Button
 import cp.player.app.ui.component.CpAlertDialog
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -90,6 +90,10 @@ import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LegacyModalBottomSheet
+import cp.player.app.ui.component.LocalEmbeddedInPane
+import cp.player.app.ui.component.LocalMiniPlayerTailSpace
+import cp.player.app.ui.component.LocalWindowChromeActive
+import cp.player.app.ui.component.PageHeader
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.presentation.dynamic.DynamicFilter
@@ -142,11 +146,9 @@ class DynamicScreen(
         val providerId = provider?.id ?: AppModel.activeProviderId()
         val following = socialFeatureAvailability(provider, SocialFeature.Feed)
         val userFeed = socialFeatureAvailability(provider, SocialFeature.UserFeed)
-        val searchFeed = socialFeatureAvailability(provider, SocialFeature.SearchFeed)
         val canPublish = socialFeatureAvailability(provider, SocialFeature.PublishFeed) == SocialAvailability.Available
         val canShare = socialFeatureAvailability(provider, SocialFeature.ShareFeed) == SocialAvailability.Available
         val availability = when {
-            state.filter is DynamicFilter.Search -> searchFeed
             state.filter is DynamicFilter.User || (!state.initialized && !userId.isNullOrBlank()) -> userFeed
             else -> following
         }
@@ -169,9 +171,12 @@ class DynamicScreen(
         var previewUrl by remember { mutableStateOf<String?>(null) }
         var forwardTarget by remember { mutableStateOf<DynamicPost?>(null) }
         val generation by AppModel.sourceGeneration.collectAsState()
-        var searching by remember(provider, generation, selfId) { mutableStateOf(false) }
         var composing by remember(provider, generation, selfId) { mutableStateOf(false) }
         var shareTrack by remember(provider, generation, selfId) { mutableStateOf<TrackSummary?>(null) }
+        val onCompose: (() -> Unit)? = if (selfId.isNotBlank() && (canPublish || canShare)) ({
+            shareTrack = if (canShare) AppModel.playback.state.value.currentTrack else null
+            composing = true
+        }) else null
 
         val body: @Composable (Modifier) -> Unit = { modifier ->
             DynamicContent(
@@ -182,6 +187,7 @@ class DynamicScreen(
                 supportsUserFeed = userFeed == SocialAvailability.Available,
                 requiresLogin = state.filter is DynamicFilter.Following && userId.isNullOrBlank() && selfId.isBlank(),
                 selfId = selfId,
+                hasFab = onCompose != null,
                 modifier = modifier,
                 onRefresh = model::refresh,
                 onLoadMore = model::loadMore,
@@ -208,11 +214,6 @@ class DynamicScreen(
                     }
                 },
                 onPreviewImage = { previewUrl = it },
-                onSearch = if (searchFeed == SocialAvailability.Available) ({ searching = true }) else null,
-                onCompose = if (selfId.isNotBlank() && (canPublish || canShare)) ({
-                    shareTrack = if (canShare) AppModel.playback.state.value.currentTrack else null
-                    composing = true
-                }) else null,
             )
         }
 
@@ -220,9 +221,33 @@ class DynamicScreen(
             CpRouteScaffold(
                 title = userName?.takeIf { it.isNotBlank() } ?: "动态",
                 onBack = if (navigator.depth > 1) ({ navigator.pop() }) else null,
+                floatingActionButton = {
+                    if (onCompose != null) {
+                        val tail = if (LocalWindowChromeActive.current || LocalEmbeddedInPane.current) {
+                            0.dp
+                        } else {
+                            LocalMiniPlayerTailSpace.current.coerceAtLeast(0.dp)
+                        }
+                        DynamicComposeFab(
+                            onClick = onCompose,
+                            modifier = if (tail > 0.dp) Modifier.padding(bottom = tail) else Modifier,
+                        )
+                    }
+                },
             ) { routeModifier -> body(routeModifier) }
         } else {
-            body(Modifier)
+            Box(Modifier.fillMaxSize()) {
+                body(Modifier)
+                if (onCompose != null) {
+                    val tail = LocalMiniPlayerTailSpace.current.coerceAtLeast(0.dp)
+                    DynamicComposeFab(
+                        onClick = onCompose,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 16.dp, bottom = 16.dp + tail),
+                    )
+                }
+            }
         }
 
         state.commentTarget?.let { target ->
@@ -252,17 +277,6 @@ class DynamicScreen(
             ImagePreviewDialog(url = url, onDismiss = { previewUrl = null })
         }
 
-        if (searching) {
-            DynamicSearchDialog(
-                initialKeyword = (state.filter as? DynamicFilter.Search)?.keyword.orEmpty(),
-                onDismiss = { searching = false },
-                onSearch = {
-                    val filter = DynamicFilter.Search(it)
-                    if (state.filter == filter) model.refresh() else model.setFilter(filter)
-                    searching = false
-                },
-            )
-        }
         if (composing) {
             val track = shareTrack
             val song = CPMediaId.parseOrNull(track?.id)?.takeIf {
@@ -291,6 +305,7 @@ internal fun DynamicContent(
     supportsUserFeed: Boolean = supportsFeed,
     requiresLogin: Boolean = false,
     selfId: String,
+    hasFab: Boolean = false,
     modifier: Modifier,
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
@@ -304,11 +319,8 @@ internal fun DynamicContent(
     onOpenOrigin: (DynamicOrigin) -> Unit,
     onOpenUser: (String, String) -> Unit,
     onPreviewImage: (String) -> Unit,
-    onSearch: (() -> Unit)? = null,
-    onCompose: (() -> Unit)? = null,
 ) {
     val userFilter = state.filter as? DynamicFilter.User
-    val searchFilter = state.filter as? DynamicFilter.Search
     val viewingOtherUser = userFilter != null && userFilter.userId != selfId
     Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         AnimatedVisibility(visible = state.refreshing, enter = fadeIn(), exit = fadeOut()) {
@@ -320,27 +332,32 @@ internal fun DynamicContent(
                 start = CpSpacing.pageHorizontal,
                 end = CpSpacing.pageHorizontal,
                 top = CpSpacing.pageTop,
-                bottom = CpSpacing.formBottomInset,
+                bottom = if (hasFab) 88.dp else CpSpacing.formBottomInset,
             ),
             verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
         ) {
             item {
-                DynamicFeedHeader(
+                PageHeader(
                     title = when {
-                        searchFilter != null -> "搜索动态"
                         viewingOtherUser -> userFilter.nickname
                         userFilter != null -> "我的动态"
-                        else -> "音乐动态"
+                        else -> "动态"
                     },
                     subtitle = when {
-                        searchFilter != null -> "关键词：${searchFilter.keyword}"
                         viewingOtherUser -> "TA 的音乐分享与近况"
                         userFilter != null -> "你发布和转发的分享"
-                        else -> "看看关注的人在听什么，分享你的音乐"
+                        else -> "关注的人与自己的最新分享"
                     },
-                    onRefresh = onRefresh.takeIf { supportsFeed && !state.unsupported && !requiresLogin },
-                    onSearch = onSearch,
-                    onCompose = onCompose,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                    action = {
+                        if (supportsFeed && !state.unsupported && !requiresLogin) {
+                            FilledTonalButton(onClick = onRefresh) {
+                                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                CpText("刷新")
+                            }
+                        }
+                    },
                 )
             }
             item {
@@ -422,12 +439,10 @@ internal fun DynamicContent(
                     StateSurface(Modifier.padding(top = 12.dp)) {
                         ContentState(
                             title = when (state.filter) {
-                                is DynamicFilter.Search -> "没有找到相关动态"
                                 is DynamicFilter.User -> "还没有发过动态"
                                 DynamicFilter.Following -> "关注流还是空的"
                             },
                             message = when (state.filter) {
-                                is DynamicFilter.Search -> "试试其他关键词。"
                                 is DynamicFilter.User -> null
                                 DynamicFilter.Following -> "关注一些朋友后，他们的分享会出现在这里。"
                             },
@@ -458,59 +473,6 @@ internal fun DynamicContent(
                             onLoadMore = onLoadMore,
                             onRetry = onRefresh,
                         )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DynamicFeedHeader(
-    title: String,
-    subtitle: String,
-    onRefresh: (() -> Unit)?,
-    onSearch: (() -> Unit)?,
-    onCompose: (() -> Unit)?,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-    ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primary) {
-                    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.DynamicFeed, contentDescription = null)
-                    }
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    CpText(title, style = MaterialTheme.typography.headlineSmall, maxLines = 2)
-                    CpText(subtitle, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
-                }
-            }
-            if (onCompose != null || onSearch != null || onRefresh != null) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (onCompose != null) {
-                        Button(onClick = onCompose) {
-                            Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            CpText("发动态", maxLines = 1)
-                        }
-                    }
-                    if (onSearch != null) {
-                        FilledTonalButton(onClick = onSearch) {
-                            Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            CpText("搜索", maxLines = 1)
-                        }
-                    }
-                    if (onRefresh != null) {
-                        IconButton(onClick = onRefresh) {
-                            Icon(Icons.Filled.Refresh, contentDescription = "刷新动态")
-                        }
                     }
                 }
             }
@@ -1159,30 +1121,19 @@ private fun DynamicCommentRow(comment: Comment) {
 // ============================================================ 弹层
 
 @Composable
-private fun DynamicSearchDialog(
-    initialKeyword: String,
-    onDismiss: () -> Unit,
-    onSearch: (String) -> Unit,
+private fun DynamicComposeFab(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    var keyword by remember { mutableStateOf(initialKeyword) }
-    CpAlertDialog(
-        onDismissRequest = onDismiss,
-        title = { CpText("搜索动态") },
-        text = {
-            OutlinedTextField(
-                value = keyword,
-                onValueChange = { if (it.length <= 128) keyword = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { CpText("关键词") },
-                singleLine = true,
-                shape = MaterialTheme.shapes.large,
-            )
-        },
-        confirmButton = {
-            Button(onClick = { onSearch(keyword.trim()) }, enabled = keyword.isNotBlank()) { CpText("搜索") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { CpText("取消") } },
-    )
+    FloatingActionButton(
+        onClick = onClick,
+        modifier = modifier,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Add,
+            contentDescription = "发布动态",
+        )
+    }
 }
 
 @Composable

@@ -11,7 +11,6 @@ import cp.player.sdk.CursorRequest
 import cp.player.sdk.EventOrigin
 import cp.player.sdk.EventPage
 import cp.player.sdk.EventPageRequest
-import cp.player.sdk.EventSearchRequest
 import cp.player.sdk.ForwardEventRequest
 import cp.player.sdk.IdRequest
 import cp.player.sdk.MessageHistoryRequest
@@ -142,9 +141,6 @@ class SocialRepository(
         )
         return result.mapPage()
     }
-
-    suspend fun searchFeed(keyword: String, cursor: String?): MusicResult<DynamicPage> =
-        source.searchEvents(EventSearchRequest(keyword = keyword, limit = 20, cursor = cursor)).mapPage()
 
     suspend fun publish(text: String, songId: String?): MusicResult<Unit> {
         val result = if (songId == null) {

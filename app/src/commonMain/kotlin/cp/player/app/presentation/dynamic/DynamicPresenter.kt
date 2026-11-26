@@ -25,7 +25,6 @@ import kotlinx.coroutines.launch
 sealed interface DynamicFilter {
     data object Following : DynamicFilter
     data class User(val userId: String, val nickname: String) : DynamicFilter
-    data class Search(val keyword: String) : DynamicFilter
 }
 
 data class DynamicUiState(
@@ -174,7 +173,6 @@ class DynamicPresenter(
         val feature = when (current.filter) {
             DynamicFilter.Following -> SocialFeature.Feed
             is DynamicFilter.User -> SocialFeature.UserFeed
-            is DynamicFilter.Search -> SocialFeature.SearchFeed
         }
         if (AppModel.socialAvailability(feature) != SocialAvailability.Available ||
             (current.filter is DynamicFilter.Following && requestSession.uid == null)
@@ -277,7 +275,6 @@ class DynamicPresenter(
                     userId = filter.userId,
                     cursor = cursor,
                 )
-                is DynamicFilter.Search -> AppModel.socialRepository.searchFeed(filter.keyword, cursor)
             }
         }.getOrElse { error ->
             if (error is CancellationException) throw error
