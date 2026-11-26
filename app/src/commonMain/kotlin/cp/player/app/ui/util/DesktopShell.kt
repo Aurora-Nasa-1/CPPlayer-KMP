@@ -125,6 +125,17 @@ object DesktopShell {
      */
     var pageCanGoBack by mutableStateOf(false)
 
+    /**
+     * 左侧导航栏是否接管了「设置」入口（平板 / 中等宽度 ≥600dp 的 rail 布局）。
+     *
+     * 桌面窗口标题栏上的设置槽位是**常驻**的，不判一下就与 rail 里的那颗构成
+     * 「同名两落点」。方向与 [pageTitle] 相同（主壳层 → 窗口 chrome，标题栏在 `Navigator`
+     * 之上够不到局部状态），由 `MainScreen` 在 rail 分支里发布、离开分支时让回。
+     *
+     * 它只描述「rail 在不在」，**不代表设置面板开着** —— 后者仍是 [settingsRequested]。
+     */
+    var settingsInRail by mutableStateOf(false)
+
     /** 请求主壳层收起当前内嵌面板（标题栏上的返回键）。与 [settingsRequested] 同一协议。 */
     var backRequested by mutableStateOf(false)
 

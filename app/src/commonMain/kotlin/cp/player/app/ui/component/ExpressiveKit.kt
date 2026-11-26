@@ -904,13 +904,16 @@ fun CpExpressiveArtwork(
 }
 
 /**
- * M3E 页面级 `ToggleButton` 配色：官方 `ToggleButtonDefaults.toggleButtonColors()` 未选中底色是
+ * M3E 页面级 `ToggleButton` 配色：官方默认（`ToggleButtonDefaults.colors()`）未选中底色是
  * `surfaceContainer`，恰好与浅色下 [cpPageSurface]（`surfaceContainer`）同色而融为一体。
  * 默认改为 [cpCardSurface]（浅色白 / 深色亮灰），与页面底色拉开层级；卡片/弹窗内部传入 [cpNestedSurface]。
+ *
+ * 入参色保持 `Color.Unspecified` 时由 `copy` 落到官方默认值 —— 未选中态只覆盖底色与内容色，
+ * 选中/禁用态仍走主题的 `secondaryContainer` 一族（material3 1.13 起该函数名为 `colors`）。
  */
 @Composable
 private fun cpToggleButtonColors(containerColor: Color = cpCardSurface()) =
-    ToggleButtonDefaults.toggleButtonColors(
+    ToggleButtonDefaults.colors(
         containerColor = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )

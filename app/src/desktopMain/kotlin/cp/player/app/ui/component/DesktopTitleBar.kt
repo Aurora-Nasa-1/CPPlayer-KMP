@@ -194,6 +194,14 @@ fun DesktopTitleBar(
     onOpenDynamic: () -> Unit = {},
     showMessages: Boolean = true,
     showDynamic: Boolean = false,
+    /**
+     * 是否画「设置」槽位。
+     *
+     * 平板 / 中等宽度（≥600dp）时主壳层左侧 rail 已经承担了设置入口，标题栏再挂一颗
+     * 就是同名两落点 —— 由 [cp.player.app.ui.util.DesktopShell.settingsInRail] 判定。
+     * 槽位摘掉时 [businessSlots] 同步减一，右侧按钮组宽度与拖拽区才不会留下空洞。
+     */
+    showSettings: Boolean = true,
     onToggleMiniMode: () -> Unit = { cp.player.app.ui.util.DesktopShell.isMiniMode = true },
     onToggleMobileMode: () -> Unit = { cp.player.app.ui.util.DesktopShell.isMobileMode = true },
     modifier: Modifier = Modifier,
@@ -222,10 +230,11 @@ fun DesktopTitleBar(
     // + 设置 + 分隔线 + 三颗窗口钮。消息 / 动态被隐藏时**连槽位一起消失**，
     // 否则搜索框会为一个看不见的按钮保留 44dp，左右不再对称。
     val showMobilePreview = AppVersion.isDesktopRunOrDebug
-    val businessSlots = 3 +
+    val businessSlots = 2 +
         (if (showMessages) 1 else 0) +
         (if (showDynamic) 1 else 0) +
-        (if (showMobilePreview) 1 else 0)
+        (if (showMobilePreview) 1 else 0) +
+        (if (showSettings) 1 else 0)
     val rightGroupWidth =
         ChromeSlotWidth * (businessSlots + 3) + ChromeSeparatorWidth
 
@@ -358,11 +367,13 @@ fun DesktopTitleBar(
                     ) {
                         Icon(Icons.Filled.PictureInPictureAlt, "迷你模式", modifier = Modifier.size(18.dp))
                     }
-                    ChromeSlot(
-                        onClick = onOpenSettings,
-                        modifier = Modifier.chromeFade(chromeAlpha, interactive = !immersive),
-                    ) {
-                        Icon(Icons.Filled.Settings, s.navigation.settings, modifier = Modifier.size(18.dp))
+                    if (showSettings) {
+                        ChromeSlot(
+                            onClick = onOpenSettings,
+                            modifier = Modifier.chromeFade(chromeAlpha, interactive = !immersive),
+                        ) {
+                            Icon(Icons.Filled.Settings, s.navigation.settings, modifier = Modifier.size(18.dp))
+                        }
                     }
                 } else {
                     // 沉浸态兜底：**把内容从组合里摘掉**，换成等宽留白。

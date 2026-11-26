@@ -549,6 +549,9 @@ fun runDesktopApp(args: Array<String> = emptyArray(), isMobilePreview: Boolean =
                                 },
                                 showMessages = showMessages,
                                 showDynamic = showDynamic,
+                                // 平板 / 中等宽度下设置入口在左侧 rail 里（由 MainScreen 发布），
+                                // 标题栏让出槽位 —— 两颗齿轮同屏就是「同名两落点」。
+                                showSettings = !DesktopShell.settingsInRail,
                                 onOpenDynamic = {
                                     navigator.popToMainShell()
                                     DesktopShell.dynamicRequested = true

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Inbox
@@ -31,6 +32,7 @@ import androidx.window.core.layout.WindowHeightSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -43,6 +45,18 @@ import cp.player.app.ui.theme.cpCardSurface
 
 /** 当前窗口是否处于 Expanded 宽度（≥840dp），由 [ProvideIsExpanded] 在根 Navigator 之上提供。 */
 val LocalIsExpanded = staticCompositionLocalOf { false }
+
+/**
+ * 页面顶部 action 需要为右上角悬浮操作区让出的水平宽度；默认 0（绝大多数页面不需要避让）。
+ *
+ * 平板主壳层保留悬浮账号/消息胶囊，但胶囊只压住**第一级** tab 页右上角的按钮（首页唱片墙、
+ * 动态刷新），所以只由那一层 provide 非零值。[PageHeader] 据此把 action 向左推，
+ * 避免用整行顶部 padding 换来一大条顶部空白。
+ *
+ * 二级路由页是内嵌 navigator 里与根页**平级**的兄弟节点，不在 provider 的子树内，
+ * 拿不到这个值，因此不会被无谓地缩进。
+ */
+val LocalTopActionTrailingInset = compositionLocalOf { 0.dp }
 
 /** 基于 Compose Material 3 Adaptive 的窗口自适应信息，包含 WindowSizeClass 与设备铰链姿态。 */
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
@@ -292,7 +306,11 @@ fun PageHeader(
                 )
             }
         }
-        action?.invoke(this)
+        if (action != null) {
+            action.invoke(this)
+            val inset = LocalTopActionTrailingInset.current
+            if (inset > 0.dp) Spacer(Modifier.width(inset))
+        }
     }
 }
 

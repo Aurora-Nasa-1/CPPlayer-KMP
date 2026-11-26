@@ -26,6 +26,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import cp.player.app.ui.util.DesktopShell
@@ -47,7 +48,6 @@ import cp.player.app.ui.theme.cpElevatedSurface
 import cp.player.app.ui.theme.LocalAppFontFamilies
 import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.app.ui.theme.containsHan
-import cp.player.app.ui.theme.containsKana
 import cp.player.app.ui.theme.withJapaneseTypesetting
 import cp.player.core.lyrics.RubySegment
 import cp.player.core.lyrics.RubyText
@@ -130,11 +130,9 @@ fun LyricContent(
         return
     }
 
-    // 整首歌词是什么语言：含假名即日语（见 `JapaneseText.kt`）。
-    // **只决定排版语言标签**（`lang=ja` + `palt` + 断行），不再决定字体：
-    // 字体由 [ScriptFontLyricsProfile] 逐 run 路由（见下方样式装配处的说明）。
     val appFonts = LocalAppFontFamilies.current
-    val japaneseLyrics = remember(lines) { lines.any { it.text.containsKana() } }
+    val japaneseLyrics = remember(lines) { lines.any { RubyText.strip(it.text).hasLyricKana() } }
+    val hasHan = remember(lines) { lines.any { it.text.containsHan() } }
     // 用户是否开启日文注音假名开关，以及歌词文本本身是否含有注音标记
     val showRubySetting by cp.player.app.AppModel.showRubyLyricsFlow.collectAsState()
     val wordSegmentation by cp.player.app.AppModel.lyricsWordSegmentationFlow.collectAsState()
@@ -240,30 +238,24 @@ fun LyricContent(
     //   因此 normalStyle 与 accompanimentStyle 需显式绑定日文/中文字体家族，
     //   防止普通行的日文汉字回退到系统简中/MiSans。
     val currentTextStyle = MaterialTheme.typography.headlineMedium
-    val normalStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation, appFonts) {
-        val base = currentTextStyle.lyricLineStyle().forLyricLanguage(japaneseLyrics, wordSegmentation)
-        if (japaneseLyrics && appFonts.japanese != null) {
-            base.copy(fontFamily = appFonts.japanese)
-        } else if (lines.any { it.text.containsHan() } && appFonts.misans != null) {
-            base.copy(fontFamily = appFonts.misans)
-        } else {
-            base
-        }
+    val lyricFamily = when {
+        japaneseLyrics -> appFonts.japanese ?: FontFamily.SansSerif
+        hasHan -> appFonts.misans ?: FontFamily.SansSerif
+        else -> currentTextStyle.fontFamily
+    }
+    val normalStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation, lyricFamily) {
+        currentTextStyle.lyricLineStyle()
+            .forLyricLanguage(japaneseLyrics, wordSegmentation)
+            .copy(fontFamily = lyricFamily)
     }
 
-    val accompanimentStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation, appFonts) {
-        val base = currentTextStyle.copy(
+    val accompanimentStyle = remember(currentTextStyle, japaneseLyrics, wordSegmentation, lyricFamily) {
+        currentTextStyle.copy(
             fontSize = 20.sp,
+            fontFamily = lyricFamily,
             fontWeight = FontWeight.Bold,
             textMotion = TextMotion.Animated,
         ).forLyricLanguage(japaneseLyrics, wordSegmentation)
-        if (japaneseLyrics && appFonts.japanese != null) {
-            base.copy(fontFamily = appFonts.japanese)
-        } else if (lines.any { it.text.containsHan() } && appFonts.misans != null) {
-            base.copy(fontFamily = appFonts.misans)
-        } else {
-            base
-        }
     }
 
     // 注音（振り仮名）的字号：正文的 **1/4**，位置由库画在音节上方。
@@ -286,8 +278,9 @@ fun LyricContent(
 
     // 逐 run 的字体路由（唯一实例：库按它切分组，每次重组新建会让整份歌词重新测量）。
     // 注入 japaneseLyrics，使分词后的单个日文汉字词/音节均能准确路由到 Noto Sans JP。
-    val scriptProfiles = remember(appFonts, japaneseLyrics) {
-        listOf(ScriptFontLyricsProfile(appFonts, isJapaneseLyrics = japaneseLyrics))
+    val latinFamily = currentTextStyle.fontFamily
+    val scriptProfiles = remember(appFonts, japaneseLyrics, latinFamily) {
+        listOf(ScriptFontLyricsProfile(appFonts, japaneseLyrics, latinFamily))
     }
 
     val lyricOffsetMs = if (!currentTrackId.isNullOrBlank()) {

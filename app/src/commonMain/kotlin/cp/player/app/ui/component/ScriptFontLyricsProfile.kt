@@ -2,6 +2,7 @@ package cp.player.app.ui.component
 
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 import com.mocharealm.accompanist.lyrics.ui.preparation.MeasuredLyricsLine
 import com.mocharealm.accompanist.lyrics.ui.profile.CjkProfile
@@ -12,7 +13,12 @@ import cp.player.app.ui.theme.AppFontFamilies
 import cp.player.app.ui.theme.TextScript
 import cp.player.app.ui.theme.appScript
 import cp.player.app.ui.theme.buildAppStyledText
-import cp.player.app.ui.theme.containsKana
+import cp.player.app.ui.theme.isKana
+
+/** 中点、长音符等可以出现在中文歌词里；只有实际假名才用来识别日语。 */
+internal fun String.hasLyricKana(): Boolean = any {
+    it.isKana() && it.isLetter() && it !in "ーｰゝゞヽヾ"
+}
 
 /**
  * 歌词的**逐 run 字体路由**，交给歌词库当 `renderProfiles` 用。
@@ -44,9 +50,14 @@ import cp.player.app.ui.theme.containsKana
  * 此时样式家族就是 Google Sans Flex，不做任何 span —— 与改造前完全相同。
  */
 class ScriptFontLyricsProfile(
-    private val families: AppFontFamilies,
+    families: AppFontFamilies,
     private val isJapaneseLyrics: Boolean = false,
+    private val latinFamily: FontFamily? = null,
 ) : DefaultLyricsProfile() {
+    private val families = AppFontFamilies(
+        japanese = families.japanese ?: FontFamily.SansSerif,
+        misans = families.misans ?: FontFamily.SansSerif,
+    )
 
     /**
      * 只有含 CJK 字符的音节才由本 profile 接管。
@@ -89,8 +100,7 @@ class ScriptFontLyricsProfile(
      *
      * ⚠️ span **不会**改变 `layoutInput.text.text`，所以库里那句文本一致性检查照样成立。
      *
-     * ⚠️ 量不出任何 span（例如 Android 上日文字库还没下载）时**原样委派**：
-     * 此时不该凭空多量一次，更不该让汉字掉进 MiSans 的写法。
+     * 未安装中日文字体包时，相应字符显式走系统无衬线字体。
      */
     override fun prepare(
         line: MeasuredLyricsLine,
@@ -100,12 +110,12 @@ class ScriptFontLyricsProfile(
     ): List<ProfileTextUnit> {
         val text = group.joinToString("") { it.content }
         if (text.isEmpty()) return CjkProfile.prepare(line, group, measurer, style)
-        val isJapaneseLine = isJapaneseLyrics || line.syllables.any { it.content.containsKana() }
+        val isJapaneseLine = isJapaneseLyrics || line.syllables.any { it.content.hasLyricKana() }
         val styled = buildAppStyledText(text, families, isJapanese = isJapaneseLine)
         if (styled.spanStyles.isEmpty()) return CjkProfile.prepare(line, group, measurer, style)
 
-        // 拉丁/数字沿用样式的西文字体（Google Sans Flex），不被整行 TextStyle.fontFamily 污染
-        val measureStyle = if (style.fontFamily != null) style.copy(fontFamily = null) else style
+        // 普通行使用 CJK 家族；逐字组里未套 span 的西文仍使用主题字体。
+        val measureStyle = style.copy(fontFamily = latinFamily)
         // softWrap = false：与库自己量整组的方式一致（整组先当成一行量完，再按宽度折行）。
         val layout = measurer.measure(styled, measureStyle, softWrap = false)
         return CjkProfile.prepare(MeasuredLyricsLine(layout, group), group, measurer, style)
