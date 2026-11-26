@@ -74,27 +74,60 @@ function formatRawGitLog(raw) {
     .join("\n");
 }
 
-function getCommits(prevTag, currentTag) {
+function gitRevision(ref, cwd) {
+  try {
+    return execSync(`git rev-parse --verify "${ref}^{commit}"`, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      cwd,
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+export function getCommits(prevTag, currentTag, cwd) {
   if (process.env.COMMITS && process.env.COMMITS.trim()) {
     return process.env.COMMITS.trim();
   }
 
-  const range =
-    prevTag && prevTag.trim()
-      ? `${prevTag.trim()}..${currentTag || "HEAD"}`
-      : "-n 30 HEAD";
+  const current = (currentTag || "HEAD").trim();
+  const previous = (prevTag || "").trim();
+  const range = previous ? `${previous}..${current}` : `-n 30 ${current}`;
 
-  try {
-    const cmd = `git log ${range} --no-merges --pretty=format:"%s%x1f%h%x1f%b%x1e"`;
-    const raw = execSync(cmd, {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return formatRawGitLog(raw);
-  } catch (err) {
-    console.error(`[AI-Changelog] Failed to extract git log: ${err.message}`);
-    return "";
+  const readRange = (spec) => {
+    try {
+      const cmd = `git log ${spec} --no-merges --pretty=format:"%s%x1f%h%x1f%b%x1e"`;
+      const raw = execSync(cmd, {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        cwd,
+      });
+      return formatRawGitLog(raw);
+    } catch (err) {
+      console.error(`[AI-Changelog] Failed to extract git log (${spec}): ${err.message}`);
+      return "";
+    }
+  };
+
+  const commits = readRange(range);
+  if (commits) return commits;
+
+  // 补发/重打标签时两个 tag 会指向同一提交，prev..current 自然为空。
+  // 此时总结当前 tag 自身那条提交，避免把 AI 生成整个跳过、发布说明落到空字符串。
+  if (previous) {
+    const prevSha = gitRevision(previous, cwd);
+    const currentSha = gitRevision(current, cwd);
+    if (prevSha && currentSha && prevSha === currentSha) {
+      console.error(
+        `[AI-Changelog] "${previous}" and "${current}" point to the same commit (${currentSha.slice(0, 7)}); summarizing the tagged commit instead.`
+      );
+      const single = readRange(`-n 1 ${current}`);
+      if (single) return single;
+    }
   }
+
+  return "";
 }
 
 /**

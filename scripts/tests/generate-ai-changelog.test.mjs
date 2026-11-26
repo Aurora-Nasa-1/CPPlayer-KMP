@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import {
     buildModelCandidates,
     findClosestModel,
+    getCommits,
     resolveChatCompletionsUrl,
     resolveModelsUrl,
     resolveOpenAiConfig,
@@ -98,6 +99,19 @@ test("候选模型顺序为主模型、上游近似模型、自动回退模型�
         ),
         ["custom-model", "deepseek-v4.1-flash-lite", "gpt-6-luna"],
     );
+});
+
+test("两个 tag 指向同一提交时退化为总结当前 tag 那一条提交", () => {
+    const previousCommits = process.env.COMMITS;
+    delete process.env.COMMITS;
+    const repo = fileURLToPath(new URL("..", import.meta.url));
+    try {
+        const result = getCommits("v1.12.2", "v1.12.3", repo);
+        assert.match(result, /^- feat\(release\)/);
+        assert.match(result, /9c86cc1c/);
+    } finally {
+        if (previousCommits !== undefined) process.env.COMMITS = previousCommits;
+    }
 });
 
 function runScript(args, env) {

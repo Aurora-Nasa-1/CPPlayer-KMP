@@ -11,14 +11,21 @@ fi
 
 echo "Resolving changelog for tag: ${CURRENT_TAG:-HEAD}" >&2
 
-# 寻找上一个版本 tag
+# 寻找上一个版本 tag。
+# 关键：按提交祖先关系找（git describe <tag>^），不能只按版本号排序——
+# 重打/补发 tag 时新版本号可能更旧（如 v1.12.2 晚于 v1.12.3 补发），
+# 版本号排序会选到当前 tag 的后代，导致区间反向为空、compare 链接颠倒。
+# 若当前 tag 的父提交没有同系列 tag（首个版本），退回按版本号取最新的那个。
 PREV_TAG=""
 if [ -n "$CURRENT_TAG" ]; then
-    # 若是 debug-v* 标签，找上一个 debug-v*；若是 v* 标签，找上一个 v*
     if [[ "$CURRENT_TAG" == debug-v* ]]; then
-        PREV_TAG=$(git tag -l 'debug-v*' --sort=-v:refname | grep -F -v -x "$CURRENT_TAG" | head -n 1 || true)
+        tag_pattern='debug-v*'
     else
-        PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | grep -F -v -x "$CURRENT_TAG" | grep -v "^debug-" | head -n 1 || true)
+        tag_pattern='v*'
+    fi
+    PREV_TAG=$(git describe --tags --abbrev=0 --match "$tag_pattern" "${CURRENT_TAG}^" 2>/dev/null || true)
+    if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "$CURRENT_TAG" ]; then
+        PREV_TAG=$(git tag -l "$tag_pattern" --sort=-v:refname | grep -F -v -x "$CURRENT_TAG" | head -n 1 || true)
     fi
 else
     PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | grep -v "^debug-" | head -n 1 || true)
@@ -53,7 +60,14 @@ generate() {
         echo ""
     elif [ -n "$PREV_TAG" ] && git rev-parse -q --verify "$PREV_TAG" >/dev/null; then
         RANGE="${PREV_TAG}..${CURRENT_TAG:-HEAD}"
-        git log "$RANGE" --no-merges --pretty=format:'### %s (%h)%n%n%b'
+        range_notes="$(git log "$RANGE" --no-merges --pretty=format:'### %s (%h)%n%n%b')"
+        if [ -n "$range_notes" ]; then
+            echo "$range_notes"
+        else
+            # 两个 tag 指向同一提交时区间为空，退回当前 tag 自身那条提交。
+            echo "Tag range ${RANGE} is empty; falling back to the tagged commit." >&2
+            git log -n 1 "${CURRENT_TAG:-HEAD}" --no-merges --pretty=format:'### %s (%h)%n%n%b'
+        fi
         echo ""
     else
         git log -n 15 --no-merges --pretty=format:'### %s (%h)%n%n%b'
