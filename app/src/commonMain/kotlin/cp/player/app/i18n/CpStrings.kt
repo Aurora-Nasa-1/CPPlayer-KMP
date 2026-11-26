@@ -1735,6 +1735,10 @@ interface HomeStrings {
     val fmExplore: String
     val fmFamiliar: String
     val fmPuzzle: String
+    val fmGuideTitle: String
+    val fmGuideBody: String
+    fun fmLiveStatus(count: Int): String
+    fun fmReadyStatus(count: Int): String
     val localLibrary: String
     val localLibraryNote: String
     val intelligenceNote: String
