@@ -44,7 +44,6 @@ import androidx.compose.material.icons.rounded.AccessAlarm
 import androidx.compose.material.icons.rounded.Cast
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Translate
@@ -538,16 +537,6 @@ private fun TabletLandscapeContent(
                         .height(CpSpacing.touchTarget)
                         .then(dismissGesture),
                 ) {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier.align(Alignment.CenterStart).size(CpSpacing.touchTarget),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = s.player.collapsePlayer,
-                            tint = colors.onSurface,
-                        )
-                    }
                     Box(
                         Modifier
                             .align(Alignment.Center)
