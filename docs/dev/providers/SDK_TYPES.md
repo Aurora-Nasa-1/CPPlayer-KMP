@@ -714,14 +714,14 @@ Used by: `scrobble`.
 
 ## AccountSession
 
-Current login state without mutating the session's credential snapshot.
+Current login state without mutating the session's credential snapshot. A supplied credential can be expired or rejected.
 
 Used by: `getCurrentAccount`.
 
 | Field | Kotlin | TypeScript | Default | Meaning |
 |---|---|---|---|---|
-| `loggedIn` | `Boolean` | `boolean` | `required` | Whether the immutable account session is authenticated. |
-| `userId` | `String?` | `string \| null` | `null` | Opaque provider-local user identity, not the host account-slot key. |
+| `loggedIn` | `Boolean` | `boolean` | `required` | Whether the provider confirms the current session is authenticated. Do not infer validity from the presence of a credential. |
+| `userId` | `String?` | `string \| null` | `null` | Non-blank provider-local user identity when loggedIn is true; distinct from the host account-slot key. |
 | `nickname` | `String?` | `string \| null` | `null` | Public display nickname. |
 | `avatarUrl` | `String?` | `string \| null` | `null` | Optional avatar image URL. |
 
@@ -749,21 +749,21 @@ Used by: `authenticate`.
 
 ## AuthActionResult
 
-Authentication result/challenge. The host owns credential storage and session replacement.
+Result of one authentication action. A successful step (such as captcha.send) does not necessarily complete login.
 
 Used by: `authenticate`.
 
 | Field | Kotlin | TypeScript | Default | Meaning |
 |---|---|---|---|---|
-| `success` | `Boolean` | `boolean` | `required` | Explicit mutation/authentication acknowledgement; false is not an empty successful data page. |
+| `success` | `Boolean` | `boolean` | `required` | Whether this action succeeded. Completed login also requires challenge=false and a non-blank credential. |
 | `code` | `Int?` | `number \| null` | `null` | Provider authentication status code when known. |
-| `status` | `Int?` | `number \| null` | `null` | Provider authentication/check status code when known. |
+| `status` | `Int?` | `number \| null` | `null` | Authentication step status. For QR checks, use 800 expired, 801 waiting, 802 scanned, or 803 completed. |
 | `key` | `String?` | `string \| null` | `null` | Operation-specific storage/authentication key. |
 | `url` | `String?` | `string \| null` | `null` | Absolute resource URL. |
 | `imageBase64` | `String?` | `string \| null` | `null` | Authentication captcha image payload, not an upload transport. |
-| `cookie` | `String?` | `string \| null` | `null` | New authentication credential for host storage; never copy into resource headers implicitly. |
+| `cookie` | `String?` | `string \| null` | `null` | Provider credential on final login, or a temporary challenge credential on captcha.image. Never log or forward it to media resources. |
 | `verifyUrl` | `String?` | `string \| null` | `null` | Verification page URL. |
-| `challenge` | `Boolean` | `boolean` | `required` | Whether an additional authentication challenge is required. |
+| `challenge` | `Boolean` | `boolean` | `required` | Whether an additional verification step is required before login completes. |
 | `message` | `String?` | `string \| null` | `null` | Sanitized human-readable explanation, not a credential or upstream response dump. |
 
 ## SuggestionPage

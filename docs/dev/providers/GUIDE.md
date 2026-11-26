@@ -102,13 +102,7 @@ class MyProvider(private val context: ProviderContext) : MusicProvider {
 | `capabilities()` | 每会话只读一次；失败或取消不缓存 |
 | 凭据保存或清除 | 立即取消对应活跃账号的请求，其他账号不受影响 |
 
-**登录态必须能从会话凭证推导。** `authenticate` 返回 `cookie` 后宿主保存凭证、丢弃当前实例并重建会话。把 `loggedIn`、用户 ID 存在模块级变量或成员字段的实现，会在重建后退回未登录。
-
-| 症状 | 成因 |
-|---|---|
-| 登录提示成功但账号页未登录 | 登录态存在实例内存里 |
-| 「我的歌单」一直为空 | 同上 |
-| 正确做法 | `context.credential` 非空即视为已登录；昵称、用户 ID 也从凭证或上游探得 |
+登录、凭证和账号身份的完整约定见 [登录与账号](WORKFLOWS.md#10-登录与账号)。`context.credential` 是当前会话的凭证快照；`getCurrentAccount` 报告凭证是否有效。账号身份必须能从凭证或上游恢复，不能只放在旧会话的内存里。
 
 错误用统一类别表达。Kotlin 抛 `ProviderException(Failure(category, message))`，JS 抛带 `category` 的 `Error`。
 

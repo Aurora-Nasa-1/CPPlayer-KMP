@@ -98,12 +98,9 @@ C ABI 改按符号名直调：每包一个动态库句柄，绑定天然独立�
 | `Track.coverUrl` | 可解析为 `http` / `https` 且有 host |
 | `Long` 字段 | 精确安全整数；超过 2^53-1 或非整数被拒 |
 
-### 3.5 两条最容易踩的
+### 3.5 登录与凭证
 
-| 问题 | 正确做法 |
-|---|---|
-| 登录态只放内存 | 宿主在 `authenticate` 成功后保存 cookie、换掉会话并重新 `createNative`；`credential` 非空即已登录，用户身份也从凭证推 |
-| `getUserPlaylists` 的 `id` 当上游用户 ID | 它可能是宿主账号键（实测 `9084388061`）；按「当前登录用户」处理，不要拿它过滤 `creatorId` |
+按统一的 [登录与账号](WORKFLOWS.md#10-登录与账号) 契约实现。每次 `createNative` / `cpp_create` 都使用收到的凭证快照；确认候选凭证时，宿主可能为同一个 Provider 短暂创建独立会话。句柄必须各自持有凭证和账号状态。`getUserPlaylists(request)` 按 `request.id` 查询指定的 Provider 内部用户。
 
 ## 4. C ABI v1
 

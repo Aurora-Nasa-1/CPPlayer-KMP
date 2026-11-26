@@ -880,6 +880,21 @@ class MusicBackend private constructor(
     /** Exact capabilities of the current SDK session, without manifest UI aliases. */
     suspend fun activeSdkCapabilities(): List<String>? = providerManager.sdkSessions.current()?.capabilities()?.supported
 
+    /** Confirm a replacement credential in a separate SDK session before making it active. */
+    suspend fun verifyProviderCredential(providerId: String, credential: String): BackendResult<cp.player.sdk.AccountSession> =
+        try {
+            BackendResult.Success(providerManager.sdkSessions.verifyCredential(providerId, credential))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: cp.player.sdk.ProviderException) {
+            if (e.failure.category == cp.player.sdk.FailureCategory.UNSUPPORTED) BackendResult.Unsupported(e.failure.message)
+            else BackendResult.Error("Provider ${e.failure.category}", cause = e)
+        } catch (e: LinkageError) {
+            BackendResult.Error("Provider native library error", cause = e)
+        } catch (e: Exception) {
+            BackendResult.Error("Provider credential check failed", cause = e)
+        }
+
     /** 主动裁剪当前 SDK 会话 Host 中的非热点读缓存，配合托盘/低内存收缩。 */
     fun trimProviderHostCaches() {
         providerManager.sdkSessions.trimHostCaches()

@@ -574,11 +574,11 @@ export interface ScrobbleRequest {
   readonly playedSeconds: number;
 }
 
-/** Current login state without mutating the session's credential snapshot. */
+/** Current login state without mutating the session's credential snapshot. A supplied credential can be expired or rejected. */
 export interface AccountSession {
-  /** Whether the immutable account session is authenticated. */
+  /** Whether the provider confirms the current session is authenticated. Do not infer validity from the presence of a credential. */
   readonly loggedIn: boolean;
-  /** Opaque provider-local user identity, not the host account-slot key. */
+  /** Non-blank provider-local user identity when loggedIn is true; distinct from the host account-slot key. */
   readonly userId?: string | null;
   /** Public display nickname. */
   readonly nickname?: string | null;
@@ -616,13 +616,13 @@ export interface AuthActionRequest {
   readonly countryCode?: string | null;
 }
 
-/** Authentication result/challenge. The host owns credential storage and session replacement. */
+/** Result of one authentication action. A successful step (such as captcha.send) does not necessarily complete login. */
 export interface AuthActionResult {
-  /** Explicit mutation/authentication acknowledgement; false is not an empty successful data page. */
+  /** Whether this action succeeded. Completed login also requires challenge=false and a non-blank credential. */
   readonly success: boolean;
   /** Provider authentication status code when known. */
   readonly code?: number | null;
-  /** Provider authentication/check status code when known. */
+  /** Authentication step status. For QR checks, use 800 expired, 801 waiting, 802 scanned, or 803 completed. */
   readonly status?: number | null;
   /** Operation-specific storage/authentication key. */
   readonly key?: string | null;
@@ -630,11 +630,11 @@ export interface AuthActionResult {
   readonly url?: string | null;
   /** Authentication captcha image payload, not an upload transport. */
   readonly imageBase64?: string | null;
-  /** New authentication credential for host storage; never copy into resource headers implicitly. */
+  /** Provider credential on final login, or a temporary challenge credential on captcha.image. Never log or forward it to media resources. */
   readonly cookie?: string | null;
   /** Verification page URL. */
   readonly verifyUrl?: string | null;
-  /** Whether an additional authentication challenge is required. */
+  /** Whether an additional verification step is required before login completes. */
   readonly challenge: boolean;
   /** Sanitized human-readable explanation, not a credential or upstream response dump. */
   readonly message?: string | null;
@@ -2076,7 +2076,7 @@ export interface Accounts {
   getLikeList(request: UserRequest, context: Context): Promise<IdList>;
   /** Page albums collected by the specified user. Capability: accounts.albums. Tag: 38. Undeclared or unimplemented capabilities fail with Unsupported. */
   getUserAlbums(request: UserListRequest, context: Context): Promise<AlbumPage>;
-  /** Inspect current-session login state without replacing the immutable session credential. Capability: accounts.session. Tag: 59. Undeclared or unimplemented capabilities fail with Unsupported. */
+  /** Inspect current-session login state without changing its credential. A logged-in result requires a provider-local user ID. Capability: accounts.session. Tag: 59. Undeclared or unimplemented capabilities fail with Unsupported. */
   getCurrentAccount(request: Bytes, context: Context): Promise<AccountSession>;
   /** Page liked track IDs with item offsets and explicit continuation; self addresses the current account. Use this operation for collections larger than 500 IDs. Capability: accounts.likes.page. Tag: 166. Undeclared or unimplemented capabilities fail with Unsupported. */
   getLikeListPage(request: PagedIdRequest, context: Context): Promise<IdPage>;
@@ -2128,7 +2128,7 @@ export interface Scrobbling {
 }
 
 export interface Authentication {
-  /** Perform a named authentication action. The host owns credential persistence and subsequent session replacement. Capability: auth.actions. Tag: 60. Undeclared or unimplemented capabilities fail with Unsupported. */
+  /** Perform a named authentication action. The host verifies a final login credential before storing it and replacing the session. Capability: auth.actions. Tag: 60. Undeclared or unimplemented capabilities fail with Unsupported. */
   authenticate(request: AuthActionRequest, context: Context): Promise<AuthActionResult>;
 }
 

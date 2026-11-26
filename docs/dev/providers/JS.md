@@ -87,12 +87,7 @@ const signature = encodeBase64Url(tag);
 
 ### 登录与凭证
 
-| 登录相关 | 说明 |
-|---|---|
-| 登录态来源 | `context.credential` 非空即已登录 |
-| 会话重建 | 宿主在 `authenticate` 返回 `cookie` 后保存凭证并重建会话 |
-| 禁止 | 登录态只记在模块变量里，否则登录成功后 `getCurrentAccount` 仍返回未登录、`getUserPlaylists` 永远为空 |
-| `getUserPlaylists` 的 `id` | 可能是宿主账号键（实测形如 `9084388061`），按「当前登录用户」处理 |
+按统一的 [登录与账号](WORKFLOWS.md#10-登录与账号) 契约实现。创建实例时读取 `context.credential`；由 `getCurrentAccount` 确认登录状态和 Provider 内部用户 ID。`getUserPlaylists(request)` 的 `request.id` 是被查询用户的 Provider 内部 ID，应按该 ID 查询。
 
 | 不存在 | 说明 |
 |---|---|

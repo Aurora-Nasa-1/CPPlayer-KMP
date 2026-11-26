@@ -130,7 +130,7 @@ interface Discovery {
 }
 
 interface Accounts {
-    /** Inspect current-session login state without replacing the immutable session credential. Capability: accounts.session. Tag: 59. Undeclared or unimplemented capabilities fail with Unsupported. */
+    /** Inspect current-session login state without changing its credential. A logged-in result requires a provider-local user ID. Capability: accounts.session. Tag: 59. Undeclared or unimplemented capabilities fail with Unsupported. */
     suspend fun getCurrentAccount(request: Bytes): AccountSession = unsupported()
     /** Get a public profile by provider-local user ID. Capability: accounts.profile. Tag: 32. Undeclared or unimplemented capabilities fail with Unsupported. */
     suspend fun getUserProfile(request: UserRequest): UserProfile = unsupported()
@@ -149,7 +149,7 @@ interface Accounts {
 }
 
 interface Authentication {
-    /** Perform a named authentication action. The host owns credential persistence and subsequent session replacement. Capability: auth.actions. Tag: 60. Undeclared or unimplemented capabilities fail with Unsupported. */
+    /** Perform a named authentication action. The host verifies a final login credential before storing it and replacing the session. Capability: auth.actions. Tag: 60. Undeclared or unimplemented capabilities fail with Unsupported. */
     suspend fun authenticate(request: AuthActionRequest): AuthActionResult = unsupported()
 }
 

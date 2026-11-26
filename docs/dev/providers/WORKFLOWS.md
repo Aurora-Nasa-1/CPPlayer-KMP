@@ -319,24 +319,39 @@ MV 与视频使用独立 ID 类型与能力；相同字符串不说明是同一�
 |---|---|
 | `qr.key` | 获取 key |
 | `qr.create` | 用 key 创建二维码 URL |
-| `qr.check` | 用 key 轮询状态，成功时可返回 credential cookie |
+| `qr.check` | 用 `key` 轮询；终态成功必须返回正式凭证 |
 | `login.email` | email / password 及所需 challenge；`md5` 表示密码是否已预哈希 |
 | `login.phone` | phone 与 password 或 captcha，按音源支持流程；可选 `countryCode` 为不带 `+` 的 1–4 位数字 |
 | `captcha.send` | phone，用于申请验证码；可选 `countryCode` |
-| `captcha.image` | 获取当前流程的图片验证码，结果可带 imageBase64 |
+| `captcha.image` | 返回 `imageBase64`；需要延续挑战会话时可在 `cookie` 中附带临时凭证 |
 | `webview.url` | 获取登录页 URL 与流程状态 |
-| `webview.check` | 以 sessionId 等流程标识检查登录结果 |
+| `webview.check` | 以 `sessionId` 等流程标识检查登录结果；终态登录成功时返回正式凭证 |
 | `verify.url` | 获取验证 URL 与 verifyId 等状态 |
-| `verify.check` | 以验证标识检查挑战结果 |
+| `verify.check` | 以验证标识检查挑战结果；仅确认挑战通过时不返回正式凭证 |
 | `login.anonymous` | 建立匿名会话所需的上游身份 |
-| `logout` | 执行上游退出 |
+| `logout` | 使用当前会话的凭证执行上游退出；宿主负责本地清除 |
+
+### 凭证与会话
+
+- `context.credential` 是宿主传入的不可变快照。空凭证表示没有已保存的凭证；非空也可能已过期或被撤销。Provider 负责解释格式和验证有效性。宿主账号槽位 `context.accountId` 与 `getCurrentAccount.userId` 的 Provider 内部身份是两种 ID；`getUserPlaylists.id` 使用后者，且可查询指定用户。
+- 账号登录或有独立身份的匿名登录完成时，返回 `success=true`、`challenge=false` 和非空的 `cookie`。这里的 `cookie` 是 v1 字段名，内容可为 Provider 自己的凭证格式。宿主先在独立会话调用 `getCurrentAccount`；确认凭证有效并取得用户 ID 后，才保存凭证并替换当前会话。登录音源应同时实现 `auth.actions` 和 `accounts.session`。
+- 扫码、验证码发送和安全验证都可能只完成一个步骤。`success` 表示该动作成功；`challenge=true` 表示仍需额外验证。图片验证码中的 `cookie` 只用于当前挑战，由宿主通过后续请求的 `challengeCookie` 回传，不会保存为账号凭证。流程状态通过 `key`、`sessionId` 等显式传递；账号身份必须能在重建后从凭证或上游恢复。
+- `getCurrentAccount` 返回 `loggedIn=true` 时，必须提供非空的 Provider 内部 `userId`；昵称和头像可省略。没有登录态时返回 `loggedIn=false`。上游明确拒绝现有凭证时可返回 `loggedIn=false` 或 `Authentication`。连接失败、超时和上游 5xx 应报告相应失败类别，宿主可保留已知账号作为离线显示。不得用 `loggedIn=false` 代替网络失败。
+- 凭证和挑战数据不写日志，不隐式加入媒体请求。旧会话的结果不能提交到已切换的音源或账号。v1 没有通用的后台凭证更新动作；`getCurrentAccount` 不写回凭证。
+
+### 扫码轮询
+
+优先填写 `status`，`code` 仅作为兼容回退。现有宿主接受以下值；新实现建议使用第一列。等待和已扫码状态都不应携带正式凭证。
+
+| `status` | 兼容值 | 含义 |
+|---|---|---|
+| 801 | 0 | 等待扫码 |
+| 802 | 1 | 已扫码，等待确认 |
+| 803 | 2、4 | 确认完成；必须同时满足上面的正式凭证条件 |
+| 800 | 3 | 二维码过期 |
 
 | 规则 | 内容 |
 |---|---|
-| 状态表达 | `AuthActionResult.success/code/status/challenge` 表达真实状态；「尚在扫码」不是最终失败，异常不是登录成功 |
-| 错误类别 | `Authentication` |
-| 日志 | 原始凭证不入日志 |
-| 会话 | 宿主保存新凭证并替换会话；Provider 不跨账号续用旧 context |
 | `countryCode` 省略 | 优先使用清单声明的 `defaultCountryCode`（如网易云声明 `"86"`），未声明时沿用界面输入或留空 |
 | Native v1 区号 | 通过既有 auth-only `extraJson` 传递，不改变位置 wire 布局 |
 | JS `close` | 引擎由宿主关闭，不存在可依赖的 `provider.close` 回调；可信 Kotlin 实现应在 `close()` 释放资源 |

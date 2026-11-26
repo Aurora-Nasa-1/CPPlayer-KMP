@@ -111,7 +111,7 @@ and [provider workflows](WORKFLOWS.md) for domain implementation guidance.
 | 36 | `getUserCloud` | `accounts.cloud` | [UserListRequest](SDK_TYPES.md#userlistrequest) | [TrackPage](SDK_TYPES.md#trackpage) | Page cloud-library tracks for the specified user within current-session permissions. |
 | 37 | `getLikeList` | `accounts.likes` | [UserRequest](SDK_TYPES.md#userrequest) | [IdList](SDK_TYPES.md#idlist) | Get liked track IDs; the reserved request.id value self addresses the current account session. |
 | 38 | `getUserAlbums` | `accounts.albums` | [UserListRequest](SDK_TYPES.md#userlistrequest) | [AlbumPage](SDK_TYPES.md#albumpage) | Page albums collected by the specified user. |
-| 59 | `getCurrentAccount` | `accounts.session` | [Bytes](SDK_TYPES.md#bytes) | [AccountSession](SDK_TYPES.md#accountsession) | Inspect current-session login state without replacing the immutable session credential. |
+| 59 | `getCurrentAccount` | `accounts.session` | [Bytes](SDK_TYPES.md#bytes) | [AccountSession](SDK_TYPES.md#accountsession) | Inspect current-session login state without changing its credential. A logged-in result requires a provider-local user ID. |
 | 166 | `getLikeListPage` | `accounts.likes.page` | [PagedIdRequest](SDK_TYPES.md#pagedidrequest) | [IdPage](SDK_TYPES.md#idpage) | Page liked track IDs with item offsets and explicit continuation; self addresses the current account. Use this operation for collections larger than 500 IDs. |
 
 ## PlaylistMutations
@@ -158,7 +158,7 @@ and [provider workflows](WORKFLOWS.md) for domain implementation guidance.
 
 | Tag | Method | Capability | Request | Response | Behavior |
 |---|---|---|---|---|---|
-| 60 | `authenticate` | `auth.actions` | [AuthActionRequest](SDK_TYPES.md#authactionrequest) | [AuthActionResult](SDK_TYPES.md#authactionresult) | Perform a named authentication action. The host owns credential persistence and subsequent session replacement. |
+| 60 | `authenticate` | `auth.actions` | [AuthActionRequest](SDK_TYPES.md#authactionrequest) | [AuthActionResult](SDK_TYPES.md#authactionresult) | Perform a named authentication action. The host verifies a final login credential before storing it and replacing the session. |
 
 ## SocialOperations
 

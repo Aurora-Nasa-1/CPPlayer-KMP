@@ -1888,11 +1888,11 @@ data class ScrobbleRequest(
     }
 }
 
-/** Current login state without mutating the session's credential snapshot. */
+/** Current login state without mutating the session's credential snapshot. A supplied credential can be expired or rejected. */
 data class AccountSession(
-    /** Whether the immutable account session is authenticated. */
+    /** Whether the provider confirms the current session is authenticated. Do not infer validity from the presence of a credential. */
     val loggedIn: Boolean,
-    /** Opaque provider-local user identity, not the host account-slot key. */
+    /** Non-blank provider-local user identity when loggedIn is true; distinct from the host account-slot key. */
     val userId: String? = null,
     /** Public display nickname. */
     val nickname: String? = null,
@@ -2020,13 +2020,13 @@ data class AuthActionRequest(
     }
 }
 
-/** Authentication result/challenge. The host owns credential storage and session replacement. */
+/** Result of one authentication action. A successful step (such as captcha.send) does not necessarily complete login. */
 data class AuthActionResult(
-    /** Explicit mutation/authentication acknowledgement; false is not an empty successful data page. */
+    /** Whether this action succeeded. Completed login also requires challenge=false and a non-blank credential. */
     val success: Boolean,
     /** Provider authentication status code when known. */
     val code: Int? = null,
-    /** Provider authentication/check status code when known. */
+    /** Authentication step status. For QR checks, use 800 expired, 801 waiting, 802 scanned, or 803 completed. */
     val status: Int? = null,
     /** Operation-specific storage/authentication key. */
     val key: String? = null,
@@ -2034,11 +2034,11 @@ data class AuthActionResult(
     val url: String? = null,
     /** Authentication captcha image payload, not an upload transport. */
     val imageBase64: String? = null,
-    /** New authentication credential for host storage; never copy into resource headers implicitly. */
+    /** Provider credential on final login, or a temporary challenge credential on captcha.image. Never log or forward it to media resources. */
     val cookie: String? = null,
     /** Verification page URL. */
     val verifyUrl: String? = null,
-    /** Whether an additional authentication challenge is required. */
+    /** Whether an additional verification step is required before login completes. */
     val challenge: Boolean,
     /** Sanitized human-readable explanation, not a credential or upstream response dump. */
     val message: String? = null,

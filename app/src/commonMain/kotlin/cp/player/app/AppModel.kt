@@ -29,6 +29,8 @@ import cp.player.core.provider.ProviderCookieStorage
 import cp.player.core.util.SettingsStorage
 import cp.player.core.util.runCatchingExceptCancellation
 import cp.player.app.repository.AuthRepository
+import cp.player.app.repository.LoginSessionCheck
+import cp.player.app.repository.toLoginSessionCheck
 import cp.player.app.repository.MusicRepository
 import cp.player.app.repository.MusicRepositoryProvider
 import cp.player.app.repository.SocialRepository
@@ -2190,11 +2192,12 @@ object AppModel {
             return null
         }
         val generation = sourceGeneration.value
-        val cookie = cookieStorage.getCookie(provider.id)
-        var isNetworkError = false
+        val credentialRevision = cookieStorage.revision(provider.id, "default")
+        var accountCheck: LoginSessionCheck = LoginSessionCheck.Unavailable
         val profile = try {
             when (val result = backend.unifiedSource.getCurrentAccount()) {
                 is BackendResult.Success -> result.data
+                    .also { accountCheck = if (it.loggedIn) LoginSessionCheck.LoggedIn else LoginSessionCheck.LoggedOut }
                     .takeIf { it.loggedIn }
                     ?.let { session ->
                         val uid = session.userId ?: return@let null
@@ -2206,44 +2209,59 @@ object AppModel {
                         )
                     }
                 is BackendResult.Error -> {
-                    isNetworkError = true
+                    accountCheck = result.toLoginSessionCheck()
                     null
                 }
                 is BackendResult.Unsupported -> null
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
-        } catch (e: Exception) {
-            isNetworkError = true
+        } catch (_: Exception) {
             null
         }
 
         currentCoroutineContext().ensureActive()
         if (activeProvider() !== provider || sourceGeneration.value != generation ||
-            cookieStorage.getCookie(provider.id) != cookie) return null
-        val previousUid = _userProfile.value?.resourceId
-        val finalProfile = if (isNetworkError) {
-            // 弱网或离线异常：保留当前音源自己的资料或从 AccountStore 恢复，绝不抹除成未登录
-            _userProfile.value ?: getCachedUserProfile()
-        } else {
-            profile
+            cookieStorage.revision(provider.id, "default") != credentialRevision) return null
+        if (accountCheck == LoginSessionCheck.LoggedOut) {
+            cp.player.app.auth.AccountStore.setActive(provider.id, null)
         }
+        val finalProfile = when (accountCheck) {
+            LoginSessionCheck.NetworkError -> _userProfile.value ?: getCachedUserProfile()
+            LoginSessionCheck.Unavailable -> _userProfile.value
+            else -> profile
+        }
+        publishUserProfile(finalProfile, refreshUnread = accountCheck == LoginSessionCheck.LoggedIn)
+        return finalProfile
+    }
+
+    internal suspend fun publishVerifiedAccount(profile: UserProfile) {
+        profileRefreshJob?.cancel()
+        publishUserProfile(profile, refreshUnread = true)
+    }
+
+    internal suspend fun publishSignedOutAccount(providerId: String) {
+        profileRefreshJob?.cancel()
+        cp.player.app.auth.AccountStore.setActive(providerId, null)
+        publishUserProfile(null, refreshUnread = false)
+    }
+
+    private suspend fun publishUserProfile(finalProfile: UserProfile?, refreshUnread: Boolean) {
+        val previousUid = _userProfile.value?.resourceId
         _userProfile.value = finalProfile
         // 换人了 ⇒ 发一次账号代际（见 [accountGeneration]）。首次恢复不算：
         // 那一刻各页面首屏还在用同一份 cookie 拉数据，多发一次就是白拉一遍。
         if (profileResolvedOnce && previousUid != finalProfile?.resourceId) bumpAccountGeneration()
         profileResolvedOnce = true
-        // 收藏列表与账号绑定，资料刷新后同步刷新
-        runCatching { playback.refreshFavorites() }
         // 未读私信数同样绑定账号：登出 / 切号后角标必须跟着变，否则会留着上一个账号的数字。
         if (finalProfile != null) {
-            if (!isNetworkError) refreshUnreadMessages()
+            if (refreshUnread) refreshUnreadMessages()
         } else {
             clearUnreadMessages()
         }
         // 私信轮询同样绑定账号（未登录时必须停）。
         syncMessageWatch()
-        return finalProfile
+        runCatchingExceptCancellation { playback.refreshFavorites() }
     }
 
     /**
