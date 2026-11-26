@@ -172,7 +172,7 @@ private fun UserProfileContent(
 
     val bundle = state.bundle
     val songs = bundle?.songs.orEmpty()
-    val mediaIds = remember(songs) { songs.map { "$provider://song/${it.id}" } }
+    val mediaIds = remember(songs, provider) { songs.map { "$provider://song/${it.id}" } }
     val isMe = me?.resourceId == uid
     // 热门歌曲最多 50 首，默认全展开会把下面的「专辑」推到很远的滚动位置。
     var songsExpanded by remember(uid) { mutableStateOf(false) }

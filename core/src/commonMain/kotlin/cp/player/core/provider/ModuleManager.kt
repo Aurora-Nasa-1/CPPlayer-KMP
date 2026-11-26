@@ -68,6 +68,7 @@ class ModuleManager(
     fun init(providerManager: ProviderManager, currentVersionName: String? = null) {
         currentAppVersion = currentVersionName
         recoverRepositoryBackups()
+        cleanupOrphanedRuntimeDirectories()
         applyPendingRepositoryUpdates()
         if (currentVersionName != null) applyPendingLegacyProviderCleanup(currentVersionName)
         val allChildDirs = PlatformSupport.listChildDirectories(modulesDir)
@@ -96,41 +97,65 @@ class ModuleManager(
                 }
             }
 
-            // 2. 【多核后台并发】：其余未激活的模块完全不阻塞启动，放至后台多核协程并行加载
+            // 2. 【多核后台并发】：主音源已激活时不阻塞启动，交由后台并发加载其余模块；
+            //    若主音源加载失败导致仍无活跃 Provider，则同步并发加载其余模块供下方兜底激活，
+            //    避免错落入 NoProvider 本地模式。
             val remainingDirs = validDirs.filter { it != targetDir }
             if (remainingDirs.isNotEmpty()) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    val remainingLoaded = remainingDirs.map { directory ->
-                        async {
-                            val name = lastPathSegment(directory)
-                            val generation = providers.generation(name)
-                            if (!PlatformSupport.exists(directory)) return@async null
-                            try {
-                                val provider = readProvider(directory, expectedDirectoryId = name)
-                                provider to generation
-                            } catch (e: Exception) {
-                                recordLoadErrorIfCurrent(name, generation, e.message ?: "Cannot load provider")
-                                null
-                            }
-                        }
-                    }.awaitAll().filterNotNull()
-
-                    val staleProviders = remainingLoaded.filterNot { (provider, generation) ->
-                        providers.putIfUnchanged(provider, generation)
+                if (providerManager.currentProvider != null) {
+                    CoroutineScope(Dispatchers.IO).launch {
+                        loadRemainingDirectories(remainingDirs)
                     }
-                    staleProviders.forEach { (provider, _) -> runCatching(provider::close) }
-                    updateProvidersFlow()
+                } else {
+                    runBlocking(Dispatchers.IO) {
+                        loadRemainingDirectories(remainingDirs)
+                    }
                 }
             }
         } else {
             updateProvidersFlow()
         }
 
-        // 保底：若目标音源启动失败且没有成功激活，回退尝试 restoreLastProvider
+        // 保底：若目标音源启动失败且没有成功激活，回退尝试 restoreLastProvider 或首个可用音源
         if (providerManager.currentProvider == null) {
             val restored = providerManager.restoreLastProvider(getAvailableProviders(), context)
             if (!restored) {
                 getAvailableProviders().firstOrNull()?.let { providerManager.switchProvider(it, context, save = false) }
+            }
+        }
+    }
+
+    private suspend fun loadRemainingDirectories(remainingDirs: List<String>) = kotlinx.coroutines.coroutineScope {
+        val remainingLoaded = remainingDirs.map { directory ->
+            async {
+                val name = lastPathSegment(directory)
+                val generation = providers.generation(name)
+                if (!PlatformSupport.exists(directory)) return@async null
+                try {
+                    val provider = readProvider(directory, expectedDirectoryId = name)
+                    provider to generation
+                } catch (e: Exception) {
+                    recordLoadErrorIfCurrent(name, generation, e.message ?: "Cannot load provider")
+                    null
+                }
+            }
+        }.awaitAll().filterNotNull()
+
+        val staleProviders = remainingLoaded.filterNot { (provider, generation) ->
+            providers.putIfUnchanged(provider, generation)
+        }
+        staleProviders.forEach { (provider, _) -> runCatching(provider::close) }
+        updateProvidersFlow()
+    }
+
+    private fun cleanupOrphanedRuntimeDirectories() {
+        for (directory in PlatformSupport.listChildDirectories(modulesDir)) {
+            val name = lastPathSegment(directory)
+            if (name.startsWith(".repository-runtime-") ||
+                name.startsWith(".repository-old-") ||
+                name.startsWith(".repository-import-")
+            ) {
+                runCatching { PlatformSupport.deleteRecursively(directory) }
             }
         }
     }
@@ -223,7 +248,11 @@ class ModuleManager(
             val provider = object : BackendProvider by implementation {
                 override val updateUrl = manifest.updateUrl
                 override val qualityOptions = manifest.qualityOptions
-                override val loginMethods = emptyList<String>()
+                override val targetAppPackage = manifest.targetAppPackage?.trim()?.takeIf { it.isNotEmpty() }
+                override val loginMethods = manifest.loginMethods
+                    ?.map { it.trim().lowercase() }
+                    ?.filter { it.isNotEmpty() }
+                    ?: implementation.loginMethods
             }
             if (expectedDirectoryId != null) {
                 require(provider.id == expectedDirectoryId) { "Provider directory must match manifest.id" }

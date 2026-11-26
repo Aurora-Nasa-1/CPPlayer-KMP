@@ -31,6 +31,8 @@ class ProviderManager(
         credentialVersion = { provider, account -> cookieStorage.revision(provider, account) },
     )
     private val KEY_LAST_PROVIDER_ID = "last_active_provider_id"
+    private val switchLock = Any()
+    private val listenerLock = Any()
     @Volatile private var sessionProvider: BackendProvider? = null
     private var unsubscribeRetirement: () -> Unit = {}
     private val unsubscribeCredentials = cookieStorage.onChanged { provider, account ->
@@ -73,6 +75,7 @@ class ProviderManager(
     }
 
     /** 当前活跃的 Provider */
+    @Volatile
     var currentProvider: BackendProvider? = null
         private set
 
@@ -83,11 +86,11 @@ class ProviderManager(
 
     /** 添加 Provider 切换监听器 */
     fun addOnProviderChangedListener(listener: (BackendProvider?) -> Unit) {
-        changeListeners.add(listener)
+        synchronized(listenerLock) { changeListeners.add(listener) }
     }
 
     fun removeOnProviderChangedListener(listener: (BackendProvider?) -> Unit) {
-        changeListeners.remove(listener)
+        synchronized(listenerLock) { changeListeners.remove(listener) }
     }
 
     /**
@@ -95,50 +98,64 @@ class ProviderManager(
      *
      * @param save 是否持久化用户选择（自动选择首模块时应传 false）
      */
+    @Volatile
     var lastSwitchError: String? = null
         private set
 
     @Suppress("UNUSED_PARAMETER")
     fun switchProvider(provider: BackendProvider?, context: PlatformContext? = null, save: Boolean = true): Boolean {
-        if (provider != null && provider === currentProvider && provider.isReady()) {
-            lastSwitchError = null
-            return true
-        }
-        if (provider != null && provider.contract != PROVIDER_SDK_CONTRACT) {
-            lastSwitchError = "Legacy Provider v1/v3 is retired; use provider-sdk-kmp"
-            return false
-        }
-        if (provider != null && !provider.isReady()) {
-            lastSwitchError = provider.loadError ?: "音源未就绪"
-            return false
-        }
+        val listenersSnapshot: List<(BackendProvider?) -> Unit>
+        synchronized(switchLock) {
+            if (provider != null && provider === currentProvider && provider.isReady()) {
+                lastSwitchError = null
+                return true
+            }
+            if (provider == null && currentProvider == null) {
+                if (save) settings.remove(KEY_LAST_PROVIDER_ID)
+                lastSwitchError = null
+                return true
+            }
+            if (provider != null && provider.contract != PROVIDER_SDK_CONTRACT) {
+                lastSwitchError = "Legacy Provider v1/v3 is retired; use provider-sdk-kmp"
+                return false
+            }
+            if (provider != null && !provider.isReady()) {
+                lastSwitchError = provider.loadError ?: "音源未就绪"
+                return false
+            }
 
-        sdkSessions.invalidate()
-        unsubscribeRetirement()
-        unsubscribeRetirement = {}
-        runCatching { currentProvider?.retireSessions() }
-        sessionProvider = provider?.let { descriptor ->
-            object : BackendProvider by descriptor {
-                override fun createSdkProvider(context: cp.player.sdk.ProviderContext): cp.player.sdk.MusicProvider? {
-                    // Cookie and epoch are read separately by the session owner. Reject a torn snapshot.
-                    if (context.credential != cookieStorage.getCookie(descriptor.id, context.accountId))
-                        throw kotlinx.coroutines.CancellationException("Credentials changed during session creation")
-                    if (context.settings != descriptor.getCustomSettings())
-                        throw kotlinx.coroutines.CancellationException("Settings changed during session creation")
-                    return descriptor.createSdkProvider(context)?.let { cp.player.sdk.SessionMusicProvider(it) }
+            val previousProvider = currentProvider
+            unsubscribeRetirement()
+            unsubscribeRetirement = {}
+            runCatching { previousProvider?.retireSessions() }
+            sessionProvider = provider?.let { descriptor ->
+                object : BackendProvider by descriptor {
+                    override fun createSdkProvider(context: cp.player.sdk.ProviderContext): cp.player.sdk.MusicProvider? {
+                        // Cookie and epoch are read separately by the session owner. Reject a torn snapshot.
+                        if (context.credential != cookieStorage.getCookie(descriptor.id, context.accountId))
+                            throw kotlinx.coroutines.CancellationException("Credentials changed during session creation")
+                        if (context.settings != descriptor.getCustomSettings())
+                            throw kotlinx.coroutines.CancellationException("Settings changed during session creation")
+                        return descriptor.createSdkProvider(context)?.let { cp.player.sdk.SessionMusicProvider(it) }
+                    }
                 }
             }
+            currentProvider = provider
+            sdkSessions.invalidateAndApplyPolicy {
+                HostTrafficPolicy.setActiveProviderImagePolicy(provider?.imageResizeRule)
+            }
+            // Subscribe before any lazy session can be created: configuration changes must also fence
+            // the gap between its settings snapshot and registration of the session's own listener.
+            unsubscribeRetirement = provider?.let(::observeRetirement) ?: {}
+            _currentProviderFlow.value = provider
+            if (save) {
+                if (provider != null) settings.putString(KEY_LAST_PROVIDER_ID, provider.id)
+                else settings.remove(KEY_LAST_PROVIDER_ID)
+            }
+            lastSwitchError = null
+            listenersSnapshot = synchronized(listenerLock) { changeListeners.toList() }
         }
-        currentProvider = provider
-        HostTrafficPolicy.setActiveProviderImagePolicy(provider?.imageResizeRule)
-        sdkSessions.invalidate()
-        // Subscribe before any lazy session can be created: configuration changes must also fence
-        // the gap between its settings snapshot and registration of the session's own listener.
-        unsubscribeRetirement = provider?.let(::observeRetirement) ?: {}
-        _currentProviderFlow.value = provider
-        if (save && provider != null) settings.putString(KEY_LAST_PROVIDER_ID, provider.id)
-        changeListeners.forEach { runCatching { it(provider) } }
-        lastSwitchError = null
+        listenersSnapshot.forEach { runCatching { it(provider) } }
         return true
     }
 

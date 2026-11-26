@@ -137,7 +137,8 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
         val model = rememberScreenModel(tag = modelTag) { SearchScreenModel(initialQuery) }
         val state by model.state.collectAsState()
         val scope = rememberCoroutineScope()
-        val provider = AppModel.activeProviderId()
+        val activeProvider by AppModel.activeProviderFlow.collectAsState()
+        val provider = activeProvider?.id ?: AppModel.activeProviderId()
         val toMediaId = { id: String -> AppModel.toMediaId(id, provider) }
         val navigator = LocalAppNavigator.current
 
@@ -443,7 +444,7 @@ class SearchScreen(private val initialQuery: String = "") : Screen {
                             ) {
                                 item {
                                     SectionHeader(
-                                        title = if (AppModel.activeProvider() == null) "本地曲库搜索结果" else "搜索结果",
+                                        title = if (activeProvider == null) "本地曲库搜索结果" else "搜索结果",
                                         supportingText = "$count 项",
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
                                     )

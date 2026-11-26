@@ -37,6 +37,9 @@ class AlbumDetailPresenter(
     override val state: StateFlow<AlbumUiState> = _state.asStateFlow()
 
     private var loadedId: String? = null
+    private var detailProviderId: String? = null
+
+    fun resolvedProviderId(): String = detailProviderId ?: AppModel.activeProviderId()
 
     /**
      * 收藏集合是否已拉到。
@@ -79,15 +82,48 @@ class AlbumDetailPresenter(
         }
     }
 
+    fun primeFromCache(albumId: String): Boolean {
+        if (loadedId == albumId && _state.value.detail != null) return true
+        val peek = AppModel.musicRepository.peekAlbumDetail(albumId) ?: return false
+        detailProviderId = AppModel.activeProviderId()
+        _state.update { it.copy(loading = false, detail = peek.value, error = null) }
+        return true
+    }
+
     fun load(albumId: String, fallback: AlbumSummary?) {
         if (loadedId == albumId && _state.value.detail != null) return
         loadedId = albumId
+        val requestedProviderId = AppModel.activeProviderId()
+        val peek = AppModel.musicRepository.peekAlbumDetail(albumId)
+        if (peek != null) {
+            detailProviderId = requestedProviderId
+            _state.update { it.copy(loading = false, detail = peek.value, error = null) }
+            scope.launch {
+                syncFavoriteState()
+                if (!peek.isFresh) {
+                    AppModel.musicRepository.getAlbumDetail(albumId) { refreshed ->
+                        if (loadedId == albumId && AppModel.activeProviderId() == requestedProviderId &&
+                            refreshed is BackendResult.Success
+                        ) {
+                            _state.update { cur ->
+                                if (cur.detail == refreshed.data) cur else cur.copy(detail = refreshed.data, loading = false, error = null)
+                            }
+                        }
+                    }
+                }
+            }
+            return
+        }
         scope.launch {
             _state.value = AlbumUiState(loading = true)
             val result = runCatching { AppModel.musicRepository.getAlbumDetail(albumId) }
                 .getOrElse { BackendResult.Error(it.message.orEmpty()) }
+            if (loadedId != albumId) return@launch
             _state.value = when (result) {
-                is BackendResult.Success -> AlbumUiState(loading = false, detail = result.data)
+                is BackendResult.Success -> {
+                    detailProviderId = requestedProviderId
+                    AlbumUiState(loading = false, detail = result.data)
+                }
                 is BackendResult.Error -> AlbumUiState(
                     loading = false,
                     error = result.message,

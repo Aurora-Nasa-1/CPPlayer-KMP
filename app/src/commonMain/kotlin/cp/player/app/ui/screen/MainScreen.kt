@@ -152,7 +152,7 @@ private const val SIDEBAR_PLAYLIST_LIMIT = 8
  * 设置 / 专辑等路由页盖住而**离开组合**，返回时它的 `LaunchedEffect(Unit)` 会重跑，
  * remember 版就成了「每次从子页面返回都再弹一遍」。
  */
-private var qrResumePromptShown = false
+private val qrResumePromptShownProviders = mutableSetOf<String>()
 
 /**
  * 三个主 tab 的 Screen 实例：**会话级稳定，整个 app 生命周期只建一次**。
@@ -461,10 +461,14 @@ class MainScreen : Screen {
         //
         // ⚠️ 必须排在上面那条 `LaunchedEffect` **之后**：UiEvents 是 replay = 0 的
         // SharedFlow，先发后订阅就丢了；两条都是 `LaunchedEffect(Unit)`，按声明顺序启动。
-        androidx.compose.runtime.LaunchedEffect(Unit) {
-            val providerId = AppModel.activeProviderId()
-            if (!qrResumePromptShown && providerId.isNotBlank() && QrLoginStore.hasPending(providerId)) {
-                qrResumePromptShown = true
+        val activeProviderForQr by AppModel.activeProviderFlow.collectAsState()
+        androidx.compose.runtime.LaunchedEffect(activeProviderForQr?.id) {
+            val providerId = activeProviderForQr?.id ?: return@LaunchedEffect
+            if (providerId.isNotBlank() &&
+                providerId !in qrResumePromptShownProviders &&
+                QrLoginStore.hasPending(providerId)
+            ) {
+                qrResumePromptShownProviders.add(providerId)
                 cp.player.app.ui.util.UiEvents.notify(s.account.qrResumePrompt)
             }
         }
@@ -1067,7 +1071,7 @@ private fun AppTopBar(
 private fun AccountEntryContent(avatarUrl: String?, contentDescription: String) {
     if (!avatarUrl.isNullOrBlank()) {
         AsyncImage(
-            model = avatarUrl,
+            model = rememberCoverImageRequest(avatarUrl, targetPx = 128),
             contentDescription = contentDescription,
             modifier = Modifier.size(28.dp).clip(CircleShape),
             contentScale = ContentScale.Crop,

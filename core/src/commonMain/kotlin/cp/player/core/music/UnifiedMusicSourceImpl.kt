@@ -515,6 +515,8 @@ class UnifiedMusicSourceImpl private constructor(
         } catch (e: ProviderException) {
             if (e.failure.category == FailureCategory.UNSUPPORTED) BackendResult.Unsupported(e.failure.message)
             else BackendResult.Error("Provider ${e.failure.category}", cause = e)
+        } catch (e: LinkageError) {
+            BackendResult.Error("Provider native library error: ${e.message ?: e::class.simpleName}", cause = e)
         } catch (e: Exception) {
             BackendResult.Error("Provider request failed", cause = e)
         }

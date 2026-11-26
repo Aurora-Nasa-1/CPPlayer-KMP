@@ -40,6 +40,7 @@ class PlaybackControllerImpl(
     private val fadeSettings: SettingsStorage? = null,
     private val lyricPusher: cp.player.core.lyricpush.LyricPusher? = null,
     private val cacheNamespace: () -> String = { "" },
+    private val cacheNamespaceForProvider: ((providerId: String) -> String)? = null,
     private val downloadedFileResolver: (mediaId: String) -> String? = { null },
     private val downloadedTrackResolver: (mediaId: String) -> TrackSummary? = { null },
 ) : PlaybackController {
@@ -92,6 +93,7 @@ class PlaybackControllerImpl(
         scrobbler = scrobbler,
         playbackModeSettings = playbackModeSettings,
         cacheNamespace = cacheNamespace,
+        cacheNamespaceForProvider = cacheNamespaceForProvider,
         downloadedFileResolver = downloadedFileResolver,
         downloadedTrackResolver = downloadedTrackResolver,
         scope = scope,

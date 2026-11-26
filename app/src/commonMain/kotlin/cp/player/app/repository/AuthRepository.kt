@@ -42,6 +42,12 @@ data class CaptchaImageResult(
     val sessionCookie: String?,
 )
 
+sealed interface LoginSessionCheck {
+    data object LoggedIn : LoginSessionCheck
+    data object LoggedOut : LoginSessionCheck
+    data object NetworkError : LoginSessionCheck
+}
+
 /**
  * 强类型认证仓库（面向 UI 层）。
  *
@@ -55,9 +61,12 @@ class AuthRepository(
     private val defaultCountryCode: String? = null,
 ) {
 
-    suspend fun getLoginStatus(): Boolean = when (val result = source?.getCurrentAccount()) {
-        is BackendResult.Success -> result.data.loggedIn
-        is BackendResult.Error, is BackendResult.Unsupported, null -> false
+    suspend fun getLoginStatus(): Boolean = checkLoginSession() == LoginSessionCheck.LoggedIn
+
+    suspend fun checkLoginSession(): LoginSessionCheck = when (val result = source?.getCurrentAccount()) {
+        is BackendResult.Success -> if (result.data.loggedIn) LoginSessionCheck.LoggedIn else LoginSessionCheck.LoggedOut
+        is BackendResult.Unsupported -> LoginSessionCheck.LoggedOut
+        is BackendResult.Error, null -> LoginSessionCheck.NetworkError
     }
 
     suspend fun getQrKey(): QrKeyResult {

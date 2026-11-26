@@ -34,6 +34,7 @@ internal class PlaybackMediaLoader(
     private val scrobbler: PlaybackScrobbler,
     private val playbackModeSettings: SettingsStorage?,
     private val cacheNamespace: () -> String,
+    private val cacheNamespaceForProvider: ((providerId: String) -> String)? = null,
     private val downloadedFileResolver: (mediaId: String) -> String?,
     private val downloadedTrackResolver: (mediaId: String) -> TrackSummary?,
     private val scope: CoroutineScope,
@@ -585,7 +586,10 @@ internal class PlaybackMediaLoader(
                 }
                 if (restartIfSourceChanged(mediaId, namespace, gen)) return@launch
                 var remoteSongUrl = urlResult.getOrNull()
-                if ((remoteSongUrl == null || remoteSongUrl.url.isBlank()) && requestedLevel != "standard") {
+                if (urlResult !is BackendResult.Unsupported &&
+                    (remoteSongUrl == null || remoteSongUrl.url.isBlank()) &&
+                    requestedLevel != "standard"
+                ) {
                     val fallbackResult = PlaybackRetryPolicy.retryTransient(
                         isCurrent = { loadGeneration == gen && cacheNamespaceOf(mediaId) == namespace },
                         request = { source.getSongUrl(mediaId, level = "standard") },
@@ -619,6 +623,7 @@ internal class PlaybackMediaLoader(
                         platform.stop()
                         playingMediaId = null
                         val errMsg = (urlResult as? BackendResult.Error)?.message
+                            ?: (urlResult as? BackendResult.Unsupported)?.message
                         // A missing cache entry is expected; only the failed Provider lookup is an error.
                         val hint = if (PlaybackRetryPolicy.isTransient(urlResult)) {
                             "播放地址暂时不可用，且当前没有离线缓存"
@@ -848,8 +853,14 @@ internal class PlaybackMediaLoader(
         }
     }
 
-    private fun cacheNamespaceOf(mediaId: String): String =
-        if (mediaId.startsWith("local://")) "" else cacheNamespace()
+    private fun cacheNamespaceOf(mediaId: String): String {
+        if (mediaId.startsWith("local://")) return ""
+        val resolver = cacheNamespaceForProvider ?: return cacheNamespace()
+        val providerId = cp.player.core.music.CPMediaId.parseOrNull(mediaId)?.providerId
+            ?.takeIf { it.isNotBlank() }
+            ?: return cacheNamespace()
+        return resolver(providerId)
+    }
 
     private fun cacheKeyOf(mediaId: String, level: String, namespace: String = cacheNamespaceOf(mediaId)): String {
         return "$mediaId@$level" + if (namespace.isEmpty()) "" else "#${cp.player.core.util.stableHash64(namespace)}"

@@ -68,11 +68,27 @@ class SearchPresenter(
 
     @Volatile
     private var searchGeneration = 0
+    @Volatile
+    private var hotSearchGeneration = 0
 
     init {
         _state.value = _state.value.copy(searchHistory = readHistory())
         loadHotSearches()
         if (initialQuery.isNotBlank()) search(initialQuery)
+    }
+
+    /** 音源切换后作废旧音源搜索结果、联想与在途请求，并按新音源刷新热搜。 */
+    fun onProviderChanged() {
+        suggestionJob?.cancel()
+        searchJob?.cancel()
+        searchGeneration++
+        _state.value = _state.value.copy(
+            result = null,
+            loading = false,
+            error = null,
+            suggestions = emptyList(),
+        )
+        loadHotSearches()
     }
 
     private fun readHistory(): List<String> = settingsProvider()
@@ -90,6 +106,8 @@ class SearchPresenter(
 
     fun loadHotSearches() {
         hotSearchJob?.cancel()
+        val generation = ++hotSearchGeneration
+        val expectedProviderId = activeProviderProvider()?.id
         hotSearchJob = scope.launch {
             val hot = try {
                 hotSearchesLoader()
@@ -99,6 +117,9 @@ class SearchPresenter(
                 emptyList()
             }
             coroutineContext.ensureActive()
+            if (generation != hotSearchGeneration || activeProviderProvider()?.id != expectedProviderId) {
+                return@launch
+            }
             _state.value = _state.value.copy(
                 hotSearches = hot.ifEmpty {
                     listOf(HotSearch("热门歌曲"), HotSearch("流行音乐"), HotSearch("古典乐"))
@@ -116,16 +137,19 @@ class SearchPresenter(
             _state.value = _state.value.copy(suggestions = emptyList())
             return
         }
+        val expectedProviderId = activeProviderProvider()?.id
         suggestionJob = scope.launch {
             val requestedQuery = query.trim()
-            val suggestions = if (activeProviderProvider() == null) {
+            val suggestions = if (expectedProviderId == null) {
                 val localItems = localItemsProvider()
                     .filter { it.mediaType == MediaType.AUDIO }
                 LocalLibraryAggregator.search(localItems, requestedQuery).map { it.title }.distinct().take(10)
             } else {
                 suggestionsLoader(requestedQuery).orEmpty()
             }
-            if (_state.value.query.trim() != requestedQuery) return@launch
+            if (_state.value.query.trim() != requestedQuery ||
+                activeProviderProvider()?.id != expectedProviderId
+            ) return@launch
             _state.value = _state.value.copy(suggestions = suggestions)
         }
     }
@@ -169,9 +193,10 @@ class SearchPresenter(
             suggestions = emptyList(),
             result = null,
         )
+        val expectedProviderId = activeProviderProvider()?.id
         searchJob = scope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
-            if (activeProviderProvider() == null) {
+            if (expectedProviderId == null) {
                 val localItems = localItemsProvider()
                     .filter { it.mediaType == MediaType.AUDIO }
                 val matchedSongs = LocalLibraryAggregator.search(localItems, finalKeyword).map { item ->
@@ -202,7 +227,7 @@ class SearchPresenter(
                             avatarUrl = artist.coverUri,
                         )
                     }
-                if (generation != searchGeneration) return@launch
+                if (generation != searchGeneration || activeProviderProvider()?.id != expectedProviderId) return@launch
                 _state.value = _state.value.copy(
                     result = SearchResult(
                         songs = matchedSongs,
@@ -218,6 +243,7 @@ class SearchPresenter(
                 repositoryProvider().search(finalKeyword, type, onRefresh = { refreshed ->
                     val updated = (refreshed as? BackendResult.Success)?.data
                     if (updated != null && generation == searchGeneration &&
+                        activeProviderProvider()?.id == expectedProviderId &&
                         _state.value.query == finalKeyword && _state.value.searchType == type
                     ) {
                         _state.value = _state.value.copy(result = updated)
@@ -228,7 +254,7 @@ class SearchPresenter(
             } catch (error: Exception) {
                 BackendResult.Error(error.message ?: "搜索失败")
             }
-            if (generation != searchGeneration) return@launch
+            if (generation != searchGeneration || activeProviderProvider()?.id != expectedProviderId) return@launch
             _state.value = when (response) {
                 is BackendResult.Success -> _state.value.copy(result = response.data, loading = false)
                 is BackendResult.Error -> _state.value.copy(error = response.message, loading = false)

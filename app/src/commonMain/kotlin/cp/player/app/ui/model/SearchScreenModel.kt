@@ -27,7 +27,7 @@ class SearchScreenModel(initialQuery: String = "") : ScreenModel {
     init {
         screenModelScope.launch {
             AppModel.sourceGeneration.drop(1).collect {
-                presenter.loadHotSearches()
+                presenter.onProviderChanged()
             }
         }
     }

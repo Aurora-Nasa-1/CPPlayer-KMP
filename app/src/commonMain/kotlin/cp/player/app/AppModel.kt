@@ -440,6 +440,12 @@ object AppModel {
     fun markInitialized() { _initialized.value = true }
 
     fun retryBackendBootstrap() {
+        if (backend.state is BackendState.Error) {
+            val res = backend.retryActivation()
+            if (res is BackendResult.Success) {
+                onActiveProviderActivated(syncQuality = true)
+            }
+        }
         _initialized.value = true
     }
 
@@ -2076,6 +2082,14 @@ object AppModel {
      */
     fun refreshUserProfile() {
         profileRefreshJob?.cancel()
+        if (activeProvider() == null) {
+            unreadRefreshJob?.cancel()
+            unreadRefreshJob = null
+            _userProfile.value = null
+            _unreadMessages.value = 0
+            syncMessageWatch()
+            return
+        }
         // 弱网离线优化：不清空既有资料，若当前尚未加载资料则先从 AccountStore 恢复缓存，
         // 确保离线或弱网启动时不会闪烁或显示「未登录」。
         if (_userProfile.value == null) {
@@ -2094,8 +2108,19 @@ object AppModel {
      */
     suspend fun refreshUserProfileAwait(): UserProfile? {
         val provider = activeProvider()
+        if (provider == null) {
+            unreadRefreshJob?.cancel()
+            unreadRefreshJob = null
+            val previousUid = _userProfile.value?.resourceId
+            _userProfile.value = null
+            if (profileResolvedOnce && previousUid != null) bumpAccountGeneration()
+            profileResolvedOnce = true
+            _unreadMessages.value = 0
+            syncMessageWatch()
+            return null
+        }
         val generation = sourceGeneration.value
-        val cookie = provider?.let { cookieStorage.getCookie(it.id) }
+        val cookie = cookieStorage.getCookie(provider.id)
         var isNetworkError = false
         val profile = try {
             when (val result = backend.unifiedSource.getCurrentAccount()) {
@@ -2110,11 +2135,11 @@ object AppModel {
                             avatarUrl = session.avatarUrl.orEmpty(),
                         )
                     }
-                is BackendResult.Error,
-                is BackendResult.Unsupported -> {
+                is BackendResult.Error -> {
                     isNetworkError = true
                     null
                 }
+                is BackendResult.Unsupported -> null
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -2125,10 +2150,10 @@ object AppModel {
 
         currentCoroutineContext().ensureActive()
         if (activeProvider() !== provider || sourceGeneration.value != generation ||
-            provider?.let { cookieStorage.getCookie(it.id) } != cookie) return null
+            cookieStorage.getCookie(provider.id) != cookie) return null
         val previousUid = _userProfile.value?.resourceId
         val finalProfile = if (isNetworkError) {
-            // 弱网或离线异常：保留当前资料或从 AccountStore 恢复，绝不抹除成未登录
+            // 弱网或离线异常：保留当前音源自己的资料或从 AccountStore 恢复，绝不抹除成未登录
             _userProfile.value ?: getCachedUserProfile()
         } else {
             profile
@@ -3357,29 +3382,52 @@ object AppModel {
 
     fun availableProviders(): List<BackendProvider> = backend.getAvailableProviders()
 
+    private fun onActiveProviderActivated(syncQuality: Boolean = true) {
+        bumpSourceGeneration()
+        if (syncQuality) syncPlaybackQuality()
+        val active = activeProvider()
+        if (active == null) {
+            profileRefreshJob?.cancel()
+            profileRefreshJob = null
+            unreadRefreshJob?.cancel()
+            unreadRefreshJob = null
+            _userProfile.value = null
+            _unreadMessages.value = 0
+            syncMessageWatch()
+            modelScope.launch { runCatching { playback.refreshFavorites() } }
+            return
+        }
+        if (isolationSwitchAccount()) {
+            // 切换瞬间立即切换为新音源自己的本地账号快照（未登录时置 null），
+            // 防止新音源离线/不支持会话接口时把上一个音源的账号资料继续留在界面上。
+            profileRefreshJob?.cancel()
+            profileRefreshJob = null
+            unreadRefreshJob?.cancel()
+            unreadRefreshJob = null
+            _userProfile.value = getCachedUserProfile()
+            _unreadMessages.value = 0
+            syncMessageWatch()
+            refreshUserProfile()
+        }
+    }
+
     /** Repository installation already switched the backend; refresh UI caches without switching twice. */
     internal fun onRepositoryProviderInstalled(providerId: String) {
         if (activeProviderId() != providerId || activeProvider()?.isReady() != true) return
-        bumpSourceGeneration()
-        if (isolationSwitchAccount()) refreshUserProfile()
+        onActiveProviderActivated(syncQuality = true)
     }
 
     fun activeProvider(): BackendProvider? = runCatching { backend.activeProvider() }.getOrNull()
 
     fun onProviderConfigurationChanged(providerId: String) {
         if (activeProviderId() != providerId) return
-        bumpSourceGeneration()
-        refreshUserProfile()
+        onActiveProviderActivated(syncQuality = false)
     }
 
     fun switchProvider(provider: BackendProvider): BackendResult<Unit> {
         val result = backend.switchProvider(provider)
         if (result is BackendResult.Success) {
-            bumpSourceGeneration()
-            syncPlaybackQuality()
-            if (isolationSwitchAccount()) {
-                refreshUserProfile()
-            }
+            onActiveProviderActivated(syncQuality = true)
         }
         return result
     }
@@ -3393,13 +3441,7 @@ object AppModel {
         lastSwitchError = (result as? BackendResult.Error)?.message
             ?: (result as? BackendResult.Unsupported)?.message
         if (result.isSuccess) {
-            bumpSourceGeneration()
-            syncPlaybackQuality()
-            // 音源隔离：cookie 是按音源存的，切过去之后要按**新音源的 cookie** 重新拉资料，
-            // 否则界面会继续显示上一个音源的账号（用户看到的是「切了源但账号没换」）。
-            if (isolationSwitchAccount()) {
-                refreshUserProfile()
-            }
+            onActiveProviderActivated(syncQuality = true)
         }
         return result.isSuccess
     }
@@ -3428,10 +3470,7 @@ object AppModel {
         when (result) {
             is ImportResult.Activated -> {
                 migrateProviderData(result.replacedProviderId, result.provider.id)
-                bumpSourceGeneration()
-                if (isolationSwitchAccount()) {
-                    refreshUserProfile()
-                }
+                onActiveProviderActivated(syncQuality = true)
             }
             is ImportResult.Loaded -> {
                 migrateProviderData(result.replacedProviderId, result.provider.id)
@@ -3451,10 +3490,7 @@ object AppModel {
         when (result) {
             is ImportResult.Activated -> {
                 migrateProviderData(result.replacedProviderId, result.provider.id)
-                bumpSourceGeneration()
-                if (isolationSwitchAccount()) {
-                    refreshUserProfile()
-                }
+                onActiveProviderActivated(syncQuality = true)
             }
             is ImportResult.Loaded -> {
                 migrateProviderData(result.replacedProviderId, result.provider.id)
@@ -3474,10 +3510,7 @@ object AppModel {
         val wasActive = activeProviderId() == id
         val result = backend.deleteModule(id)
         if (result is BackendResult.Success && wasActive) {
-            bumpSourceGeneration()
-            if (isolationSwitchAccount()) {
-                refreshUserProfile()
-            }
+            onActiveProviderActivated(syncQuality = true)
         }
         return result
     }

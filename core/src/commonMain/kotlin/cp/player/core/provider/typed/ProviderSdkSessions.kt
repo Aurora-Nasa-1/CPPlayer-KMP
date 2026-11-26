@@ -59,11 +59,20 @@ class ProviderSdkSessions private constructor(
     val changes = _changes.asStateFlow()
 
     /** Immediately fences old results; resource disposal drains asynchronously. */
-    fun invalidate() {
-        synchronized(this) {
+    fun invalidate() = invalidateAndApplyPolicy {}
+
+    /** Atomically fences old results, updates host image policy under session lock, and retires the old host. */
+    internal fun invalidateAndApplyPolicy(applyPolicy: () -> Unit) {
+        val retired = synchronized(this) {
             revision++
-            host?.invalidate()
+            val previous = host.also { host = null }
+            previous?.invalidate()
+            applyPolicy()
             _changes.value++
+            if (closed) null else previous
+        }
+        if (retired != null) {
+            retirement.launch { retired.close() }
         }
     }
 
@@ -103,7 +112,11 @@ class ProviderSdkSessions private constructor(
         owner = provider
         if (provider == null || provider.contract != "kmp-sdk-v1") return@withLock null
         val key = ProviderSessionKey(provider.id, account, generation)
-        val runtime = runtimeFactory.create(provider.sdkAllowedOrigins, "${provider.id}:$account:$credentialEpoch")
+        val credentialHash = if (credential.isNullOrEmpty()) "anon" else cp.player.core.util.stableHash64(credential)
+        val settingsHash = if (settings.isEmpty()) "0" else cp.player.core.util.stableHash64(
+            settings.entries.sortedBy { it.key }.joinToString("&") { (k, v) -> "${k.length}:$k=${v.length}:$v" },
+        )
+        val runtime = runtimeFactory.create(provider.sdkAllowedOrigins, "${provider.id}:$account:$credentialHash:$settingsHash")
         val resourceLock = Any()
         var resourcesClosed = false
         var implementation: MusicProvider? = null

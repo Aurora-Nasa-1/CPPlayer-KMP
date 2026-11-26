@@ -22,6 +22,7 @@ import java.io.File
 import java.net.URI
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 internal actual fun createSdkRuntime(allowedOrigins: Set<String>): ManagedProviderRuntime =
     ScopedProviderRuntime(allowedOrigins)
@@ -274,6 +275,29 @@ internal class ScopedProviderRuntime(
                 }
             }
             meta.writeText(content, Charsets.UTF_8)
+            if (diskWriteCounter.incrementAndGet() % DISK_PRUNE_INTERVAL == 0) {
+                pruneDiskHttpCache(dir)
+            }
+        }
+    }
+
+    private fun pruneDiskHttpCache(dir: File) {
+        val metaFiles = dir.listFiles { file -> file.isFile && file.name.endsWith(".meta") } ?: return
+        var totalBytes = 0L
+        val entries = metaFiles.map { meta ->
+            val stem = meta.name.removeSuffix(".meta")
+            val body = File(dir, "$stem.body")
+            val size = meta.length() + if (body.isFile) body.length() else 0L
+            totalBytes += size
+            Triple(meta, body, size)
+        }.sortedBy { (meta, _, _) -> meta.lastModified() }
+        var remaining = entries.size
+        for ((meta, body, size) in entries) {
+            if (remaining <= MAX_HTTP_DISK_ENTRIES && totalBytes <= MAX_HTTP_DISK_BYTES) break
+            meta.delete()
+            body.delete()
+            totalBytes -= size
+            remaining--
         }
     }
 
@@ -290,6 +314,10 @@ internal class ScopedProviderRuntime(
     private companion object {
         const val MAX_HTTP_MEMORY_ENTRIES = 24
         const val MAX_HTTP_CACHE_BODY_BYTES = 1024 * 1024
+        const val MAX_HTTP_DISK_ENTRIES = 256
+        const val MAX_HTTP_DISK_BYTES = 32L * 1024 * 1024
+        const val DISK_PRUNE_INTERVAL = 16
+        val diskWriteCounter = AtomicInteger(0)
     }
     override suspend fun sha256(bytes: ByteArray): ByteArray = withContext(Dispatchers.IO) {
         check(!closed.get()); require(bytes.size <= MAX_BYTES)

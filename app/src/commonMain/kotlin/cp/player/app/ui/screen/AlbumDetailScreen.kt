@@ -72,15 +72,16 @@ class AlbumDetailScreen(
     @Composable
     override fun Content() {
         val navigator = LocalAppNavigator.current
+        val resolvedId = fallback?.resourceId ?: albumId.toString()
         AlbumDetailContent(
-            albumId = fallback?.resourceId ?: albumId.toString(),
+            albumId = resolvedId,
             fallback = fallback,
             // ⚠️ `rememberScreenModel` 是**定义在 `Screen` 上的扩展函数**
             // （`javap` 核实：`rememberScreenModel(Screen, String, Function0, ...)`），
             // 只有在 Screen 子类的成员里才有接收者。放到顶层的私有 @Composable 里会
             // 直接报 `Unresolved reference`。所以模型一律在这里建好往下传 ——
             // 与 [PlaylistDetailScreen] 同一套写法。
-            model = rememberScreenModel { AlbumDetailModel() },
+            model = rememberScreenModel { AlbumDetailModel().apply { primeFromCache(resolvedId) } },
             onBack = { navigator.pop() },
         )
     }
@@ -97,6 +98,8 @@ private class AlbumDetailModel : ScreenModel {
 
     val state: StateFlow<AlbumUiState> get() = presenter.state
 
+    fun primeFromCache(albumId: String): Boolean = presenter.primeFromCache(albumId)
+    fun resolvedProviderId(): String = presenter.resolvedProviderId()
     fun load(albumId: String, fallback: AlbumSummary?) = presenter.load(albumId, fallback)
     fun toggleFavorite() = presenter.toggleFavorite()
 }
@@ -113,7 +116,7 @@ private fun AlbumDetailContent(
     val navigator = LocalAppNavigator.current
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
-    val provider = AppModel.activeProviderId()
+    val provider = model.resolvedProviderId()
     val playbackState by AppModel.playback.state.collectAsState()
     val currentTrackId = playbackState.currentTrack?.id
     val likedIds by AppModel.playback.likedIds.collectAsState()

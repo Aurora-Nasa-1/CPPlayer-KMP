@@ -14,7 +14,9 @@ import cp.player.app.platform.openTargetApp
 import cp.player.app.platform.openWebview
 import cp.player.app.platform.saveImageToLocal
 import cp.player.app.platform.saveQrCodeToGallery
+import cp.player.app.repository.LoginSessionCheck
 import cp.player.app.repository.QrStatusKind
+import cp.player.core.provider.ProviderCapability
 import cp.player.core.util.currentTimeMillis
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -22,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.io.encoding.Base64
@@ -74,13 +77,15 @@ class AccountPresenter(
 
     init {
         scope.launch {
+            var hasPreviousEmission = false
             var lastProviderId: String? = null
-            activeProvider.collect { provider ->
+            activeProvider.collectLatest { provider ->
                 val currentProviderId = provider?.id
-                val isProviderSwitched = lastProviderId != null && lastProviderId != currentProviderId
+                val isProviderSwitched = hasPreviousEmission && lastProviderId != currentProviderId
+                hasPreviousEmission = true
                 lastProviderId = currentProviderId
 
-                if (isProviderSwitched) {
+                if (isProviderSwitched || provider == null) {
                     cancelQrPolling()
                     qrAutoSave.reset()
                     // 作废的登录任务不会再清加载态（它已经不"属于"当前音源了），
@@ -97,33 +102,47 @@ class AccountPresenter(
                     accounts.value = emptyList()
                 }
 
-                val pkg = provider?.targetAppPackage
-                if (!pkg.isNullOrEmpty()) {
+                if (provider == null) {
+                    targetAppName.value = null
+                    targetAppInstalled.value = false
+                    loginChannels.value = emptyList()
+                    supportsCaptchaImage.value = false
+                    defaultCountryCode.value = null
+                    return@collectLatest
+                }
+
+                val pkg = provider.targetAppPackage?.takeIf { it.isNotBlank() }
+                if (pkg != null) {
                     targetAppName.value = provider.name
                     targetAppInstalled.value = isPackageInstalled(pkg)
                 } else {
                     targetAppName.value = null
                     targetAppInstalled.value = false
                 }
-                val declared = provider?.loginMethods
+                val declared = provider.loginMethods
                     ?.map { it.trim().lowercase() }
                     ?.filter { it.isNotEmpty() }
-                loginChannels.value = if (declared.isNullOrEmpty()) {
-                    LoginChannel.DEFAULT
-                } else {
-                    buildList {
+                val explicitlyNoAuth = declared == null &&
+                    !provider.capabilities.isNullOrEmpty() &&
+                    !provider.isFeatureAvailable(ProviderCapability.QR_LOGIN)
+                loginChannels.value = when {
+                    !declared.isNullOrEmpty() -> buildList {
                         if ("qr" in declared) add(LoginChannel.QR)
                         if ("sms" in declared || "phone" in declared) add(LoginChannel.PHONE)
                         if ("email" in declared) add(LoginChannel.EMAIL)
                         add(LoginChannel.COOKIE)
                     }
+                    explicitlyNoAuth -> listOf(LoginChannel.COOKIE)
+                    else -> LoginChannel.DEFAULT
                 }
                 supportsCaptchaImage.value = declared?.contains("captchaimage") == true
-                defaultCountryCode.value = provider?.defaultCountryCode
+                defaultCountryCode.value = provider.defaultCountryCode
                 if (method.value !in loginChannels.value) {
                     method.value = loginChannels.value.first()
                 }
-                checkLoginStatus()
+                val binding = bindProvider()
+                checkLoginStatus(binding)
+                if (!binding.isCurrent()) return@collectLatest
                 if (!isLogged.value && method.value == LoginChannel.QR && LoginChannel.QR in loginChannels.value) {
                     restoreOrFetchQrCode()
                 }
@@ -191,7 +210,9 @@ class AccountPresenter(
     fun fetchCaptchaImage() {
         if (!supportsCaptchaImage.value) return
         scope.launch {
-            val res = runCatching { AppModel.authRepository.getCaptchaImage() }.getOrNull()
+            val binding = bindProvider()
+            val res = loginAttempt { AppModel.authRepository.getCaptchaImage() }
+            if (!binding.isCurrent()) return@launch
             if (res != null && res.ok && !res.captchaImage.isNullOrBlank()) {
                 captchaImage.value = res.captchaImage
                 captchaSessionCookie = res.sessionCookie
@@ -231,39 +252,39 @@ class AccountPresenter(
         accounts.value = merged
     }
 
-    private suspend fun checkLoginStatus() {
-        val binding = bindProvider()
-        var networkFailed = false
-        val ok = try {
-            AppModel.authRepository.getLoginStatus()
+    private suspend fun checkLoginStatus(binding: ProviderBinding = bindProvider()) {
+        val check = try {
+            AppModel.authRepository.checkLoginSession()
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
-            networkFailed = true
-            false
+        } catch (_: Exception) {
+            LoginSessionCheck.NetworkError
         }
         // 请求期间切了音源 ⇒ 这份「登录态」属于上一个音源，不能拿来判当前音源已登录。
         if (!binding.isCurrent()) return
-        if (ok) {
-            isLogged.value = true
-            runCatching { AppModel.refreshUserProfileAwait() }
-            if (!binding.isCurrent()) return
-            message.value = account.loginRestored
-        } else if (networkFailed) {
-            // 弱网或离线：检查本地是否已有已保存的账号或登录态，避免误判为「未登录」
-            val providerId = providerId()
-            val hasCachedAccount = AccountStore.activeUid(providerId) != null ||
-                !AppModel.cookieStorage.getCookie(providerId).isNullOrEmpty() ||
-                AppModel.userProfileFlow.value != null
-            if (hasCachedAccount) {
+        when (check) {
+            LoginSessionCheck.LoggedIn -> {
                 isLogged.value = true
                 runCatching { AppModel.refreshUserProfileAwait() }
                 if (!binding.isCurrent()) return
-            } else {
+                message.value = account.loginRestored
+            }
+            LoginSessionCheck.NetworkError -> {
+                // 弱网或离线：检查当前音源是否已有已保存的账号或 cookie，避免误判为「未登录」
+                val providerId = binding.providerId
+                val hasCachedAccount = AccountStore.activeUid(providerId) != null ||
+                    !AppModel.cookieStorage.getCookie(providerId).isNullOrEmpty()
+                if (hasCachedAccount) {
+                    isLogged.value = true
+                    runCatching { AppModel.refreshUserProfileAwait() }
+                    if (!binding.isCurrent()) return
+                } else {
+                    isLogged.value = false
+                }
+            }
+            LoginSessionCheck.LoggedOut -> {
                 isLogged.value = false
             }
-        } else {
-            isLogged.value = false
         }
         refreshAccounts()
     }
@@ -420,8 +441,12 @@ class AccountPresenter(
                     return@launch
                 }
                 onLoginSucceeded(actionResult.cookie, ok = true, binding = binding)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                message.value = account.loginFailed(e.message)
+                if (binding.isCurrent()) {
+                    message.value = account.loginFailed(e.message)
+                }
             } finally {
                 if (binding.isCurrent()) isLoading.value = false
             }
@@ -460,8 +485,12 @@ class AccountPresenter(
                     return@launch
                 }
                 onLoginSucceeded(actionResult.cookie, ok = true, binding = binding)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                message.value = account.loginFailed(e.message)
+                if (binding.isCurrent()) {
+                    message.value = account.loginFailed(e.message)
+                }
             } finally {
                 if (binding.isCurrent()) isLoading.value = false
             }
@@ -509,35 +538,39 @@ class AccountPresenter(
                 message.value = account.loginWelcome(profile.nickname)
                 refreshAccounts()
             } finally {
-                isLoading.value = false
+                if (binding.isCurrent()) isLoading.value = false
             }
         }
     }
 
     fun sendCaptcha(phone: String, countryCode: String? = null) {
         scope.launch {
-            runCatching {
+            val binding = bindProvider()
+            val actionResult = try {
                 AppModel.authRepository.sendCaptcha(
                     phone = phone,
                     countryCode = countryCode?.takeIf { it.isNotBlank() },
                     imageCaptcha = imageCaptcha.value.ifBlank { null },
                     captchaCookie = captchaSessionCookie,
                 )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (binding.isCurrent()) message.value = account.captchaSendFailed(e.message)
+                return@launch
             }
-                .onSuccess { actionResult ->
-                    if (actionResult.ok) {
-                        message.value = account.captchaSent
-                    } else {
-                        if (actionResult.verifyUrl != null || actionResult.isVerificationChallenge) {
-                            verifyUrl.value = actionResult.verifyUrl
-                            message.value = account.verifyRequired
-                            return@launch
-                        }
-                        message.value = account.captchaSendFailed(actionResult.reason ?: account.pleaseRetry)
-                        fetchCaptchaImage()
-                    }
+            if (!binding.isCurrent()) return@launch
+            if (actionResult.ok) {
+                message.value = account.captchaSent
+            } else {
+                if (actionResult.verifyUrl != null || actionResult.isVerificationChallenge) {
+                    verifyUrl.value = actionResult.verifyUrl
+                    message.value = account.verifyRequired
+                    return@launch
                 }
-                .onFailure { message.value = account.captchaSendFailed(it.message) }
+                message.value = account.captchaSendFailed(actionResult.reason ?: account.pleaseRetry)
+                fetchCaptchaImage()
+            }
         }
     }
 
@@ -545,14 +578,18 @@ class AccountPresenter(
     fun loginAnonymous() {
         cancelQrPolling()
         scope.launch {
+            val binding = bindProvider()
             isLoading.value = true
             try {
                 val actionResult = AppModel.authRepository.loginAnonymous()
-                onLoginSucceeded(actionResult.cookie, actionResult.ok)
+                if (!binding.isCurrent()) return@launch
+                onLoginSucceeded(actionResult.cookie, actionResult.ok, binding = binding)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                message.value = account.guestLoginFailed(e.message)
+                if (binding.isCurrent()) message.value = account.guestLoginFailed(e.message)
             } finally {
-                isLoading.value = false
+                if (binding.isCurrent()) isLoading.value = false
             }
         }
     }
@@ -606,7 +643,8 @@ class AccountPresenter(
     fun switchAccount(account: AccountStore.SavedAccount) {
         cancelQrPolling()
         scope.launch {
-            val providerId = providerId()
+            val binding = bindProvider()
+            val providerId = binding.providerId
             val previousCookie = AppModel.cookieStorage.getCookie(providerId)
             val previousUid = AccountStore.activeUid(providerId)
             QrLoginStore.clear(providerId)
@@ -615,6 +653,7 @@ class AccountPresenter(
             }
             AccountStore.setActive(providerId, account.uid)
             val profile = AppModel.refreshUserProfileAwait()
+            if (!binding.isCurrent()) return@launch
             if (profile != null) {
                 isLogged.value = true
                 message.value = this@AccountPresenter.account.switchedTo(profile.nickname)
@@ -623,6 +662,7 @@ class AccountPresenter(
                 else AppModel.cookieStorage.saveCookie(providerId, previousCookie)
                 AccountStore.setActive(providerId, previousUid)
                 val restored = AppModel.refreshUserProfileAwait()
+                if (!binding.isCurrent()) return@launch
                 isLogged.value = restored != null
                 message.value = this@AccountPresenter.account.accountExpired(account.nickname)
             }
@@ -633,7 +673,8 @@ class AccountPresenter(
     fun removeAccount(account: AccountStore.SavedAccount) {
         cancelQrPolling()
         scope.launch {
-            val providerId = providerId()
+            val binding = bindProvider()
+            val providerId = binding.providerId
             val wasActive = AccountStore.activeUid(providerId) == account.uid
             QrLoginStore.clear(providerId)
             AccountStore.remove(providerId, account.uid)
@@ -645,7 +686,9 @@ class AccountPresenter(
                 //   上一个账号的 user/playlist、user/like、user/cloud 响应。
                 //   失败无所谓（cookie 已经没了），但它必须在缓存能清之前被**调用过**。
                 runCatching { AppModel.authRepository.logout() }
+                if (!binding.isCurrent()) return@launch
                 AppModel.clearUserProfile()
+                if (!binding.isCurrent()) return@launch
                 message.value = this@AccountPresenter.account.removedSession(account.nickname)
             } else {
                 message.value = this@AccountPresenter.account.removedAccount(account.nickname)
@@ -657,12 +700,15 @@ class AccountPresenter(
     fun logout() {
         cancelQrPolling()
         scope.launch {
-            val providerId = providerId()
+            val binding = bindProvider()
+            val providerId = binding.providerId
             runCatching { AppModel.authRepository.logout() }
             AppModel.cookieStorage.clear(providerId)
             AccountStore.setActive(providerId, null)
             QrLoginStore.clear(providerId)
+            if (!binding.isCurrent()) return@launch
             AppModel.clearUserProfile()
+            if (!binding.isCurrent()) return@launch
             isLogged.value = false
             message.value = account.loggedOut
             refreshAccounts()
