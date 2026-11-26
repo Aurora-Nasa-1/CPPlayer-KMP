@@ -149,6 +149,7 @@ internal fun DesktopLibraryLayout(
                 contentPadding = PaddingValues(
                     start = CpSpacing.pageHorizontal,
                     end = CpSpacing.pageHorizontal,
+                    top = CpSpacing.pageTop,
                     bottom = CpSpacing.pageTop,
                 ),
                 verticalArrangement = Arrangement.spacedBy(
