@@ -102,7 +102,7 @@ RELEASE_KEY_PASSWORD
 | 配置 | 必填 | 说明 |
 |---|---|---|
 | `OPENAI_API_KEY` | 二选一 | OpenAI 或兼容服务密钥；配置后优先走 OpenAI 兼容接口 |
-| `OPENAI_BASE_URL` | 否 | 自定义 base URL，默认 `https://api.openai.com/v1`。可填 `https://host/v1`、带尾斜杠的地址，或完整的 `.../chat/completions` |
+| `OPENAI_BASE_URL` | 否 | 自定义 base URL，默认 `https://api.openai.com/v1`。可填裸域名（自动补 `/v1`）、`https://host/v1`、带尾斜杠的地址，或完整的 `.../chat/completions`。已带版本段或自定义路径（如 `/v2`、`/api/v1`）原样使用，不重复拼接 |
 | `OPENAI_MODEL` | 否 | 自定义模型，默认 `deepseek-v4.1-flash-1017`；换第三方服务时通常必须同步修改 |
 | `GEMINI_API_KEY` | 二选一 | 仅在 OpenAI 兼容端点所有候选都失败时使用 |
 | `GEMINI_MODEL` | 否 | Gemini 模型，默认 `gemini-2.5-flash` |

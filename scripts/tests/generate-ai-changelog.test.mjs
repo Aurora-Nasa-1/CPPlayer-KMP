@@ -33,6 +33,30 @@ test("base URL 归一化兼容默认值、尾斜杠与完整端点", () => {
     );
 });
 
+test("裸域名自动补 /v1，带版本段或自定义路径不重复拼接", () => {
+    assert.equal(
+        resolveChatCompletionsUrl("https://api.example.com"),
+        "https://api.example.com/v1/chat/completions",
+    );
+    assert.equal(
+        resolveModelsUrl(" https://api.example.com/ "),
+        "https://api.example.com/v1/models",
+    );
+    // 已带版本段 / 自定义路径：原样使用，不误伤非 /v1 的兼容服务。
+    assert.equal(
+        resolveChatCompletionsUrl("https://api.example.com/v2"),
+        "https://api.example.com/v2/chat/completions",
+    );
+    assert.equal(
+        resolveModelsUrl("https://api.example.com/api/v1"),
+        "https://api.example.com/api/v1/models",
+    );
+    assert.equal(
+        resolveChatCompletionsUrl("https://api.example.com/openai/deployments"),
+        "https://api.example.com/openai/deployments/chat/completions",
+    );
+});
+
 test("上游模型列表端点与 chat completions 端点同源归一化", () => {
     assert.equal(resolveModelsUrl(""), "https://api.openai.com/v1/models");
     assert.equal(

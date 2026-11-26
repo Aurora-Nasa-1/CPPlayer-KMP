@@ -169,13 +169,27 @@ function sanitizeOutput(text) {
 }
 
 /**
- * 把自定义 base URL 归一成 chat completions 端点。
- * 允许传 `https://host/v1`、带尾斜杠的地址，或完整的 `.../chat/completions`，
- * 避免更换兼容 OpenAI 的服务时重复拼接路径。
+ * 归一 base URL：去尾斜杠；裸域名/根路径（如 `https://host`）自动补 `/v1`。
+ * 已带版本段（`/v1`、`/api/v2` 等）或自定义路径的地址原样保留，
+ * 避免误伤刻意使用非 `/v1` 路径的 OpenAI 兼容服务。
  */
-export function resolveChatCompletionsUrl(baseUrl) {
+function normalizeBaseUrl(baseUrl) {
   const base = (baseUrl ?? "").trim() || DEFAULT_OPENAI_BASE_URL;
   const normalized = base.replace(/\/+$/, "");
+  const withoutProtocol = normalized.replace(/^[a-z][a-z\d+.-]*:\/\//i, "");
+  const path = withoutProtocol.includes("/")
+    ? withoutProtocol.slice(withoutProtocol.indexOf("/"))
+    : "";
+  return !path || path === "/" ? `${normalized}/v1` : normalized;
+}
+
+/**
+ * 把自定义 base URL 归一成 chat completions 端点。
+ * 允许传 `https://host`（自动补 /v1）、`https://host/v1`、带尾斜杠的地址，
+ * 或完整的 `.../chat/completions`，避免更换兼容服务时重复拼接路径。
+ */
+export function resolveChatCompletionsUrl(baseUrl) {
+  const normalized = normalizeBaseUrl(baseUrl);
   return normalized.endsWith("/chat/completions")
     ? normalized
     : `${normalized}/chat/completions`;
@@ -183,8 +197,7 @@ export function resolveChatCompletionsUrl(baseUrl) {
 
 /** 与 resolveChatCompletionsUrl 同源，把 base URL 归一成上游模型列表端点。 */
 export function resolveModelsUrl(baseUrl) {
-  const base = (baseUrl ?? "").trim() || DEFAULT_OPENAI_BASE_URL;
-  const normalized = base.replace(/\/+$/, "");
+  const normalized = normalizeBaseUrl(baseUrl);
   const root = normalized.endsWith("/chat/completions")
     ? normalized.slice(0, -"/chat/completions".length)
     : normalized;
