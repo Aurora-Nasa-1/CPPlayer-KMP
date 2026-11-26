@@ -19,6 +19,8 @@ import java.lang.foreign.MemorySegment
 import java.lang.foreign.SymbolLookup
 import java.lang.foreign.ValueLayout
 
+internal actual fun fluidDarkOverlayAlpha(): Float = 0.20f
+
 actual fun resolveFluidRenderTier(): FluidRenderTier = FluidRenderTier.RUNTIME_SHADER
 
 @Composable

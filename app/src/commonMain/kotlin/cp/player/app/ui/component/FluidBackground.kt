@@ -89,6 +89,7 @@ fun Modifier.cpFluidBackground(
 
     val scheme = MaterialTheme.colorScheme
     val dark = LocalIsDarkTheme.current
+    val darkOverlay = if (dark) AppModel.fluidBackgroundDarkOverlayFlow.collectAsState() else null
     val pureBlack by AppModel.pureBlackFlow.collectAsState()
 
     val primary = scheme.primary
@@ -154,7 +155,7 @@ fun Modifier.cpFluidBackground(
             // 叠加 1 LSB 加性抖动，打碎 8-bit SDR OLED 屏幕上的等高线色带
             drawRect(brush = dither, blendMode = BlendMode.Plus)
         }
-        .fluidVignetteAndScrim(isDark = dark)
+        .fluidVignetteAndScrim(isDark = dark, darkOverlay = darkOverlay)
 }
 
 /**
@@ -359,12 +360,13 @@ private fun sanitizeAndBoostPalette(palette: List<Color>, primary: Color, isDark
 /**
  * 叠加在流体背景之上的多段非线性柔和暗角与安全阅读遮罩。
  */
-private fun Modifier.fluidVignetteAndScrim(isDark: Boolean): Modifier = drawWithCache {
+private fun Modifier.fluidVignetteAndScrim(isDark: Boolean, darkOverlay: State<Boolean>?): Modifier = drawWithCache {
     val w = size.width
     val h = size.height
     if (w <= 0f || h <= 0f) return@drawWithCache onDrawWithContent { drawContent() }
 
     if (isDark) {
+        val overlayAlpha = fluidDarkOverlayAlpha()
         // A. 底部控制栏保护：非线性渐隐暗角 (底部 28% 高度)
         val bottomScrimBrush = Brush.verticalGradient(
             0.0f to Color.Transparent,
@@ -391,6 +393,9 @@ private fun Modifier.fluidVignetteAndScrim(isDark: Boolean): Modifier = drawWith
             radius = maxOf(w, h) * 0.72f,
         )
         onDrawWithContent {
+            // Read only during drawing. The shader is already behind this modifier;
+            // drawing before content keeps foreground text and controls unshaded.
+            if (darkOverlay?.value == true) drawRect(Color.Black, alpha = overlayAlpha)
             drawContent()
             drawRect(brush = bottomScrimBrush)
             drawRect(brush = topScrimBrush)

@@ -17,6 +17,9 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import kotlin.math.roundToInt
 
+internal actual fun fluidDarkOverlayAlpha(): Float =
+    if (Build.VERSION.SDK_INT == Build.VERSION_CODES.TIRAMISU) 0.15f else 0.20f
+
 actual fun resolveFluidRenderTier(): FluidRenderTier = when {
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> FluidRenderTier.MESH_GRADIENT
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> FluidRenderTier.RUNTIME_SHADER

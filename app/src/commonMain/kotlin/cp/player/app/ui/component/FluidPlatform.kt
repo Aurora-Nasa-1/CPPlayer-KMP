@@ -49,6 +49,8 @@ enum class FluidRenderTier {
 /** 探测当前平台与系统版本所支持的最佳流体渲染梯队。 */
 expect fun resolveFluidRenderTier(): FluidRenderTier
 
+internal expect fun fluidDarkOverlayAlpha(): Float
+
 /**
  * 分平台流体渲染器调度实现。
  */
