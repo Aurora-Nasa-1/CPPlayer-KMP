@@ -103,11 +103,21 @@ RELEASE_KEY_PASSWORD
 |---|---|---|
 | `OPENAI_API_KEY` | 二选一 | OpenAI 或兼容服务密钥；配置后优先走 OpenAI 兼容接口 |
 | `OPENAI_BASE_URL` | 否 | 自定义 base URL，默认 `https://api.openai.com/v1`。可填 `https://host/v1`、带尾斜杠的地址，或完整的 `.../chat/completions` |
-| `OPENAI_MODEL` | 否 | 自定义模型，默认 `gpt-4o-mini`；换第三方服务时通常必须同步修改 |
-| `GEMINI_API_KEY` | 二选一 | 仅在没有 `OPENAI_API_KEY` 时使用 |
-| `GEMINI_MODEL` | 否 | Gemini 模型，默认 `gemini-1.5-flash` |
+| `OPENAI_MODEL` | 否 | 自定义模型，默认 `deepseek-v4.1-flash-1017`；换第三方服务时通常必须同步修改 |
+| `GEMINI_API_KEY` | 二选一 | 仅在 OpenAI 兼容端点所有候选都失败时使用 |
+| `GEMINI_MODEL` | 否 | Gemini 模型，默认 `gemini-2.5-flash` |
+| `AI_FETCH_MODEL_LIST` | 否 | 默认开启，从上游 `{OPENAI_BASE_URL}/models` 拉取模型列表；设 `0` / `false` / `no` 关闭 |
 
-`OPENAI_BASE_URL` / `OPENAI_MODEL` / `GEMINI_MODEL` 可以放在仓库 **Variables** 或 **Secrets**，workflow 优先读 Variables。更新日志只写 AI 的正文输出，请求日志走 stderr，不会进入发布说明。
+模型尝试顺序（任一成功即停止）：
+
+1. 配置的 `OPENAI_MODEL`（默认 `deepseek-v4.1-flash-1017`）。
+2. 上游模型列表中近似 `deepseek-v4.1-flash` 的模型（优先日期等价变体，如 `deepseek-v4.1-flash-10-17`）。
+3. 自动回退模型 `gpt-6-luna`、`gemini-3.1-flash-lite`。
+4. 若仍失败且配置了 `GEMINI_API_KEY`，改用 Gemini 端点：`GEMINI_MODEL` → `gemini-3.1-flash-lite`。
+
+上游模型列表拉取是 best-effort：超时（3 秒）、失败或格式异常都会静默跳过，不影响生成。模型列表请求和每次尝试的失败原因只写 stderr，不会进入发布说明。
+
+`OPENAI_BASE_URL` / `OPENAI_MODEL` / `GEMINI_MODEL` / `AI_FETCH_MODEL_LIST` 可以放在仓库 **Variables** 或 **Secrets**，workflow 优先读 Variables。
 
 ## 5. 桌面打包
 

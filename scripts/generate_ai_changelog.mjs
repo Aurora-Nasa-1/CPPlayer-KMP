@@ -11,6 +11,8 @@
  * - 无分类标题，直接输出简洁的 `- 新增 / - 优化了 / - 修复了` 列表。
  * - 强制要求模型使用 <content>...</content> 包裹正文，并结合代码层二次清洗，杜绝开场白与结语污染。
  * - 自动合并同类提交，过滤内部工程琐碎提交。
+ * - 默认模型 deepseek-v4.1-flash-1017；可选从上游 /models 拉取列表并挑选近似 deepseek-v4.1-flash 的模型。
+ * - 主模型失败时自动回退到 gpt-6-luna、gemini-3.1-flash-lite（以及 Gemini 端点作为最后兜底）。
  */
 
 import { execSync } from "node:child_process";
@@ -19,8 +21,15 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_OPENAI_MODEL = "deepseek-v4.1-flash-10-17";
+const DEFAULT_OPENAI_MODEL = "deepseek-v4.1-flash-1017";
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+/** 上游模型列表里要找的近似目标（不带日期后缀）。 */
+const MODEL_FAMILY_HINT = "deepseek-v4.1-flash";
+/** OpenAI 兼容端点的自动回退模型，按优先级排列。 */
+const OPENAI_FALLBACK_MODELS = ["gpt-6-luna", "gemini-3.1-flash-lite"];
+/** Gemini 原生端点的自动回退模型。 */
+const GEMINI_FALLBACK_MODELS = ["gemini-3.1-flash-lite"];
+const MODEL_LIST_TIMEOUT_MS = 3000;
 const MAX_BODY_LENGTH = 160;
 
 const SYSTEM_PROMPT = `你是一个严谨、简洁的发版更新日志整理助手。
@@ -139,12 +148,163 @@ export function resolveChatCompletionsUrl(baseUrl) {
     : `${normalized}/chat/completions`;
 }
 
+/** 与 resolveChatCompletionsUrl 同源，把 base URL 归一成上游模型列表端点。 */
+export function resolveModelsUrl(baseUrl) {
+  const base = (baseUrl ?? "").trim() || DEFAULT_OPENAI_BASE_URL;
+  const normalized = base.replace(/\/+$/, "");
+  const root = normalized.endsWith("/chat/completions")
+    ? normalized.slice(0, -"/chat/completions".length)
+    : normalized;
+  return `${root}/models`;
+}
+
 export function resolveOpenAiConfig(env = process.env) {
   return {
     apiKey: env.OPENAI_API_KEY?.trim() || "",
     baseUrl: env.OPENAI_BASE_URL?.trim() || DEFAULT_OPENAI_BASE_URL,
     model: env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL,
   };
+}
+
+/**
+ * 从上游 OpenAI 兼容 /models 端点拉取模型 ID。
+ * 这是 best-effort：失败、超时或非 JSON 都返回空数组，绝不阻断更新日志生成。
+ */
+export async function fetchUpstreamModels(
+  { apiKey, baseUrl },
+  timeoutMs = MODEL_LIST_TIMEOUT_MS
+) {
+  try {
+    const response = await fetch(resolveModelsUrl(baseUrl), {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) {
+      console.error(
+        `[AI-Changelog] Upstream model list request failed [${response.status}], continuing with local candidates.`
+      );
+      return [];
+    }
+    const payload = await response.json();
+    const entries = Array.isArray(payload?.data) ? payload.data : [];
+    const models = entries
+      .map((entry) => (typeof entry === "string" ? entry : entry?.id))
+      .filter((id) => typeof id === "string" && id.trim())
+      .map((id) => id.trim());
+    console.error(`[AI-Changelog] Fetched ${models.length} model(s) from upstream.`);
+    return models;
+  } catch (err) {
+    console.error(
+      `[AI-Changelog] Upstream model list unavailable (${err.message}), continuing with local candidates.`
+    );
+    return [];
+  }
+}
+
+function normalizeModelName(name) {
+  return String(name ?? "").trim().toLowerCase().replace(/[\s_]+/g, "-");
+}
+
+/** 去掉日期/版本类后缀，得到模型家族名（deepseek-v4.1-flash-1017 → deepseek-v4.1-flash）。 */
+function modelFamily(name) {
+  return normalizeModelName(name).replace(
+    /-(?:\d{1,8}(?:-\d{1,2})?|latest|preview|beta|exp(?:erimental)?)$/,
+    ""
+  );
+}
+
+/** 提取末尾日期串：deepseek-v4.1-flash-10-17 → 1017。 */
+function modelDateSuffix(name) {
+  const match = normalizeModelName(name).match(/-(\d{1,8}(?:-\d{1,2})?)$/);
+  return match ? match[1].replace(/-/g, "") : "";
+}
+
+/** 去掉末尾日期串：deepseek-v4.1-flash-10-17 → deepseek-v4.1-flash。 */
+function modelBaseName(name) {
+  return normalizeModelName(name).replace(/-\d{1,8}(?:-\d{1,2})?$/, "");
+}
+
+function modelNameScore(wanted, candidate) {
+  if (!wanted || !candidate) return 0;
+  if (candidate === wanted) return 100;
+  if (candidate.startsWith(wanted)) {
+    return 90 - (candidate.length - wanted.length) * 0.1;
+  }
+  if (candidate.includes(wanted)) {
+    return 80 - (candidate.length - wanted.length) * 0.1;
+  }
+  if (wanted.includes(candidate)) {
+    return 70 - (wanted.length - candidate.length) * 0.1;
+  }
+  const wantedTokens = new Set(wanted.split(/[-./]/).filter(Boolean));
+  const candidateTokens = new Set(candidate.split(/[-./]/).filter(Boolean));
+  let shared = 0;
+  for (const token of wantedTokens) {
+    if (candidateTokens.has(token)) shared += 1;
+  }
+  return shared === 0
+    ? 0
+    : (shared / Math.max(wantedTokens.size, candidateTokens.size)) * 50;
+}
+
+/**
+ * 从上游模型列表里找近似 deepseek-v4.1-flash 的模型 ID。
+ * 返回的是上游原始 ID（供 API 直接使用）；配置值已在列表中或没有相近项时返回 null。
+ */
+export function findClosestModel(target, availableModels) {
+  const targetKey = normalizeModelName(target);
+  const targetFamily = modelFamily(target) || modelFamily(MODEL_FAMILY_HINT);
+  const hintFamily = modelFamily(MODEL_FAMILY_HINT);
+  const targetDate = modelDateSuffix(target);
+  const targetBase = modelBaseName(target);
+
+  let bestRaw = null;
+  let bestScore = 0;
+  for (const raw of availableModels ?? []) {
+    const key = normalizeModelName(raw);
+    if (!key) continue;
+    let score = Math.max(
+      modelNameScore(targetFamily, key),
+      modelNameScore(hintFamily, key)
+    );
+    // 日期等价的同族变体（1017 / 10-17）优先于 -lite 等泛化变体。
+    if (
+      targetDate &&
+      modelDateSuffix(raw) === targetDate &&
+      modelBaseName(raw) === targetBase
+    ) {
+      score = Math.max(score, 95);
+    }
+    // 当前配置值已存在时优先保持原样，避免无意义切换。
+    if (key === targetKey) score = Math.max(score, 110);
+    if (
+      score > bestScore ||
+      (score === bestScore &&
+        score > 0 &&
+        bestRaw &&
+        key.length < normalizeModelName(bestRaw).length)
+    ) {
+      bestRaw = raw;
+      bestScore = score;
+    }
+  }
+
+  if (!bestRaw || normalizeModelName(bestRaw) === targetKey) return null;
+  return bestRaw;
+}
+
+/** 构造去重后的模型尝试顺序：主模型 → 上游近似模型 → 自动回退模型。 */
+export function buildModelCandidates(primaryModel, availableModels, fallbackModels) {
+  const closest = findClosestModel(primaryModel, availableModels);
+  const ordered = [primaryModel, closest, ...(fallbackModels ?? [])];
+  const seen = new Set();
+  return ordered
+    .map((model) => String(model ?? "").trim())
+    .filter((model) => {
+      if (!model || seen.has(model)) return false;
+      seen.add(model);
+      return true;
+    });
 }
 
 async function callOpenAI({ apiKey, baseUrl, model, commits }) {
@@ -216,6 +376,48 @@ async function callGemini({ apiKey, model, commits }) {
   return sanitizeOutput(rawContent);
 }
 
+/** 逐个尝试候选模型：任一成功即返回，全部失败时抛出最后一个错误。 */
+async function generateWithCandidates(label, candidates, invoke) {
+  let lastError = null;
+  for (const model of candidates) {
+    try {
+      console.error(`[AI-Changelog] Requesting changelog from ${label} (${model})...`);
+      return await invoke(model);
+    } catch (err) {
+      lastError = err;
+      console.error(`[AI-Changelog] ${label} model ${model} failed: ${err.message}`);
+    }
+  }
+  throw lastError ?? new Error(`No ${label} model candidates available.`);
+}
+
+async function generateWithOpenAi(config, commits, availableModels) {
+  const candidates = buildModelCandidates(
+    config.model,
+    availableModels,
+    OPENAI_FALLBACK_MODELS
+  );
+  return generateWithCandidates("OpenAI-compatible", candidates, (model) =>
+    callOpenAI({
+      apiKey: config.apiKey,
+      baseUrl: config.baseUrl,
+      model,
+      commits,
+    })
+  );
+}
+
+async function generateWithGemini(apiKey, primaryModel, commits) {
+  const candidates = buildModelCandidates(
+    primaryModel,
+    [],
+    GEMINI_FALLBACK_MODELS
+  );
+  return generateWithCandidates("Gemini", candidates, (model) =>
+    callGemini({ apiKey, model, commits })
+  );
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const prevTag = args[0] || "";
@@ -236,23 +438,38 @@ async function main() {
     process.exit(3);
   }
 
+  const geminiModel = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
   let changelog = "";
+  let lastError = null;
+
   if (openai.apiKey) {
-    console.error(`[AI-Changelog] Requesting changelog from OpenAI-compatible endpoint (${openai.model})...`);
-    changelog = await callOpenAI({
-      apiKey: openai.apiKey,
-      baseUrl: openai.baseUrl,
-      model: openai.model,
-      commits,
-    });
-  } else if (geminiKey) {
-    const geminiModel = process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
-    console.error(`[AI-Changelog] Requesting changelog from Gemini (${geminiModel})...`);
-    changelog = await callGemini({
-      apiKey: geminiKey,
-      model: geminiModel,
-      commits,
-    });
+    const fetchEnabled = !/^(?:0|false|no)$/i.test(
+      process.env.AI_FETCH_MODEL_LIST?.trim() ?? ""
+    );
+    const upstreamModels = fetchEnabled ? await fetchUpstreamModels(openai) : [];
+    try {
+      changelog = await generateWithOpenAi(openai, commits, upstreamModels);
+    } catch (err) {
+      lastError = err;
+    }
+    // OpenAI 兼容端点的所有候选都失败时，Gemini 端点作为最后一道兜底。
+    if (!changelog && geminiKey) {
+      try {
+        changelog = await generateWithGemini(geminiKey, geminiModel, commits);
+      } catch (err) {
+        lastError = err;
+      }
+    }
+  } else {
+    try {
+      changelog = await generateWithGemini(geminiKey, geminiModel, commits);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (!changelog) {
+    throw lastError ?? new Error("No changelog was generated.");
   }
 
   if (outputFile) {
