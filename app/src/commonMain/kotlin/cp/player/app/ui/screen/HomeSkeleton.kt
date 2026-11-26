@@ -58,11 +58,11 @@ fun TabletHomeSkeleton(modifier: Modifier = Modifier) {
     ) {
         HomeSkeletonSectionHeader(titleWidth = 150.dp, subtitleWidth = 220.dp)
         Row(
-            Modifier.fillMaxWidth().height(CpSpacing.desktopFocusHeight),
+            Modifier.fillMaxWidth().height(CpSpacing.wideMusicCardHeight),
             horizontalArrangement = Arrangement.spacedBy(CpSpacing.musicGap),
         ) {
-            CpShimmerBox(Modifier.weight(1.2f).fillMaxHeight(), shape = MaterialTheme.shapes.large)
-            CpShimmerBox(Modifier.weight(1f).fillMaxHeight(), shape = MaterialTheme.shapes.large)
+            CpShimmerBox(Modifier.weight(1.2f).fillMaxHeight(), shape = MaterialTheme.shapes.extraLarge)
+            CpShimmerBox(Modifier.weight(1f).fillMaxHeight(), shape = MaterialTheme.shapes.extraLarge)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             repeat(3) {
@@ -132,16 +132,16 @@ fun DesktopHomeSkeleton(modifier: Modifier = Modifier) {
                 HomeSkeletonSectionHeader(titleWidth = 130.dp, subtitleWidth = 210.dp)
                 // Focus has the same height and column ratio as the loaded desktop page.
                 Row(
-                    modifier = Modifier.fillMaxWidth().height(CpSpacing.desktopFocusHeight),
+                    modifier = Modifier.fillMaxWidth().height(CpSpacing.wideMusicCardHeight),
                     horizontalArrangement = Arrangement.spacedBy(CpSpacing.pageHorizontal),
                 ) {
                     CpShimmerBox(
                         modifier = Modifier.weight(1.65f).fillMaxHeight(),
-                        shape = MaterialTheme.shapes.large,
+                        shape = MaterialTheme.shapes.extraLarge,
                     )
                     if (contentWidth >= 900f) CpShimmerBox(
                         modifier = Modifier.weight(1f).fillMaxHeight(),
-                        shape = MaterialTheme.shapes.large,
+                        shape = MaterialTheme.shapes.extraLarge,
                     )
                 }
 
@@ -283,7 +283,7 @@ fun MobileHomeSkeleton(modifier: Modifier = Modifier) {
         // Daily focus occupies the first slot, not the promotional banner.
         CpShimmerBox(
             modifier = Modifier.fillMaxWidth().height(CpSpacing.mobileFocusHeight),
-            shape = MaterialTheme.shapes.large,
+            shape = MaterialTheme.shapes.extraLarge,
         )
 
         // 2. 快捷电台 3 个按钮

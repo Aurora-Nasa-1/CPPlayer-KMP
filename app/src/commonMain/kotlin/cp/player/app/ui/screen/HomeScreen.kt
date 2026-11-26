@@ -603,7 +603,7 @@ internal fun TabletHomeLayout(
                 )
 
                 Row(
-                    Modifier.fillMaxWidth().height(CpSpacing.desktopFocusHeight),
+                    Modifier.fillMaxWidth().height(CpSpacing.wideMusicCardHeight),
                     horizontalArrangement = Arrangement.spacedBy(CpSpacing.musicGap),
                 ) {
                     when {
@@ -614,7 +614,7 @@ internal fun TabletHomeLayout(
                                 state.banners,
                                 actions.onBannerClick,
                                 Modifier.weight(1.2f).fillMaxHeight(),
-                                height = CpSpacing.desktopFocusHeight,
+                                height = CpSpacing.wideMusicCardHeight,
                             )
                         else -> TabletWelcomeFocus(actions, Modifier.weight(1.2f).fillMaxHeight())
                     }
@@ -847,7 +847,7 @@ internal fun DesktopHomeLayout(
 
                 if (state.dailySongs.isNotEmpty()) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().height(CpSpacing.desktopFocusHeight),
+                        modifier = Modifier.fillMaxWidth().height(CpSpacing.wideMusicCardHeight),
                         horizontalArrangement = Arrangement.spacedBy(CpSpacing.pageHorizontal),
                     ) {
                         DailySelectionFocus(state.dailySongs, actions, Modifier.weight(1.65f).fillMaxHeight())

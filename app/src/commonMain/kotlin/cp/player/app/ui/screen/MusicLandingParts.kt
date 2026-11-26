@@ -1,7 +1,6 @@
 package cp.player.app.ui.screen
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
@@ -26,7 +24,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,7 +50,6 @@ import cp.player.app.ui.component.CpExpressiveArtwork
 import cp.player.app.ui.component.CpPlayPauseButton
 import cp.player.app.ui.component.CpPlayingEqualizer
 import cp.player.app.ui.component.CpSpacing
-import cp.player.app.ui.component.CpSplitButton
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.CpWavyProgress
 import cp.player.app.ui.component.cpPressScale
@@ -89,12 +86,17 @@ internal fun DailySelectionFocus(
     modifier: Modifier = Modifier,
     compact: Boolean = false,
 ) {
-    Surface(modifier, shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primaryContainer) {
-        BoxWithConstraints(Modifier.fillMaxSize().padding(CpSpacing.pageHorizontal)) {
+    Surface(
+        onClick = actions.onOpenDaily,
+        modifier = modifier,
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.primaryContainer,
+    ) {
+        BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = CpSpacing.pageHorizontal, vertical = 16.dp)) {
             val small = maxWidth < 440.dp
             val extraCompact = maxWidth < 280.dp
             val artworkSize = if (compact || small) CpSpacing.musicArtworkCompact else CpSpacing.musicArtwork
-            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)) {
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(CpSpacing.musicGap),
@@ -109,11 +111,11 @@ internal fun DailySelectionFocus(
                         CpText(
                             "每日推荐",
                             style = when {
-                                extraCompact -> MaterialTheme.typography.headlineSmall
-                                small -> MaterialTheme.typography.headlineMedium
-                                else -> MaterialTheme.typography.displaySmall
+                                extraCompact -> MaterialTheme.typography.titleLarge
+                                small -> MaterialTheme.typography.headlineSmall
+                                else -> MaterialTheme.typography.headlineMedium
                             },
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             maxLines = 2,
                         )
@@ -128,18 +130,25 @@ internal fun DailySelectionFocus(
                         LandingArtwork(songs.firstOrNull()?.coverUrl, Modifier.fillMaxSize())
                     }
                 }
-                CpSplitButton(
-                    onLeadingClick = { songs.firstOrNull()?.let(actions.onPlayDailyTrack) },
-                    leadingContent = {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(
+                        onClick = { songs.firstOrNull()?.let(actions.onPlayDailyTrack) },
+                        modifier = Modifier.height(CpSpacing.touchTarget),
+                    ) {
                         Icon(Icons.Filled.PlayArrow, null, Modifier.size(22.dp))
                         Spacer(Modifier.width(8.dp))
                         CpText("播放推荐", fontWeight = FontWeight.SemiBold)
-                    },
-                    onTrailingClick = actions.onOpenDaily,
-                    trailingContent = { Icon(Icons.AutoMirrored.Filled.ArrowForward, "查看每日推荐") },
-                    modifier = Modifier.width(if (compact) 224.dp else 256.dp).height(CpSpacing.touchTarget),
-                    colors = ButtonDefaults.buttonColors(),
-                )
+                    }
+                    Icon(
+                        Icons.Filled.ChevronRight, null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
             }
         }
     }
@@ -152,10 +161,15 @@ internal fun LandingNowPlaying(
     modifier: Modifier = Modifier,
 ) {
     val track = snapshot.track ?: return
-    Surface(modifier, shape = MaterialTheme.shapes.extraLarge, color = cpCardSurface()) {
+    Surface(
+        onClick = actions.onOpenPlayer,
+        modifier = modifier,
+        shape = MaterialTheme.shapes.extraLarge,
+        color = cpCardSurface(),
+    ) {
         Column(
-            Modifier.fillMaxSize().padding(CpSpacing.pageHorizontal),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            Modifier.fillMaxSize().padding(horizontal = CpSpacing.pageHorizontal, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Equalizer, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
@@ -163,11 +177,7 @@ internal fun LandingNowPlaying(
                 CpText(
                     if (snapshot.isPlaying) "正在播放" else "继续收听",
                     style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.weight(1f),
                 )
-                IconButton(onClick = actions.onOpenPlayer, modifier = Modifier.size(CpSpacing.touchTarget)) {
-                    Icon(Icons.Filled.ChevronRight, "打开播放器")
-                }
             }
             Row(
                 Modifier.fillMaxWidth().weight(1f),
@@ -175,10 +185,10 @@ internal fun LandingNowPlaying(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 CpExpressiveArtwork(
-                    Modifier.size(88.dp).clickable(onClick = actions.onOpenPlayer),
+                    Modifier.size(72.dp),
                     active = snapshot.isPlaying,
                 ) { LandingArtwork(track.coverUrl, Modifier.fillMaxSize()) }
-                Column(Modifier.weight(1f).clickable(onClick = actions.onOpenPlayer)) {
+                Column(Modifier.weight(1f)) {
                     CpText(track.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 2)
                     Spacer(Modifier.height(4.dp))
                     CpText(track.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -199,7 +209,7 @@ internal fun LandingNowPlaying(
                 }
                 CpPlayPauseButton(
                     snapshot.isPlaying, actions.onTogglePlayPause,
-                    size = 56.dp,
+                    size = CpSpacing.touchTarget,
                 )
             }
         }

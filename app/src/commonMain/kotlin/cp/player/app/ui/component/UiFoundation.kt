@@ -117,9 +117,10 @@ object CpSpacing {
 
     /** Shared music landing composition measurements, independent of window chrome. */
     val desktopFocusHeight = 280.dp
-    val mobileFocusHeight = 224.dp
-    val musicArtwork = 184.dp
-    val musicArtworkCompact = 112.dp
+    val wideMusicCardHeight = 216.dp
+    val mobileFocusHeight = 184.dp
+    val musicArtwork = 128.dp
+    val musicArtworkCompact = 96.dp
     val musicGap = 12.dp
     val musicShortcutHeight = 88.dp
 
