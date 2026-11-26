@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -75,6 +76,7 @@ import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpSongRowSkeleton
 import cp.player.app.ui.component.CpSpacing
+import cp.player.app.ui.component.CpSplitButton
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.CpConnectedChoice
@@ -121,7 +123,6 @@ internal class DesktopLibraryActions(
 @Composable
 internal fun DesktopLibraryLayout(
     state: LibraryUiState,
-    subtitle: String,
     supportsCloud: Boolean,
     isLocalMode: Boolean,
     actions: DesktopLibraryActions,
@@ -154,25 +155,28 @@ internal fun DesktopLibraryLayout(
                     if (playlistList) playlistGap else CpSpacing.section,
                 ),
             ) {
-                // 手机端不展示页头统计行：「共 N 个歌单 · 收藏 M 首」属于仪表盘文字，
-                // 三个动作按钮下移到「歌单 / 本地媒体库」分段右侧（紧凑且不占整行）。
+                // 「共 N 个歌单 · 收藏 M 首」页头统计行已移除：手机端三个动作按钮
+                // 下移到「歌单 / 本地媒体库」分段右侧；桌面端在这里独占一行放
+                // 「新建 / 导入」分体按钮组 + 搜索按钮。
                 if (!compact) {
                     item(key = "heading") {
                         Row(
                             Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            CpText(
-                                subtitle,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 2,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            CpSplitButton(
+                                onLeadingClick = actions.onCreatePlaylist,
+                                leadingContent = {
+                                    Icon(Icons.Filled.Add, null, Modifier.size(20.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    CpText(s.library.newPlaylist)
+                                },
+                                onTrailingClick = actions.onImport,
+                                trailingContent = { Icon(Icons.Filled.FileUpload, s.library.importPlaylist) },
+                                modifier = Modifier.width(236.dp).height(CpSpacing.touchTarget),
                             )
                             DesktopLibraryActionButton(s.library.searchLibrary, Icons.Filled.Search, actions.onSearch)
-                            DesktopLibraryActionButton(s.library.importPlaylist, Icons.Filled.FileUpload, actions.onImport)
-                            DesktopLibraryActionButton(s.library.newPlaylist, Icons.Filled.Add, actions.onCreatePlaylist)
                         }
                     }
                 }

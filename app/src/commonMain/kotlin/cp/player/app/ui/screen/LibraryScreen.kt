@@ -178,7 +178,6 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     val navigator = LocalAppNavigator.current
     val downloadsModel = compositionModel { DownloadsScreenModel() }
     val downloadsState by downloadsModel.state.collectAsState()
-    val likedIds by AppModel.playback.likedIds.collectAsState()
     val expanded = LocalIsExpanded.current
     var gridView by rememberSaveable { mutableStateOf(true) }
     val supportsCloud = rememberActiveProviderSupports(ProviderCapability.CLOUD_DRIVE)
@@ -226,7 +225,6 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
     ) {
         DesktopLibraryLayout(
             state = state,
-            subtitle = s.library.librarySubtitle(state.playlists.size, likedIds.size),
             supportsCloud = supportsCloud,
             isLocalMode = AppModel.activeProvider() == null,
             // Mobile defaults to a dense list for faster scanning and one-handed actions.
