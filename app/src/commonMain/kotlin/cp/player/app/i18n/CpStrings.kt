@@ -1638,15 +1638,20 @@ interface AboutStrings {
 
 interface AppUpdateStrings {
     val title: String
+    fun titleWithVersion(version: String): String
     val changelogTitle: String
     val defaultChangelog: String
     val viewDiffOnGithub: String
     val downloadNow: String
     val releasePage: String
     val later: String
+    val disableAutoUpdate: String
+    val installPackage: String
     fun publishedAt(date: String): String
     val packageAndroid: String
     val packageWindows: String
+    val packageWindowsPortable: String
+    val packageMacos: String
     val packageLinuxDeb: String
     val packageLinuxTar: String
     val packageLinux: String
@@ -1814,6 +1819,23 @@ interface EngineStrings {
     val bitPerfectNoteInactive: String
     val dspTitle: String
     val dspNote: String
+
+    // ===== 引擎逐项特性开关（桌面） =====
+    val sectionToggles: String
+    val toggleDirectStream: String
+    val toggleDirectStreamNote: String
+    val toggleGapless: String
+    val toggleGaplessNote: String
+    val toggleNativeCrossfade: String
+    val toggleNativeCrossfadeNote: String
+    val toggleDynamics: String
+    val toggleDynamicsNote: String
+    val dsdModeTitle: String
+    val dsdModePcm: String
+    val dsdModeDop: String
+    val dsdModeNative: String
+    val dsdModeAuto: String
+    val togglesNote: String
 
     val badgeActive: String
     val badgeNeedsFlick: String
