@@ -4,7 +4,9 @@ import cp.player.app.AppModel
 import cp.player.app.i18n.CpStrings
 import cp.player.app.presentation.UiPresenter
 import cp.player.core.BackendResult
+import cp.player.core.music.PlaylistDetail
 import cp.player.core.music.PlaylistSummary
+import cp.player.core.music.PlaylistTracksPage
 import cp.player.core.music.TrackSummary
 import cp.player.core.music.isCloudDrive
 import cp.player.core.music.isRemote
@@ -43,6 +45,7 @@ data class PlaylistDetailUiState(
  * 页面只依赖本接口，Voyager 生命周期由 `PlaylistDetailScreenModel` 适配。
  */
 interface PlaylistDetailContract : UiPresenter<PlaylistDetailUiState> {
+    fun primeFromCache(summary: PlaylistSummary): Boolean = false
     fun load(summary: PlaylistSummary, strings: CpStrings, force: Boolean = false)
     fun refresh(strings: CpStrings)
     fun loadLocal(
@@ -187,6 +190,77 @@ class PlaylistDetailPresenter(
 
     // ============ 加载 ============
 
+    private data class CachedPlaylistSnapshot(
+        val summary: PlaylistSummary,
+        val description: String?,
+        val tracks: List<TrackSummary>,
+        val hasMore: Boolean,
+        val nextOffset: Int,
+        val allFresh: Boolean,
+        val hasDetail: Boolean,
+    )
+
+    private fun peekCachedSnapshot(summary: PlaylistSummary, sortKey: String): CachedPlaylistSnapshot? {
+        if (summary.isCloudDrive || !summary.isRemote) return null
+        val repo = AppModel.musicRepository
+        val detailPeek = repo.peekPlaylistDetail(summary.resourceId, sortKey)
+        val tracksPeek = repo.peekPlaylistTracks(
+            summary.resourceId, limit = PAGE_SIZE, offset = 0, sortKey = sortKey,
+        )
+        val detail = detailPeek?.value
+        val tracksPage = tracksPeek?.value
+        val rawTracks = tracksPage?.tracks ?: detail?.tracks?.takeIf { it.isNotEmpty() } ?: return null
+        val distinctTracks = rawTracks.distinctBy { it.id }
+        val hasMore = if (tracksPage != null) {
+            tracksPage.hasMore || (!tracksPage.paginationSpecified && tracksPage.tracks.size >= PAGE_SIZE)
+        } else {
+            distinctTracks.size >= PAGE_SIZE
+        }
+        val nextOffset = tracksPage?.tracks?.size ?: distinctTracks.size
+        val allFresh = (detailPeek?.isFresh == true) &&
+            (tracksPeek?.isFresh == true || detail?.tracks?.isNotEmpty() == true)
+        return CachedPlaylistSnapshot(
+            summary = detail?.summary ?: summary,
+            description = detail?.description,
+            tracks = distinctTracks,
+            hasMore = hasMore,
+            nextOffset = nextOffset,
+            allFresh = allFresh,
+            hasDetail = detail != null,
+        )
+    }
+
+    private fun applyCachedSnapshot(snap: CachedPlaylistSnapshot) {
+        tracksProviderId = AppModel.activeProviderId()
+        val cachedFav = AppModel.musicRepository.peekCurrentUserPlaylists()?.value
+            ?.any { it.resourceId == snap.summary.resourceId }
+        _state.update { current ->
+            current.copy(
+                summary = snap.summary,
+                description = snap.description ?: current.description,
+                tracks = snap.tracks,
+                hasMore = snap.hasMore,
+                nextOffset = snap.nextOffset,
+                loading = false,
+                error = null,
+                loadMoreError = null,
+                isFavorite = cachedFav ?: current.isFavorite,
+            )
+        }
+    }
+
+    /**
+     * 首帧组合前同步窥视缓存：命中时立即填满曲目并将 `loading` 置为 false，
+     * 让已缓存歌单在第一帧就完整渲染，彻底消除骨架屏闪烁。
+     */
+    override fun primeFromCache(summary: PlaylistSummary): Boolean {
+        if (summary.isCloudDrive || !summary.isRemote) return false
+        if (loadedPlaylistId == summary.resourceId && _state.value.tracks.isNotEmpty()) return true
+        val snap = peekCachedSnapshot(summary, _state.value.sortType.name) ?: return false
+        applyCachedSnapshot(snap)
+        return true
+    }
+
     /**
      * 加载歌单详情（description / trackCount 修正）与首页曲目（并行），并拉取收藏列表。
      *
@@ -205,20 +279,71 @@ class PlaylistDetailPresenter(
         val sortKey = _state.value.sortType.name
         loadedPlaylistId = summary.resourceId
         fetchingPlaylistId = summary.resourceId
-        val silent = force && _state.value.tracks.isNotEmpty()
+
+        val cachedSnap = if (!force) peekCachedSnapshot(summary, sortKey) else null
+        if (cachedSnap != null) {
+            applyCachedSnapshot(cachedSnap)
+            loadLiked()
+            checkSubscribed(summary.resourceId)
+            if (cachedSnap.allFresh) return
+        }
+
+        val silent = cachedSnap != null || (force && _state.value.tracks.isNotEmpty())
         if (!silent) {
             _state.value = PlaylistDetailUiState(summary = summary)
+            loadLiked()
+            checkSubscribed(summary.resourceId)
         }
-        loadLiked()
-        checkSubscribed(summary.resourceId)
+
+        fun handleDetailUpdate(detailResult: BackendResult<PlaylistDetail>) {
+            if (fetchingPlaylistId != summary.resourceId || gen != loadGen) return
+            if (detailResult is BackendResult.Success) {
+                _state.update { cur ->
+                    if (cur.summary == detailResult.data.summary && cur.description == detailResult.data.description) cur
+                    else cur.copy(summary = detailResult.data.summary, description = detailResult.data.description)
+                }
+            }
+        }
+
+        fun handleTracksUpdate(tracksResult: BackendResult<PlaylistTracksPage>) {
+            if (fetchingPlaylistId != summary.resourceId || gen != loadGen) return
+            if (tracksResult is BackendResult.Success) {
+                val page = tracksResult.data
+                val distinct = page.tracks.distinctBy { it.id }
+                val hasMore = page.hasMore || (!page.paginationSpecified && page.tracks.size >= PAGE_SIZE)
+                tracksProviderId = requestProvider
+                _state.update { cur ->
+                    if (cur.tracks == distinct && cur.hasMore == hasMore && cur.nextOffset == page.tracks.size) cur
+                    else cur.copy(
+                        tracks = distinct,
+                        hasMore = hasMore,
+                        nextOffset = page.tracks.size,
+                        loading = false,
+                        error = null,
+                        loadMoreError = null,
+                    )
+                }
+            }
+        }
+
         scope.launch {
             val results = withContext(Dispatchers.IO) {
                 runCatching {
                     coroutineScope {
-                        val detail = async { AppModel.musicRepository.getPlaylistDetail(summary.resourceId, sortKey) }
+                        val detail = async {
+                            AppModel.musicRepository.getPlaylistDetail(
+                                summary.resourceId,
+                                sortKey,
+                                onRefresh = { refreshed -> scope.launch { handleDetailUpdate(refreshed) } },
+                            )
+                        }
                         val tracks = async {
                             AppModel.musicRepository.getPlaylistTracks(
-                                summary.resourceId, limit = PAGE_SIZE, offset = 0, sortKey = sortKey,
+                                summary.resourceId,
+                                limit = PAGE_SIZE,
+                                offset = 0,
+                                sortKey = sortKey,
+                                onRefresh = { refreshed -> scope.launch { handleTracksUpdate(refreshed) } },
                             )
                         }
                         detail.await() to tracks.await()
@@ -228,6 +353,7 @@ class PlaylistDetailPresenter(
             // 歌单已切换，或有更新的一次加载（切源重拉）已在途 —— 丢弃过期结果
             if (fetchingPlaylistId != summary.resourceId || gen != loadGen) return@launch
             if (results == null) {
+                if (silent && !force) return@launch
                 if (silent) {
                     notify(strings.library.playlistDetailRefreshFailed)
                 } else {
@@ -246,30 +372,36 @@ class PlaylistDetailPresenter(
             when (tracksResult) {
                 is BackendResult.Success -> {
                     val page = tracksResult.data
+                    val distinct = page.tracks.distinctBy { it.id }
+                    val hasMore = page.hasMore || (!page.paginationSpecified && page.tracks.size >= PAGE_SIZE)
                     // 曲目与「它是哪个音源的」一起落库，二者永远配对。
                     tracksProviderId = requestProvider
-                    next = next.copy(
-                        tracks = page.tracks.distinctBy { it.id },
-                        hasMore = page.hasMore || (!page.paginationSpecified && page.tracks.size >= PAGE_SIZE),
-                        nextOffset = page.tracks.size,
-                        loading = false,
-                        error = null,
-                        loadMoreError = null,
-                    )
-                    if (silent) {
+                    if (next.tracks != distinct || next.hasMore != hasMore || next.nextOffset != page.tracks.size || next.loading) {
+                        next = next.copy(
+                            tracks = distinct,
+                            hasMore = hasMore,
+                            nextOffset = page.tracks.size,
+                            loading = false,
+                            error = null,
+                            loadMoreError = null,
+                        )
+                    }
+                    if (force && silent) {
                         notify(strings.library.playlistRefreshed())
                     }
                 }
                 is BackendResult.Error -> {
-                    if (silent) notify(tracksResult.message)
-                    else next = next.copy(loading = false, error = tracksResult.message)
+                    if (force && silent) notify(tracksResult.message)
+                    else if (!silent) next = next.copy(loading = false, error = tracksResult.message)
                 }
                 is BackendResult.Unsupported -> {
-                    if (silent) notify(tracksResult.message)
-                    else next = next.copy(loading = false, error = tracksResult.message)
+                    if (force && silent) notify(tracksResult.message)
+                    else if (!silent) next = next.copy(loading = false, error = tracksResult.message)
                 }
             }
-            _state.value = next
+            if (next != _state.value) {
+                _state.value = next
+            }
         }
     }
 

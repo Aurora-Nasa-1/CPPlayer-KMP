@@ -34,6 +34,9 @@ class PlaylistDetailScreenModel : ScreenModel, PlaylistDetailContract {
     override val state: StateFlow<PlaylistDetailUiState> get() = presenter.state
     override val scope: CoroutineScope get() = presenter.scope
 
+    override fun primeFromCache(summary: PlaylistSummary): Boolean =
+        presenter.primeFromCache(summary)
+
     override fun load(summary: PlaylistSummary, strings: CpStrings, force: Boolean) =
         presenter.load(summary, strings, force)
 

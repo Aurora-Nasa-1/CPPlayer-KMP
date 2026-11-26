@@ -130,28 +130,33 @@ internal object DesktopCroppedThumbDiskCache {
     fun putAsync(canonicalUrl: String, width: Int, height: Int, cropSquare: Boolean, bitmap: Bitmap) {
         val key = cacheKey(canonicalUrl, width, height, cropSquare)
         if (!inFlightWrites.add(key)) return
-        val bytes = encodeBitmapBytes(bitmap)
-        if (bytes == null) {
+        // 在解码线程仅生成轻量不可变 Skia Image 快照，耗时的 WebP/JPEG 编码与写盘全部推迟到
+        // 显示之后的 IO 线程，避免首次出图被磁盘缓存编码阻塞。
+        val snapshotImage = runCatching { Image.makeFromBitmap(bitmap) }.getOrNull()
+        if (snapshotImage == null) {
             inFlightWrites.remove(key)
             return
         }
-        val (ext, encoded) = bytes
         ioScope.launch {
             try {
-                val dir = rootDir()
-                val target = File(dir, "$key.$ext")
-                if (target.isFile && target.length() > 0L) return@launch
-                val tmp = File(dir, "$key.$ext.part")
-                tmp.writeBytes(encoded)
-                runCatching {
-                    Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-                }.onFailure {
+                snapshotImage.use { img ->
+                    if (find(canonicalUrl, width, height, cropSquare) != null) return@launch
+                    val (ext, encoded) = encodeImageBytes(img) ?: return@launch
+                    val dir = rootDir()
+                    val target = File(dir, "$key.$ext")
+                    if (target.isFile && target.length() > 0L) return@launch
+                    val tmp = File(dir, "$key.$ext.part")
+                    tmp.writeBytes(encoded)
                     runCatching {
-                        Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                        Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+                    }.onFailure {
+                        runCatching {
+                            Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                        }
                     }
-                }
-                if (writeCount.incrementAndGet() % PRUNE_CHECK_INTERVAL_WRITES == 0L) {
-                    pruneIfNeeded(dir)
+                    if (writeCount.incrementAndGet() % PRUNE_CHECK_INTERVAL_WRITES == 0L) {
+                        pruneIfNeeded(dir)
+                    }
                 }
             } catch (_: Throwable) {
             } finally {
@@ -170,15 +175,13 @@ internal object DesktopCroppedThumbDiskCache {
         }
     }
 
-    private fun encodeBitmapBytes(bitmap: Bitmap): Pair<String, ByteArray>? {
+    private fun encodeImageBytes(img: Image): Pair<String, ByteArray>? {
         return runCatching {
-            Image.makeFromBitmap(bitmap).use { img ->
-                val webp = img.encodeToData(EncodedImageFormat.WEBP, 85)
-                if (webp != null) {
-                    webp.use { "webp" to it.bytes }
-                } else {
-                    img.encodeToData(EncodedImageFormat.JPEG, 88)?.use { "jpg" to it.bytes }
-                }
+            val webp = img.encodeToData(EncodedImageFormat.WEBP, 85)
+            if (webp != null) {
+                webp.use { "webp" to it.bytes }
+            } else {
+                img.encodeToData(EncodedImageFormat.JPEG, 88)?.use { "jpg" to it.bytes }
             }
         }.getOrNull()
     }

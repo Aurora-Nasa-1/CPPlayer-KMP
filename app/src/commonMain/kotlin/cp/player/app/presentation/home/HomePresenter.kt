@@ -209,7 +209,21 @@ class HomePresenter(
     private var refreshGen = 0
 
     init {
-        refresh(force = false)
+        if (!loadDiscovery) {
+            val cachedUser = runCatching { AppModel.musicRepository.peekCurrentUserPlaylists() }.getOrNull()
+            if (cachedUser != null) {
+                _state.value = _state.value.copy(
+                    userPlaylists = cachedUser.value,
+                    likedPlaylist = pickLikedPlaylist(cachedUser.value),
+                    loading = false,
+                )
+            }
+            if (cachedUser == null || !cachedUser.isFresh) {
+                refresh(force = false)
+            }
+        } else {
+            refresh(force = false)
+        }
         // 音源切换后首页所有数据（日推 / 榜单 / 歌单 …）都属于旧音源：作废按音源
         // 的内存缓存并强制重拉。侧栏那个 loadDiscovery=false 的实例同样走这里，
         // 用户歌单（侧栏「我的歌单」）因此自动跟着换源刷新。
@@ -441,11 +455,29 @@ class HomePresenter(
         // 否则本地 StateFlow 会绕过 TTL，让旧列表永久留在页面内。
         if (source == PlaylistSource.Recommended) return
 
+        val cached = when (source) {
+            PlaylistSource.Hot -> runCatching { AppModel.musicRepository.peekTopPlaylists(30) }.getOrNull()
+            PlaylistSource.Premium -> runCatching { AppModel.musicRepository.peekHighQualityPlaylists(limit = 30) }.getOrNull()
+            PlaylistSource.Recommended -> null
+        }
+        if (cached != null) {
+            _state.update { current ->
+                current.copy(
+                    playlistSourceLoading = false,
+                    hotPlaylists = if (source == PlaylistSource.Hot) cached.value else current.hotPlaylists,
+                    premiumPlaylists = if (source == PlaylistSource.Premium) cached.value else current.premiumPlaylists,
+                )
+            }
+            if (cached.isFresh) return
+        }
+
         scope.launch {
             val gen = refreshGen
             val sourceGen = AppModel.sourceGeneration.value
             val accountGen = AppModel.accountGeneration.value
-            _state.value = _state.value.copy(playlistSourceLoading = true)
+            if (cached == null) {
+                _state.value = _state.value.copy(playlistSourceLoading = true)
+            }
             val result = withContext(Dispatchers.IO) {
                 safe {
                     when (source) {

@@ -191,18 +191,17 @@ fun SongItem(
                                 .coverFlightSource(CoverFlight.trackKey(track.id), coverCorner),
                             contentAlignment = Alignment.Center,
                         ) {
+                            CpCoverPlaceholder(
+                                modifier = Modifier.fillMaxSize(),
+                                corner = coverCorner,
+                                animated = false,
+                            )
                             if (!track.coverUrl.isNullOrBlank()) {
                                 AsyncImage(
                                     model = rememberCoverImageRequest(track.coverUrl, targetSizeDp = 52.dp),
                                     contentDescription = null,
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop,
-                                )
-                            } else {
-                                CpCoverPlaceholder(
-                                    modifier = Modifier.fillMaxSize(),
-                                    corner = coverCorner,
-                                    animated = false,
                                 )
                             }
                             // 当前曲目：封面上浮均衡器。播放中跳动，暂停时塌成三个点；

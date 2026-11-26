@@ -69,6 +69,7 @@ import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.ui.theme.CpMotion
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.app.version.AppVersion
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.windowDragArea
@@ -472,7 +473,7 @@ private fun AccountSlot(onClick: () -> Unit, modifier: Modifier = Modifier) {
     ChromeSlot(onClick = onClick, modifier = modifier) {
         if (!avatarUrl.isNullOrBlank()) {
             AsyncImage(
-                model = avatarUrl,
+                model = rememberCoverImageRequest(avatarUrl, targetPx = 128),
                 contentDescription = s.navigation.account,
                 modifier = Modifier.size(24.dp).clip(CircleShape),
                 contentScale = ContentScale.Crop,

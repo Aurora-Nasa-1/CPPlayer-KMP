@@ -1,6 +1,7 @@
 package cp.player.app.ui.component
 
 import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpElevatedSurface
 import cp.player.app.ui.theme.cpSheetSurface
 import cp.player.app.ui.theme.LocalIsDarkTheme
 
@@ -139,14 +140,17 @@ fun SharedTransitionScope.MiniPlayer(
     val progress = if (state.durationMs > 0) {
         (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f)
     } else 0f
+    val desktop = LocalWindowChromeActive.current
+    val isTablet = isTabletLayout()
+    val isTabletFloating = isTablet && !desktop
+    val isDocked = isDockedToBottomBar && !isTablet
     val coverCorner by animateDpAsState(
-        targetValue = if (state.isPlaying) 24.dp else 12.dp,
+        targetValue = if (state.isPlaying) 24.dp else if (isTabletFloating) 11.dp else 12.dp,
         animationSpec = CpMotion.spatial(),
         label = "miniCoverCornerMorph",
     )
     val coverShape = remember(coverCorner) { RoundedCornerShape(coverCorner) }
     val press = rememberPressedScale()
-    val desktop = LocalWindowChromeActive.current
     val s = cpStrings()
     val showLyrics by AppModel.showMiniPlayerLyricsFlow.collectAsState()
     val secondLineText = if (showLyrics) currentLyricLine(state) else ""
@@ -158,33 +162,43 @@ fun SharedTransitionScope.MiniPlayer(
         wheelSeekTarget = null
     }
 
-    val isTablet = isTabletLayout()
-    val isDocked = isDockedToBottomBar && !isTablet
-
-    // 外边距：底栏停靠态取 8dp；底栏收缩隐藏、二级页面或平板端时扩展至 12dp（增强悬浮呼吸感）
-    val targetHorizontalMargin = if (desktop || isDocked) 8.dp else 12.dp
-    val animatedHorizontalMargin by animateDpAsState(
-        targetValue = targetHorizontalMargin,
+    // 外边距：底栏停靠态取 8dp；悬浮胶囊态取 12dp；平板右下角悬浮态右侧适当留出 16dp 呼吸边距
+    val targetStartMargin = if (desktop || isDocked) 8.dp else 12.dp
+    val targetEndMargin = when {
+        isTabletFloating -> 16.dp
+        desktop || isDocked -> 8.dp
+        else -> 12.dp
+    }
+    val animatedStartMargin by animateDpAsState(
+        targetValue = targetStartMargin,
         animationSpec = CpMotion.spatial(),
-        label = "miniPlayerHorizontalMargin",
+        label = "miniPlayerStartMargin",
+    )
+    val animatedEndMargin by animateDpAsState(
+        targetValue = targetEndMargin,
+        animationSpec = CpMotion.spatial(),
+        label = "miniPlayerEndMargin",
     )
 
-    // 内边距：底栏停靠态取 12dp；悬浮胶囊态随着圆角增大，水平内边距动态扩展至 16dp，避免封面与按钮被大圆角挤压
-    val targetInnerHorizontalPadding = if (desktop || isDocked) 12.dp else 16.dp
+    // 内边距：底栏停靠态取 12dp；悬浮胶囊态扩展至 16dp；平板小窗适度收紧至 14dp
+    val targetInnerHorizontalPadding = when {
+        desktop || isDocked -> 12.dp
+        isTabletFloating -> 14.dp
+        else -> 16.dp
+    }
     val animatedInnerHorizontalPadding by animateDpAsState(
         targetValue = targetInnerHorizontalPadding,
         animationSpec = CpMotion.spatial(),
         label = "miniPlayerInnerHorizontalPadding",
     )
 
-    // 手机端在底栏收缩隐藏或无底栏页面时，过渡到与屏幕同心的精致悬浮胶囊圆角：
-    // 同心圆角法则：R_inner = R_outer - margin，同时收敛在 [20.dp, 28.dp] 区间内，避免生搬物理大圆角导致笨重；
-    // 平板界面（侧边导航无底栏）默认与屏幕物理边角圆角完全一致。
+    // 手机端在底栏收缩隐藏或无底栏页面时，过渡到与屏幕同心的精致悬浮胶囊圆角；
+    // 平板端采用右下角精致小窗形态，取 22dp 柔和圆角与 44dp 封面形成协调比例。
     val screenCorner = rememberScreenCornerRadius()
-    val floatingCorner = remember(screenCorner, targetHorizontalMargin) {
-        (screenCorner - targetHorizontalMargin).coerceIn(20.dp, 28.dp)
+    val floatingCorner = remember(screenCorner, targetStartMargin) {
+        (screenCorner - targetStartMargin).coerceIn(20.dp, 28.dp)
     }
-    val defaultCorner = if (isTablet) screenCorner else floatingCorner
+    val defaultCorner = if (isTabletFloating) 22.dp else floatingCorner
     val targetBottomCorner = if (desktop || isDocked) 16.dp else defaultCorner
     val targetTopCorner = if (desktop || isDocked) 28.dp else defaultCorner
     val animatedBottomCorner by animateDpAsState(
@@ -210,14 +224,24 @@ fun SharedTransitionScope.MiniPlayer(
     var showQueueSheet by remember { mutableStateOf(false) }
     val moreSheets = rememberPlayerMoreSheetState()
     val isDark = LocalIsDarkTheme.current
+    val surfaceWidthModifier = if (isTabletFloating) {
+        Modifier.widthIn(min = 280.dp, max = 368.dp).fillMaxWidth()
+    } else {
+        Modifier.fillMaxWidth()
+    }
 
     Surface(
         onClick = onClick,
         interactionSource = press.first,
         shape = currentShape,
         modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = animatedHorizontalMargin.coerceAtLeast(0.dp), vertical = 4.dp)
+            .then(surfaceWidthModifier)
+            .padding(
+                start = animatedStartMargin.coerceAtLeast(0.dp),
+                end = animatedEndMargin.coerceAtLeast(0.dp),
+                top = 4.dp,
+                bottom = 4.dp,
+            )
             .then(press.second)
             .miniPlayerMouseWheel { deltaY ->
                 if (desktop && SeekAvailability.isSeekable(state.durationMs, state.isLocalizing)) {
@@ -243,12 +267,22 @@ fun SharedTransitionScope.MiniPlayer(
                 sharedContentState = rememberSharedContentState(key = "player-container"),
                 animatedVisibilityScope = animatedVisibilityScope
             ),
-        color = cpCardSurface(),
+        color = if (isTabletFloating) cpElevatedSurface() else cpCardSurface(),
         tonalElevation = 0.dp,
-        shadowElevation = if (isDark) 4.dp else 2.dp,
+        shadowElevation = when {
+            isTabletFloating -> if (isDark) 8.dp else 6.dp
+            isDark -> 4.dp
+            else -> 2.dp
+        },
         border = BorderStroke(
             width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.12f else 0.20f),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(
+                alpha = when {
+                    isTabletFloating -> if (isDark) 0.18f else 0.24f
+                    isDark -> 0.12f
+                    else -> 0.20f
+                },
+            ),
         ),
     ) {
         Column {
@@ -304,8 +338,21 @@ fun SharedTransitionScope.MiniPlayer(
                         onMore = { moreSheets.showMoreMenu = true },
                     )
                 } else {
+                    val rowModifier = if (isTabletFloating) {
+                        Modifier.fillMaxWidth().padding(
+                            start = animatedInnerHorizontalPadding.coerceAtLeast(0.dp),
+                            end = (animatedInnerHorizontalPadding - 4.dp).coerceAtLeast(0.dp),
+                            top = 10.dp,
+                            bottom = 6.dp,
+                        )
+                    } else {
+                        Modifier.fillMaxWidth().padding(
+                            horizontal = animatedInnerHorizontalPadding.coerceAtLeast(0.dp),
+                            vertical = 10.dp,
+                        )
+                    }
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = animatedInnerHorizontalPadding.coerceAtLeast(0.dp), vertical = 10.dp),
+                        rowModifier,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         MiniCover(
@@ -315,11 +362,15 @@ fun SharedTransitionScope.MiniPlayer(
                             coverShape = coverShape,
                             isPlaying = state.isPlaying,
                             animatedVisibilityScope = animatedVisibilityScope,
-                            size = 48.dp,
+                            size = if (isTabletFloating) 44.dp else 48.dp,
                             contentScale = ContentScale.Crop,
                         )
                         BoxWithConstraints(
-                            Modifier.weight(1f).padding(horizontal = 8.dp),
+                            if (isTabletFloating) {
+                                Modifier.weight(1f).padding(start = 10.dp, end = 6.dp)
+                            } else {
+                                Modifier.weight(1f).padding(horizontal = 8.dp)
+                            },
                         ) {
                             val stableWidth = rememberStableTrackInfoWidth(
                                 track = track,
@@ -347,6 +398,8 @@ fun SharedTransitionScope.MiniPlayer(
                                 Spacer(Modifier.weight(1f))
                             }
                         }
+                        val actionBtnSize = if (isTabletFloating) 32.dp else 36.dp
+                        val actionIconSize = if (isTabletFloating) 20.dp else 22.dp
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -356,15 +409,15 @@ fun SharedTransitionScope.MiniPlayer(
                                 contentDescription = if (isFavorite) s.player.unlike else s.player.like,
                                 onClick = { AppModel.toggleFavoriteOf(track.id) },
                                 active = isFavorite,
-                                size = 36.dp,
-                                iconSize = 20.dp,
+                                size = actionBtnSize,
+                                iconSize = if (isTabletFloating) 18.dp else 20.dp,
                             )
                             MiniBarIconButton(
                                 icon = Icons.Filled.SkipPrevious,
                                 contentDescription = s.player.previousTrack,
                                 onClick = onSkipPrev,
-                                size = 36.dp,
-                                iconSize = 22.dp,
+                                size = actionBtnSize,
+                                iconSize = actionIconSize,
                                 tint = MaterialTheme.colorScheme.onSurface,
                             )
                             CpPlayPauseButton(
@@ -377,8 +430,8 @@ fun SharedTransitionScope.MiniPlayer(
                                 icon = Icons.Filled.SkipNext,
                                 contentDescription = s.player.nextTrack,
                                 onClick = onSkipNext,
-                                size = 36.dp,
-                                iconSize = 22.dp,
+                                size = actionBtnSize,
+                                iconSize = actionIconSize,
                                 tint = MaterialTheme.colorScheme.onSurface,
                             )
                         }
@@ -402,7 +455,7 @@ fun SharedTransitionScope.MiniPlayer(
                         progress = progress,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
+                            .padding(horizontal = if (isTabletFloating) 16.dp else 12.dp)
                             .padding(bottom = 8.dp),
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isDark) 0.12f else 0.08f),
@@ -868,30 +921,18 @@ private fun SharedTransitionScope.MiniCover(
             .coverFlightTarget(CoverFlight.TARGET_MINI, coverCorner)
             .graphicsLayer { alpha = if (hideCover) 0f else 1f },
     ) {
-        if (!track.coverUrl.isNullOrBlank()) {
-            // 按 128px 规范分桶，省内存与带宽，并直接命中桌面裁剪缩略图盘缓存。
-            AsyncImage(
-                model = rememberCoverImageRequest(track.coverUrl, targetPx = 128),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize()
-                    .sharedBounds(
-                        sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
-                        animatedVisibilityScope = animatedVisibilityScope
-                    )
-                    .clip(coverShape),
-                contentScale = contentScale,
-            )
-        } else {
-            // 空封面走全应用统一的 Expressive 占位（渐变 + 形状），
-            // 而不是本地再画一个灰底 MusicNote —— 同一个「没有封面」
-            // 不该在迷你播放器和播放页长得不一样。
-            CpCoverPlaceholder(
-                modifier = Modifier.fillMaxSize(),
-                corner = coverCorner,
-                // 48dp 下变形看不出来，关掉省一条常驻动画。
-                animated = false,
-            )
-        }
+        CpArtworkImage(
+            request = rememberCoverImageRequest(track.coverUrl, targetPx = 128),
+            contentDescription = null,
+            contentScale = contentScale,
+            placeholderCorner = coverCorner,
+            modifier = Modifier.fillMaxSize()
+                .sharedBounds(
+                    sharedContentState = rememberSharedContentState(key = "cover-${track.id}"),
+                    animatedVisibilityScope = animatedVisibilityScope
+                )
+                .clip(coverShape),
+        )
         // 「正在响」标记：与列表项里那颗均衡器**完全同款**。
         // 有它在，用户余光扫到底栏就知道还在放，不必去读播放/暂停按钮的图标。
         //

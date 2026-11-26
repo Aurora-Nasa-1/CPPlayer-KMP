@@ -88,23 +88,24 @@ internal fun PlaylistHeaderInfo(
             color = cpNestedSurface(),
             shadowElevation = 4.dp,
         ) {
-            if (!summary.coverUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = rememberCoverImageRequest(
-                        summary.coverUrl,
-                        targetSizeDp = 108.dp,
-                        placeholderBucketPx = 256,
-                    ),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
+            Box(Modifier.fillMaxSize()) {
                 CpCoverPlaceholder(
                     modifier = Modifier.fillMaxSize(),
                     corner = 16.dp,
                     animated = false,
                 )
+                if (!summary.coverUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = rememberCoverImageRequest(
+                            summary.coverUrl,
+                            targetSizeDp = 108.dp,
+                            placeholderBucketPx = 256,
+                        ),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
         Column(
@@ -214,23 +215,24 @@ internal fun PlaylistInfoRail(
             color = cpNestedSurface(),
             shadowElevation = 8.dp,
         ) {
-            if (!summary.coverUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = rememberCoverImageRequest(
-                        summary.coverUrl,
-                        targetSizeDp = 208.dp,
-                        placeholderBucketPx = 256,
-                    ),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
+            Box(Modifier.fillMaxSize()) {
                 CpCoverPlaceholder(
                     modifier = Modifier.fillMaxSize(),
                     corner = 28.dp,
                     animated = false,
                 )
+                if (!summary.coverUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = rememberCoverImageRequest(
+                            summary.coverUrl,
+                            targetSizeDp = 208.dp,
+                            placeholderBucketPx = 256,
+                        ),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
 

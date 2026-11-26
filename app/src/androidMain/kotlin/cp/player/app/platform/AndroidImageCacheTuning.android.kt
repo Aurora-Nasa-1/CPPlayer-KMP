@@ -14,6 +14,7 @@ import coil3.getExtra
 import coil3.memory.MemoryCache
 import coil3.request.Options
 import coil3.request.allowRgb565
+import coil3.request.crossfade
 import coil3.size.Dimension
 import cp.player.app.ui.util.CpOriginalUrlExtraKey
 import cp.player.app.ui.util.canonicalCoverBaseUrl
@@ -36,6 +37,7 @@ private const val ImageDiskCacheBytes = 256L * 1024 * 1024
 fun installAndroidImageCacheLimit() {
     SingletonImageLoader.setSafe { ctx: PlatformContext ->
         ImageLoader.Builder(ctx)
+            .crossfade(160)
             .allowRgb565(true)
             .memoryCache(
                 MemoryCache.Builder()

@@ -45,6 +45,7 @@ import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
 import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.openUrl
+import cp.player.app.ui.util.rememberCoverImageRequest
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -204,7 +205,7 @@ fun VideoPlayerView(
         state.currentMedia?.coverUrl?.let { coverUrl ->
             Box(modifier = Modifier.fillMaxSize()) {
                 AsyncImage(
-                    model = coverUrl,
+                    model = rememberCoverImageRequest(coverUrl, targetPx = 512, cropSquare = false),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,

@@ -5,20 +5,22 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
 import coil3.memory.MemoryCache
+import coil3.request.crossfade
 import cp.player.core.util.DesktopDataDir
 import okio.Path.Companion.toOkioPath
 
 /**
  * 桌面端图片内存缓存上限：
- * - GraalVM Native Image（`-Xmx100m`）保持 **32MB**，守住低堆预算；
- * - 普通 JVM 桌面端默认放宽至 **64MB**，减少长列表滚动与频繁切换页面时的 LRU 逐出重解码；
- * - 均支持通过 `-Dcp.coil.cacheMb=16..128` 覆盖。
+ * - 桌面端默认保持 **32MB**（与 Android 双端对齐，兼顾低堆预算与热图命中）；
+ * - 支持通过 `-Dcp.coil.cacheMb=16..128` 覆盖。
  */
 private const val NativeImageDesktopMemoryCacheMb = 32L
-private const val DefaultJvmDesktopImageMemoryCacheMb = 64L
+private const val DefaultJvmDesktopImageMemoryCacheMb = 32L
 private const val MinDesktopImageMemoryCacheMb = 16L
 private const val MaxDesktopImageMemoryCacheMb = 128L
 private const val DesktopOriginalDiskCacheBytes = 256L * 1024 * 1024
+private const val TrayRetainedNativeImageMemoryBytes = 8L * 1024 * 1024
+private const val TrayRetainedJvmImageMemoryBytes = 12L * 1024 * 1024
 
 private fun isGraalNativeImage(): Boolean =
     System.getProperty("org.graalvm.nativeimage.imagecode") != null
@@ -47,6 +49,7 @@ fun installDesktopImageCacheLimit() {
     )
     SingletonImageLoader.setSafe { ctx: PlatformContext ->
         ImageLoader.Builder(ctx)
+            .crossfade(160)
             .memoryCache(
                 MemoryCache.Builder()
                     .maxSizeBytes(cacheBytes)
@@ -66,10 +69,15 @@ fun installDesktopImageCacheLimit() {
     }
 }
 
-/** 隐藏到托盘 / 内存紧张时清空内存图片缓存（保留磁盘缓存，恢复窗口后瞬时重载）。 */
+/** 隐藏到托盘 / 内存紧张时裁剪至热点预算（保留正在展示的封面，恢复窗口零闪烁）。 */
 internal fun trimDesktopImageMemoryCache() {
     runCatching {
-        SingletonImageLoader.get(PlatformContext.INSTANCE).memoryCache?.clear()
+        val keepBytes = if (isGraalNativeImage()) {
+            TrayRetainedNativeImageMemoryBytes
+        } else {
+            TrayRetainedJvmImageMemoryBytes
+        }
+        SingletonImageLoader.get(PlatformContext.INSTANCE).memoryCache?.trimToSize(keepBytes)
     }
 }
 

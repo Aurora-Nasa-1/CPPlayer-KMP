@@ -63,6 +63,7 @@ import cp.player.app.ui.model.CommentFloorUi
 import cp.player.app.ui.model.CommentScreenModel
 import cp.player.app.ui.model.CommentSort
 import cp.player.app.ui.model.CommentUiState
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.core.music.COMMENT_MAX_LENGTH
 import cp.player.core.music.Comment
 
@@ -304,11 +305,12 @@ private fun CommentBody(comment: Comment, model: CommentScreenModel, compact: Bo
         else { { navigator.push(AppRoute.UserProfile(comment.userId, comment.user)) } }
     }
     Row(Modifier.fillMaxWidth()) {
+        val avatarSize = if (compact) 32.dp else 40.dp
         AsyncImage(
-            model = comment.avatar,
+            model = rememberCoverImageRequest(comment.avatar, targetSizeDp = avatarSize),
             contentDescription = null,
             modifier = Modifier
-                .size(if (compact) 32.dp else 40.dp)
+                .size(avatarSize)
                 .clip(CircleShape)
                 .let { if (onUserClick != null) it.clickable(onClick = onUserClick) else it },
             contentScale = ContentScale.Crop,

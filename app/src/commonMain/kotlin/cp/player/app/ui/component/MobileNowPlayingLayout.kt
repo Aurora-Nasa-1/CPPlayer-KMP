@@ -92,6 +92,7 @@ import cp.player.app.ui.model.MobilePlayerCustomConfig
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.util.SeekAvailability
 import cp.player.app.ui.util.formatTimeMs
+import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.core.music.ArtistSummary
 import cp.player.core.music.TrackSummary
 import cp.player.core.playback.PlaybackUiState
@@ -548,16 +549,18 @@ private fun PlayerArtwork(
         color = cpNestedSurface(),
         shadowElevation = 4.dp,
     ) {
-        Box {
-            // The parent Surface owns the shape; do not introduce a second corner scale.
-            CpCoverPlaceholder(Modifier.fillMaxSize(), corner = 0.dp, animated = false)
-            if (!track.coverUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = track.coverUrl, contentDescription = track.album ?: track.name,
-                    contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
-                )
-            }
-        }
+        // The parent Surface owns the shape; do not introduce a second corner scale.
+        CpArtworkImage(
+            request = rememberCoverImageRequest(
+                track.coverUrl,
+                targetPx = 512,
+                placeholderBucketPx = 128,
+            ),
+            contentDescription = track.album ?: track.name,
+            contentScale = ContentScale.Crop,
+            placeholderCorner = 0.dp,
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 }
 

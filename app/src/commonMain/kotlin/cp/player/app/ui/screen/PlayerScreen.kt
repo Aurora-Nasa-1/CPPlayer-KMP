@@ -1076,19 +1076,17 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 color = cpNestedSurface().copy(alpha = 0.5f),
                 shadowElevation = coverElevation,
             ) {
-                if (!track.coverUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = rememberCoverImageRequest(track.coverUrl, targetSizeDp = artSize),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    cp.player.app.ui.component.CpCoverPlaceholder(
-                        modifier = Modifier.fillMaxSize(),
-                        corner = coverCorner,
-                    )
-                }
+                cp.player.app.ui.component.CpArtworkImage(
+                    request = rememberCoverImageRequest(
+                        track.coverUrl,
+                        targetSizeDp = artSize,
+                        placeholderBucketPx = 128,
+                    ),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    placeholderCorner = coverCorner,
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
 
             Spacer(Modifier.height(artToInfoGap))

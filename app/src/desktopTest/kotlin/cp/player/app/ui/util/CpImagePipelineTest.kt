@@ -170,5 +170,27 @@ class CpImagePipelineTest {
             ),
         )
         assertTrue(SingletonImageLoader.get(PlatformContext.INSTANCE).memoryCache != null)
+        assertEquals(32L * 1024L * 1024L, SingletonImageLoader.get(PlatformContext.INSTANCE).memoryCache!!.maxSize)
+    }
+
+    @Test
+    fun `DesktopCroppedThumbDiskCache putAsync persists cropped bitmap asynchronously`() {
+        val canonical = "https://unit.test/async-${System.nanoTime()}.jpg"
+        val bmp = Bitmap().apply { allocN32Pixels(16, 16) }
+        try {
+            DesktopCroppedThumbDiskCache.putAsync(canonical, 16, 16, cropSquare = true, bitmap = bmp)
+            val deadline = System.currentTimeMillis() + 3_000L
+            var found: File? = null
+            while (System.currentTimeMillis() < deadline) {
+                found = DesktopCroppedThumbDiskCache.find(canonical, 16, 16, cropSquare = true)
+                if (found != null) break
+                Thread.sleep(20)
+            }
+            assertNotNull(found, "putAsync should persist cropped image asynchronously")
+            assertTrue(found.length() > 0L)
+            found.delete()
+        } finally {
+            bmp.close()
+        }
     }
 }

@@ -105,18 +105,17 @@ fun PlaylistItem(
                         .coverFlightSource(CoverFlight.playlistKey(playlist.resourceId), thumbCorner),
                     contentAlignment = Alignment.Center,
                 ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.QueueMusic, null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(28.dp),
+                    )
                     if (!playlist.coverUrl.isNullOrBlank()) {
                         AsyncImage(
                             model = rememberCoverImageRequest(playlist.coverUrl, targetSizeDp = 60.dp),
                             contentDescription = null,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
-                        )
-                    } else {
-                        Icon(
-                            Icons.AutoMirrored.Filled.QueueMusic, null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(28.dp),
                         )
                     }
                 }

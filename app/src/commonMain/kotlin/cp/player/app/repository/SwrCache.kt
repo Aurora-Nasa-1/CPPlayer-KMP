@@ -8,8 +8,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 /**
  * 通用「读缓存」：fresh 窗口内直接命中；过期但仍在 stale 窗口内时先回旧数据、
@@ -25,9 +23,14 @@ internal class SwrCache<T : Any>(
     private val nowMs: () -> Long = { currentTimeMillis() },
 ) {
 
+    data class CachePeek<T>(
+        val value: T,
+        val isFresh: Boolean,
+    )
+
     private class Entry<T>(val value: T, val fetchedAt: Long)
 
-    private val mutex = Mutex()
+    private val lock = Any()
     // Reinsert on reads/writes to keep the eldest entry as the least recently used.
     private val entries = LinkedHashMap<String, Entry<T>>()
     private val inflight = HashMap<String, CompletableDeferred<MusicResult<T>>>()
@@ -37,6 +40,24 @@ internal class SwrCache<T : Any>(
         require(freshTtlMs >= 0) { "freshTtlMs must be non-negative" }
         require(staleTtlMs >= freshTtlMs) { "staleTtlMs must be >= freshTtlMs" }
         require(maxEntries > 0) { "maxEntries must be positive" }
+    }
+
+    /**
+     * 同步窥视缓存，不触发网络与协程调度；供 UI / Presenter 在首帧渲染前零延迟秒开。
+     */
+    fun peek(key: String, allowStale: Boolean = true): CachePeek<T>? {
+        val now = nowMs()
+        return synchronized(lock) {
+            val entry = entries[key] ?: return@synchronized null
+            val age = now - entry.fetchedAt
+            val fresh = age < freshTtlMs
+            if (!fresh && (!allowStale || age >= staleTtlMs)) {
+                return@synchronized null
+            }
+            entries.remove(key)
+            entries[key] = entry
+            CachePeek(entry.value, isFresh = fresh)
+        }
     }
 
     /**
@@ -50,7 +71,7 @@ internal class SwrCache<T : Any>(
         onRefresh: ((MusicResult<T>) -> Unit)? = null,
         fetch: suspend () -> MusicResult<T>,
     ): MusicResult<T> {
-        val snapshot = mutex.withLock {
+        val snapshot = synchronized(lock) {
             val entry = entries.remove(key)
             if (entry != null) entries[key] = entry
             entry to generation
@@ -72,10 +93,9 @@ internal class SwrCache<T : Any>(
                             null
                         }
                         if (result != null) {
-                            mutex.withLock {
-                                if (generation == snapshot.second) {
-                                    runCatching { onRefresh?.invoke(result) }
-                                }
+                            val stillValid = synchronized(lock) { generation == snapshot.second }
+                            if (stillValid) {
+                                runCatching { onRefresh?.invoke(result) }
                             }
                         }
                     }
@@ -93,7 +113,7 @@ internal class SwrCache<T : Any>(
 
     /** 失效所有满足 [predicate] 的 key，例如某个歌单的所有分页和排序。 */
     suspend fun invalidateMatching(predicate: (String) -> Boolean) {
-        mutex.withLock {
+        synchronized(lock) {
             generation++
             entries.keys.filter(predicate).forEach(entries::remove)
             inflight.keys.filter(predicate).forEach(inflight::remove)
@@ -103,7 +123,7 @@ internal class SwrCache<T : Any>(
     /** 清理已超过 stale 窗口的条目，并在超过 [maxKeep] 时按 LRU 裁剪，压缩常驻存活集。 */
     suspend fun trimTo(maxKeep: Int) {
         val now = nowMs()
-        mutex.withLock {
+        synchronized(lock) {
             val iter = entries.entries.iterator()
             while (iter.hasNext()) {
                 val entry = iter.next().value
@@ -126,8 +146,8 @@ internal class SwrCache<T : Any>(
     ): MusicResult<T> {
         class Plan(val deferred: CompletableDeferred<MusicResult<T>>, val isLeader: Boolean, val gen: Int)
 
-        val plan = mutex.withLock {
-            if (expectedGeneration != null && generation != expectedGeneration) return@withLock null
+        val plan = synchronized(lock) {
+            if (expectedGeneration != null && generation != expectedGeneration) return@synchronized null
             val running = inflight[key]
             if (running != null) {
                 Plan(running, isLeader = false, gen = generation)
@@ -146,7 +166,7 @@ internal class SwrCache<T : Any>(
         } catch (cancelled: CancellationException) {
             val error = BackendResult.Error(cancelled.message ?: "请求已取消", cause = cancelled)
             plan.deferred.complete(error)
-            mutex.withLock { if (inflight[key] === plan.deferred) inflight.remove(key) }
+            synchronized(lock) { if (inflight[key] === plan.deferred) inflight.remove(key) }
             throw cancelled
         } catch (t: Throwable) {
             BackendResult.Error(t.message ?: "请求失败", cause = t)
@@ -154,7 +174,7 @@ internal class SwrCache<T : Any>(
 
         // 只有发起时的代际未变才入库；失败响应不会覆盖旧的有效值。
         if (result is BackendResult.Success && shouldCache(result.data)) {
-            mutex.withLock {
+            synchronized(lock) {
                 if (generation == plan.gen) {
                     entries.remove(key)
                     entries[key] = Entry(result.data, nowMs())
@@ -163,7 +183,7 @@ internal class SwrCache<T : Any>(
             }
         }
         plan.deferred.complete(result)
-        mutex.withLock { if (inflight[key] === plan.deferred) inflight.remove(key) }
+        synchronized(lock) { if (inflight[key] === plan.deferred) inflight.remove(key) }
         return result
     }
 }

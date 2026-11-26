@@ -89,17 +89,18 @@ class MusicRepository(
 ) {
 
     private companion object {
-        const val PLAYLIST_CACHE_FRESH_TTL_MS = 30_000L
-        const val PLAYLIST_CACHE_STALE_TTL_MS = 5 * 60_000L
+        const val PLAYLIST_CACHE_FRESH_TTL_MS = 60_000L
+        const val PLAYLIST_CACHE_STALE_TTL_MS = 30 * 60_000L
         const val FIRST_PLAYLIST_PAGE_SIZE = 300
     }
 
-    /** 释放全局 SWR 读缓存中的闲置条目，供隐藏到托盘或内存紧张时调用。 */
+    /** 释放全局 SWR 读缓存中的闲置条目，保留热点歌单与专辑以便恢复后继续秒开。 */
     internal suspend fun trimReadCachesForLowMemory() {
         MusicReadCaches.trimForLowMemory()
-        playlistDetailCache.trimTo(4)
-        playlistTracksCache.trimTo(4)
-        cloudTracksCache.trimTo(2)
+        playlistDetailCache.trimTo(12)
+        playlistTracksCache.trimTo(12)
+        albumDetailCache.trimTo(8)
+        cloudTracksCache.trimTo(4)
     }
 
     private fun currentProviderId(): String = sessionContext?.activeProviderId() ?: AppModel.activeProviderId()
@@ -128,9 +129,14 @@ class MusicRepository(
     private val playlistDetailCache = SwrCache<PlaylistDetail>(
         PLAYLIST_CACHE_FRESH_TTL_MS,
         PLAYLIST_CACHE_STALE_TTL_MS,
-        maxEntries = 24,
+        maxEntries = 32,
     )
     private val playlistTracksCache = SwrCache<PlaylistTracksPage>(
+        PLAYLIST_CACHE_FRESH_TTL_MS,
+        PLAYLIST_CACHE_STALE_TTL_MS,
+        maxEntries = 32,
+    )
+    private val albumDetailCache = SwrCache<AlbumDetail>(
         PLAYLIST_CACHE_FRESH_TTL_MS,
         PLAYLIST_CACHE_STALE_TTL_MS,
         maxEntries = 24,
@@ -223,17 +229,13 @@ class MusicRepository(
     suspend fun search(keyword: String, type: Int, limit: Int, offset: Int): MusicResult<SearchResult> =
         unifiedSource?.searchPage(keyword, type, limit, offset) ?: BackendResult.Unsupported("Unified music source is not configured")
 
-    suspend fun getPlaylistDetail(id: String): MusicResult<PlaylistDetail> =
-        getPlaylistDetail(id, "DEFAULT")
-
-    internal suspend fun getPlaylistDetail(id: String, sortKey: String): MusicResult<PlaylistDetail> {
-        val source = unifiedSource ?: return BackendResult.Unsupported("Unified music source is not configured")
-        val providerId = AppModel.activeProviderId()
-        val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
-            id, providerId, "playlist"
-        )
+    private fun playlistDetailKey(
+        providerId: String,
+        canonicalId: String,
+        sortKey: String,
+    ): String {
         val context = playlistCacheContext(providerId)
-        val key = PlaylistCacheKey(
+        return PlaylistCacheKey(
             kind = "detail",
             providerId = context.providerId,
             accountId = context.accountId,
@@ -241,10 +243,97 @@ class MusicRepository(
             playlistId = canonicalId,
             sortKey = sortKey,
         ).encode()
+    }
+
+    private fun playlistTracksKey(
+        providerId: String,
+        canonicalId: String,
+        limit: Int,
+        offset: Int,
+        sortKey: String,
+    ): String {
+        val context = playlistCacheContext(providerId)
+        return PlaylistCacheKey(
+            kind = "tracks",
+            providerId = context.providerId,
+            accountId = context.accountId,
+            sessionId = context.sessionId,
+            playlistId = canonicalId,
+            limit = limit,
+            offset = offset,
+            sortKey = sortKey,
+        ).encode()
+    }
+
+    internal fun peekPlaylistDetail(
+        id: String,
+        sortKey: String = "DEFAULT",
+    ): SwrCache.CachePeek<PlaylistDetail>? {
+        if (unifiedSource == null) return null
+        val providerId = currentProviderId()
+        val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(id, providerId, "playlist")
+        return playlistDetailCache.peek(playlistDetailKey(providerId, canonicalId, sortKey))
+    }
+
+    internal fun peekPlaylistTracks(
+        id: String,
+        limit: Int = FIRST_PLAYLIST_PAGE_SIZE,
+        offset: Int = 0,
+        sortKey: String = "DEFAULT",
+    ): SwrCache.CachePeek<PlaylistTracksPage>? {
+        if (unifiedSource == null) return null
+        val providerId = currentProviderId()
+        val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(id, providerId, "playlist")
+        return playlistTracksCache.peek(playlistTracksKey(providerId, canonicalId, limit, offset, sortKey))
+    }
+
+    internal fun peekAlbumDetail(id: String): SwrCache.CachePeek<AlbumDetail>? {
+        if (unifiedSource == null) return null
+        val providerId = currentProviderId()
+        val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(id, providerId, "album")
+        return albumDetailCache.peek(readCacheKey("album:$canonicalId"))
+    }
+
+    internal fun peekCurrentUserPlaylists(): SwrCache.CachePeek<List<PlaylistSummary>>? {
+        val providerId = currentProviderId()
+        val uid = AppModel.userProfileFlow.value?.resourceId
+            ?: runCatching { cp.player.app.auth.AccountStore.activeUid(providerId) }.getOrNull()
+            ?: return null
+        return MusicReadCaches.playlists.peek(readCacheKey("account:playlists:$uid"))
+    }
+
+    internal fun peekTopPlaylists(limit: Int = 30): SwrCache.CachePeek<List<PlaylistSummary>>? =
+        MusicReadCaches.playlists.peek(readCacheKey("home:top-playlists:$limit"))
+
+    internal fun peekHighQualityPlaylists(
+        category: String = "全部",
+        limit: Int = 30,
+    ): SwrCache.CachePeek<List<PlaylistSummary>>? =
+        MusicReadCaches.playlists.peek(readCacheKey("home:high-quality-playlists:$category:$limit"))
+
+    suspend fun getPlaylistDetail(id: String): MusicResult<PlaylistDetail> =
+        getPlaylistDetail(id, "DEFAULT")
+
+    internal suspend fun getPlaylistDetail(
+        id: String,
+        sortKey: String,
+        onRefresh: ((MusicResult<PlaylistDetail>) -> Unit)? = null,
+    ): MusicResult<PlaylistDetail> {
+        val source = unifiedSource ?: return BackendResult.Unsupported("Unified music source is not configured")
+        val providerId = currentProviderId()
+        val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
+            id, providerId, "playlist"
+        )
+        val context = playlistCacheContext(providerId)
+        val key = playlistDetailKey(providerId, canonicalId, sortKey)
+        val guardedRefresh: ((MusicResult<PlaylistDetail>) -> Unit)? = onRefresh?.let { cb ->
+            { refreshed -> if (playlistDetailKey(currentProviderId(), canonicalId, sortKey) == key) cb(refreshed) }
+        }
         return playlistDetailCache.get(
             key,
             playlistCacheScope,
             shouldCache = { it.tracks.isNotEmpty() || it.summary.trackCount <= 0 },
+            onRefresh = guardedRefresh,
         ) {
             when (val result = source.getPlaylistDetail(canonicalId)) {
                 is BackendResult.Success -> {
@@ -276,14 +365,15 @@ class MusicRepository(
         limit: Int,
         offset: Int,
         sortKey: String,
+        onRefresh: ((MusicResult<PlaylistTracksPage>) -> Unit)? = null,
     ): MusicResult<PlaylistTracksPage> {
         val source = unifiedSource ?: return BackendResult.Unsupported("Unified music source is not configured")
-        val providerId = AppModel.activeProviderId()
+        val providerId = currentProviderId()
         val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
             id, providerId, "playlist"
         )
         return getPlaylistTracksCached(
-            source, canonicalId, playlistCacheContext(providerId), limit, offset, sortKey,
+            source, canonicalId, playlistCacheContext(providerId), limit, offset, sortKey, onRefresh,
         )
     }
 
@@ -294,6 +384,7 @@ class MusicRepository(
         limit: Int,
         offset: Int,
         sortKey: String,
+        onRefresh: ((MusicResult<PlaylistTracksPage>) -> Unit)? = null,
     ): MusicResult<PlaylistTracksPage> {
         val key = PlaylistCacheKey(
             kind = "tracks",
@@ -305,7 +396,10 @@ class MusicRepository(
             offset = offset,
             sortKey = sortKey,
         ).encode()
-        return playlistTracksCache.get(key, playlistCacheScope) {
+        val guardedRefresh: ((MusicResult<PlaylistTracksPage>) -> Unit)? = onRefresh?.let { cb ->
+            { refreshed -> if (playlistTracksKey(currentProviderId(), canonicalId, limit, offset, sortKey) == key) cb(refreshed) }
+        }
+        return playlistTracksCache.get(key, playlistCacheScope, onRefresh = guardedRefresh) {
             when (val result = source.getPlaylistTracks(canonicalId, limit, offset)) {
                 is BackendResult.Success -> BackendResult.Success(
                     PlaylistTracksPage(
@@ -322,12 +416,22 @@ class MusicRepository(
         }
     }
 
-    suspend fun getAlbumDetail(id: String): MusicResult<AlbumDetail> {
+    suspend fun getAlbumDetail(
+        id: String,
+        onRefresh: ((MusicResult<AlbumDetail>) -> Unit)? = null,
+    ): MusicResult<AlbumDetail> {
         val source = unifiedSource ?: return BackendResult.Unsupported("Unified music source is not configured")
         val canonicalId = cp.player.core.music.CPMediaId.toCanonicalMediaId(
-            id, AppModel.activeProviderId(), "album"
+            id, currentProviderId(), "album"
         )
-        return source.getAlbumDetail(canonicalId)
+        return cacheRead(
+            albumDetailCache,
+            "album:$canonicalId",
+            shouldCache = { it.tracks.isNotEmpty() },
+            onRefresh = onRefresh,
+        ) {
+            source.getAlbumDetail(canonicalId)
+        }
     }
 
     suspend fun subscribeAlbum(id: String, subscribe: Boolean): Boolean {

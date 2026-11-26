@@ -39,8 +39,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
@@ -626,10 +628,13 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
     val expanded = cp.player.app.ui.component.LocalIsExpanded.current
     val isTablet = cp.player.app.ui.component.isTabletLayout()
     val bottomBarVisiblePx = cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx
-    val navigationBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding().coerceAtLeast(0.dp)
+    val navigationBarInsets = WindowInsets.navigationBars.asPaddingValues()
+    val navigationBarInset = navigationBarInsets.calculateBottomPadding().coerceAtLeast(0.dp)
+    val navigationBarEndInset = navigationBarInsets.calculateEndPadding(LocalLayoutDirection.current).coerceAtLeast(0.dp)
     val isBottomBarShowing = mainScreenVisible && !isTablet && (if (bottomBarVisiblePx >= 0f) with(density) { bottomBarVisiblePx.toDp() } > 36.dp else true)
     val targetBottomGap = when {
-        mainScreenVisible && (expanded || isTablet) -> 24.dp
+        isTablet -> maxOf(if (mainScreenVisible) 20.dp else 16.dp, navigationBarInset + 12.dp)
+        mainScreenVisible && expanded -> 24.dp
         mainScreenVisible -> {
             val barDp = if (bottomBarVisiblePx >= 0f) {
                 with(density) { bottomBarVisiblePx.toDp() }
@@ -668,7 +673,12 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
                 isDockedToBottomBar = isBottomBarShowing,
                 onClick = onClick,
                 onBarHeight = { barHeightPx = it },
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = safeBottomGap),
+                modifier = Modifier
+                    .align(if (isTablet) Alignment.BottomEnd else Alignment.BottomCenter)
+                    .padding(
+                        end = if (isTablet) navigationBarEndInset else 0.dp,
+                        bottom = safeBottomGap,
+                    ),
             )
         }
     }

@@ -51,7 +51,12 @@ class SettingsScreen(private val embedded: Boolean = false) : Screen {
 private fun SettingsScreenContent(embedded: Boolean = false) {
     val navigator = LocalAppNavigator.current
     val strings = cpStrings()
-    val entries = remember { settingsEntries() }
+    val isTablet = cp.player.app.ui.component.isTabletLayout()
+    val entries = remember(isTablet) {
+        settingsEntries().let { list ->
+            if (isTablet) list.filterNot { it.id == "navigation" } else list
+        }
+    }
     var searchQuery by remember { mutableStateOf("") }
     var targetRequestKey by remember { mutableStateOf(0L) }
     var selectedId by remember { mutableStateOf(entries.firstOrNull()?.id) }

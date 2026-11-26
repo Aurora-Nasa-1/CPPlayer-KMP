@@ -170,9 +170,12 @@ class PlaylistDetailScreen(
 ) : Screen {
     @Composable
     override fun Content() {
+        val model = rememberScreenModel {
+            PlaylistDetailScreenModel().apply { primeFromCache(playlist) }
+        }
         PlaylistDetailContent(
             playlist = playlist,
-            model = rememberScreenModel { PlaylistDetailScreenModel() },
+            model = model,
             embedded = embedded,
             onEmbeddedBack = onEmbeddedBack,
         )
@@ -232,6 +235,9 @@ fun PlaylistDetailContent(
 
     // 首页生成的虚拟歌单（每日推荐 / 相似歌曲 / 心动模式）id 为负数，服务端并不存在，
     // 曲目已随导航传入，必须跳过远端加载，否则接口 404 会让详情页只剩空白。
+    if (!isLocalPlaylist && !loadingOverride) {
+        remember(playlist.resourceId) { model.primeFromCache(playlist) }
+    }
     LaunchedEffect(playlist.resourceId, isLocalPlaylist) {
         if (isLocalPlaylist) model.loadLocal(playlist, initialOverrideTracks.orEmpty(), loadingOverride)
         else model.load(playlist, s)
@@ -1057,25 +1063,24 @@ private fun NarrowLayout(
                             color = cpNestedSurface(),
                             shadowElevation = if (coverFraction > 0.01f) (2 * coverFraction).dp else 0.dp,
                         ) {
-                            if (!summary.coverUrl.isNullOrBlank()) {
-                                AsyncImage(
-                                    model = rememberCoverImageRequest(
-                                        summary.coverUrl,
-                                        targetSizeDp = 56.dp,
-                                        placeholderBucketPx = 256,
-                                    ),
-                                    contentDescription = summary.name,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                        .graphicsLayer { alpha = if (hideCover) 0f else 1f },
-                                )
-                            } else {
+                            Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (hideCover) 0f else 1f }) {
                                 CpCoverPlaceholder(
-                                    modifier = Modifier.fillMaxSize()
-                                        .graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                                    modifier = Modifier.fillMaxSize(),
                                     corner = 12.dp,
                                     animated = false,
                                 )
+                                if (!summary.coverUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = rememberCoverImageRequest(
+                                            summary.coverUrl,
+                                            targetSizeDp = 56.dp,
+                                            placeholderBucketPx = 256,
+                                        ),
+                                        contentDescription = summary.name,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
                             }
                         }
                     }
@@ -1320,25 +1325,24 @@ private fun WideLayout(
                         shadowElevation = 8.dp,
                     ) {
                         val hideCover = CoverFlight.isFlyingTo(CoverFlight.TARGET_PLAYLIST_HEADER)
-                        if (!summary.coverUrl.isNullOrBlank()) {
-                            AsyncImage(
-                                model = rememberCoverImageRequest(
-                                    summary.coverUrl,
-                                    targetSizeDp = coverSize,
-                                    placeholderBucketPx = 256,
-                                ),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                                    .graphicsLayer { alpha = if (hideCover) 0f else 1f },
-                            )
-                        } else {
+                        Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (hideCover) 0f else 1f }) {
                             CpCoverPlaceholder(
-                                modifier = Modifier.fillMaxSize()
-                                    .graphicsLayer { alpha = if (hideCover) 0f else 1f },
+                                modifier = Modifier.fillMaxSize(),
                                 corner = 28.dp,
-                                animated = true,
+                                animated = false,
                             )
+                            if (!summary.coverUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = rememberCoverImageRequest(
+                                        summary.coverUrl,
+                                        targetSizeDp = coverSize,
+                                        placeholderBucketPx = 256,
+                                    ),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
                         }
                     }
 

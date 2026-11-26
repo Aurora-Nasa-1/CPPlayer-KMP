@@ -48,7 +48,13 @@ class LibraryPresenter(
     private var refreshGen = 0
 
     init {
-        refresh()
+        val cached = runCatching { AppModel.musicRepository.peekCurrentUserPlaylists() }.getOrNull()
+        if (cached != null) {
+            _state.value = _state.value.copy(playlists = cached.value, loading = false, error = null)
+        }
+        if (cached == null || !cached.isFresh) {
+            refresh()
+        }
         scope.launch {
             AppModel.userProfileFlow.drop(1).collect { refresh() }
         }

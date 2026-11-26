@@ -59,11 +59,11 @@ Core 后端源码层 (ProviderHost + ScopedProviderRuntime)
 
 ### 3.1 双端 32MB 内存上限与双层磁盘目录
 - **桌面端**（`app/src/desktopMain/kotlin/cp/player/app/platform/DesktopImageCacheTuning.kt`）：
-  - Coil `MemoryCache` 默认 **32MB**（支持 `-Dcp.coil.cacheMb=16..128` 覆盖）；
+  - Coil `MemoryCache` 默认 **32MB**（支持 `-Dcp.coil.cacheMb=16..128` 覆盖），开启 `crossfade(160)`（内存缓存命中自动 0ms 直出），最小化到托盘仅裁剪至热点预算而不清空，保证恢复窗口零闪烁；
   - 原始磁盘缓存：`~/.cpplayer/cache/images/original`（256MB）；
-  - 裁剪磁盘缓存：`~/.cpplayer/cache/images/cropped`（128MB，`DesktopCroppedThumbDiskCache`）。
+  - 裁剪磁盘缓存：`~/.cpplayer/cache/images/cropped`（128MB，`DesktopCroppedThumbDiskCache`，WebP 编码与落盘全异步后置在显示之后）。
 - **Android**（`app/src/androidMain/kotlin/cp/player/app/platform/AndroidImageCacheTuning.android.kt`）：
-  - Coil `MemoryCache` 收紧为 **32MB**，开启 `.allowRgb565(true)`，DiskCache 上限 256MB。
+  - Coil `MemoryCache` 收紧为 **32MB**，开启 `.crossfade(160)` 与 `.allowRgb565(true)`，DiskCache 上限 256MB。
 
 ### 3.2 规范分桶、稳定资产键与多档尺寸解析
 位置：`core/src/commonMain/kotlin/cp/player/core/provider/ProviderImageResizeRule.kt`、`app/src/commonMain/kotlin/cp/player/app/ui/util/CoverUrls.kt`、`app/src/commonMain/kotlin/cp/player/app/ui/util/CpImageRequest.kt`

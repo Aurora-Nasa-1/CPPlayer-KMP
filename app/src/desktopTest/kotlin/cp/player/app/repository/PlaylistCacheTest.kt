@@ -258,4 +258,71 @@ class PlaylistCacheTest {
         assertEquals(listOf(track), reboundRepository.getPlaylistTracks("list-1", 300, 0).getOrNull()?.tracks)
         assertEquals(2, pageCalls, "a replaced UnifiedMusicSource must not reuse the old source cache")
     }
+
+    @Test
+    fun `swr cache peek returns fresh and stale snapshots synchronously without refetch`() = runBlocking {
+        var now = 0L
+        val cache = SwrCache<String>(freshTtlMs = 50, staleTtlMs = 200, nowMs = { now })
+        assertEquals(null, cache.peek("k"))
+        cache.get("k", this) { BackendResult.Success("v1") }
+
+        val fresh = cache.peek("k")
+        assertEquals("v1", fresh?.value)
+        assertEquals(true, fresh?.isFresh)
+
+        now = 60L
+        val stale = cache.peek("k")
+        assertEquals("v1", stale?.value)
+        assertEquals(false, stale?.isFresh)
+        assertEquals(null, cache.peek("k", allowStale = false))
+
+        now = 250L
+        assertEquals(null, cache.peek("k"))
+    }
+
+    @Test
+    fun `repository peekPlaylistDetail peekPlaylistTracks and peekAlbumDetail hit synchronously after load`() = runBlocking {
+        val track = TrackSummary("track-1", "Track", "Artist", null, null, 10_000L)
+        val detail = PlaylistDetail(
+            summary = PlaylistSummary(1L, "List", null, 1, "Owner", "list-peek"),
+            tracks = listOf(track),
+            description = "Desc",
+        )
+        val album = cp.player.core.music.AlbumDetail(
+            id = 2L, name = "Album", coverUrl = null, artistName = "Artist", artistId = 3L,
+            publishTimeMs = null, company = null, description = null, tracks = listOf(track),
+            resourceId = "album-peek", artistResourceId = "artist-3",
+        )
+        var albumCalls = 0
+        @Suppress("UNCHECKED_CAST")
+        val source = java.lang.reflect.Proxy.newProxyInstance(
+            cp.player.core.music.UnifiedMusicSource::class.java.classLoader,
+            arrayOf(cp.player.core.music.UnifiedMusicSource::class.java),
+        ) { _, method, _ ->
+            when (method.name) {
+                "getPlaylistDetail" -> BackendResult.Success(detail)
+                "getPlaylistTracks" -> BackendResult.Success(CatalogPage(listOf(track), 1, false))
+                "getAlbumDetail" -> {
+                    albumCalls++
+                    BackendResult.Success(album)
+                }
+                else -> BackendResult.Unsupported("unused")
+            }
+        } as cp.player.core.music.UnifiedMusicSource
+        val repository = MusicRepository(source)
+
+        assertEquals(null, repository.peekPlaylistDetail("list-peek"))
+        assertEquals(null, repository.peekPlaylistTracks("list-peek", 300, 0))
+        assertEquals(null, repository.peekAlbumDetail("album-peek"))
+
+        repository.getPlaylistDetail("list-peek")
+        repository.getPlaylistTracks("list-peek", 300, 0)
+        repository.getAlbumDetail("album-peek")
+        repository.getAlbumDetail("album-peek")
+
+        assertEquals(1, albumCalls)
+        assertEquals("List", repository.peekPlaylistDetail("list-peek")?.value?.summary?.name)
+        assertEquals(listOf(track), repository.peekPlaylistTracks("list-peek", 300, 0)?.value?.tracks)
+        assertEquals("Album", repository.peekAlbumDetail("album-peek")?.value?.name)
+    }
 }

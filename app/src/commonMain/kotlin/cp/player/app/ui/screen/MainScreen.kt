@@ -2,11 +2,22 @@ package cp.player.app.ui.screen
 
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import cp.player.app.ui.component.CpText
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -131,6 +142,7 @@ import cp.player.app.ui.component.CpContextMenuItem
 import cp.player.app.ui.component.CpContextMenuSeparator
 import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.LazyScrollColumn
+import cp.player.app.ui.component.cpPressScale
 import cp.player.app.ui.component.observeBottomBarDrag
 import cp.player.app.ui.component.playlistShareText
 import cp.player.app.ui.util.rememberCoverImageRequest
@@ -181,6 +193,14 @@ private val LIBRARY_TAB =
 private val LocalDesktopTabs = compositionLocalOf<List<TabItem>> { emptyList() }
 private val LocalDesktopTabKey = compositionLocalOf { TAB_HOME }
 private val LocalDesktopVisitedTabs = compositionLocalOf<List<String>> { listOf(TAB_HOME) }
+private val LocalTabletFloatingOverlay = compositionLocalOf<TabletFloatingOverlayState?> { null }
+
+private data class TabletFloatingOverlayState(
+    val avatarUrl: String?,
+    val showMessagesAction: Boolean,
+    val onOpenAccount: () -> Unit,
+    val onOpenMessages: () -> Unit,
+)
 
 /** Responsive application shell for the four primary destinations. */
 class MainScreen : Screen {
@@ -194,15 +214,19 @@ class MainScreen : Screen {
         // 滚动快照和 ScreenModel 全部错配到另一页上。
         val activeProvider by AppModel.activeProviderFlow.collectAsState()
         val socialNavigation = socialNavigationState(activeProvider)
+        val isTablet = cp.player.app.ui.component.isTabletLayout()
+        val tabletDynamicAvailable = socialNavigation.feed == cp.player.app.presentation.SocialAvailability.Available
+        val tabletMessagesAvailable = socialNavigation.inbox == cp.player.app.presentation.SocialAvailability.Available
         val dynamicAvailable = socialNavigation.dynamicAvailable
         val dynamicAsTab = socialNavigation.dynamicAsTab
         val searchAsTab = !dynamicAsTab
         val showMessages = socialNavigation.showMessages
-        val tabs = remember(dynamicAsTab) {
-            if (dynamicAsTab) {
-                listOf(HOME_TAB, DYNAMIC_TAB, LIBRARY_TAB)
-            } else {
-                listOf(HOME_TAB, SEARCH_TAB, LIBRARY_TAB)
+        val tabs = remember(isTablet, tabletDynamicAvailable, dynamicAsTab) {
+            when {
+                isTablet && tabletDynamicAvailable -> listOf(HOME_TAB, DYNAMIC_TAB, LIBRARY_TAB)
+                isTablet -> listOf(HOME_TAB, LIBRARY_TAB)
+                dynamicAsTab -> listOf(HOME_TAB, DYNAMIC_TAB, LIBRARY_TAB)
+                else -> listOf(HOME_TAB, SEARCH_TAB, LIBRARY_TAB)
             }
         }
         val selectedTabKeyState = rememberSaveable { mutableStateOf(TAB_HOME) }
@@ -277,13 +301,14 @@ class MainScreen : Screen {
         // 与窄屏 `ChatScreen` 同一条规则（那条在 `App.kt` 的全局宿主里判
         // `navigator.lastItem`，桌面宽屏的对话在面板右栏里，只有这里知道）。
         var messagesChatOpen by remember { mutableStateOf(false) }
+        val contentHasChat = contentNavigator?.lastItem is ChatScreen
         // 面板一旦切走就**立刻**复位「对话已打开」信号（小播放器让位）——
         // MessagesPane 自己的 DisposableEffect 要等 AnimatedContent 淡出（160ms）才 onDispose，
         // 那期间小播放器缺席、表现为收起消息面板后的一次闪动。这里在 desktopPane 变化的同一帧复位。
-        androidx.compose.runtime.LaunchedEffect(desktopPane) {
+        androidx.compose.runtime.LaunchedEffect(desktopPane, contentHasChat) {
             if (desktopPane != DesktopPane.Messages) {
                 messagesChatOpen = false
-                cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat = false
+                cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat = contentHasChat
             }
         }
         androidx.compose.runtime.DisposableEffect(Unit) {
@@ -306,23 +331,52 @@ class MainScreen : Screen {
         // 搜索 / 动态不一定占 tab：设置里让动态替代搜索时，搜索移到顶栏动作位；
         // 没启用替代时，动态也可以从顶栏 / 窗口标题栏直接打开。两者都走同一套落点。
         val openSearch: () -> Unit = {
-            if (searchAsTab) {
+            if (!isTablet && searchAsTab) {
                 selectTab(TAB_SEARCH)
             } else {
                 desktopPane = DesktopPane.Tabs
                 val nav = contentNavigator
-                nav?.popUntilRoot()
-                (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Search())
+                if (nav?.lastItem !is SearchScreen) {
+                    nav?.popUntilRoot()
+                    (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Search())
+                }
             }
         }
         val openDynamic: () -> Unit = {
-            if (dynamicAsTab) {
-                selectTab(TAB_DYNAMIC)
+            if (isTablet || dynamicAsTab) {
+                if (TAB_DYNAMIC in tabs.map { it.key }) selectTab(TAB_DYNAMIC)
             } else {
                 desktopPane = DesktopPane.Tabs
                 val nav = contentNavigator
                 nav?.popUntilRoot()
                 (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Dynamic())
+            }
+        }
+        val openTabletSettings: () -> Unit = {
+            desktopPane = DesktopPane.Tabs
+            val nav = contentNavigator
+            if (nav?.lastItem !is SettingsScreen) {
+                nav?.popUntilRoot()
+                (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Settings)
+            }
+        }
+        val openTabletAccount: () -> Unit = {
+            desktopPane = DesktopPane.Tabs
+            val nav = contentNavigator
+            if (nav?.lastItem !is AccountScreen) {
+                nav?.popUntilRoot()
+                (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Account)
+            }
+        }
+        val openTabletMessages: () -> Unit = {
+            if (tabletMessagesAvailable) {
+                desktopPane = DesktopPane.Tabs
+                val nav = contentNavigator
+                if (nav?.lastItem !is MessagesScreen) {
+                    nav?.popUntilRoot()
+                    (contentAppNavigator ?: rootAppNavigator).push(AppRoute.Messages)
+                }
+                AppModel.refreshUnreadMessages()
             }
         }
         val closeDesktopOverlay = { desktopPane = DesktopPane.Tabs }
@@ -383,10 +437,10 @@ class MainScreen : Screen {
         // 要留给 SearchScreen 喂给它自己的 ScreenModel；搜索被动态替代时，则把 SearchScreen
         // 作为内容区路由页推出去，同样由它消费关键词。两个消费者会互相抢，见 DesktopShell 的说明。
         val pendingSearchQuery = cp.player.app.ui.util.DesktopShell.pendingSearchQuery
-        androidx.compose.runtime.LaunchedEffect(pendingSearchQuery, searchAsTab) {
+        androidx.compose.runtime.LaunchedEffect(pendingSearchQuery, searchAsTab, isTablet) {
             if (!pendingSearchQuery.isNullOrBlank()) {
                 desktopPane = DesktopPane.Tabs
-                if (searchAsTab) {
+                if (!isTablet && searchAsTab) {
                     // 与 selectTab 同理：先把内嵌详情页弹回栈根，否则搜索 tab 被压在栈下。
                     contentNavigator?.popUntilRoot()
                     if (TAB_SEARCH !in visitedTabs) visitedTabs.add(TAB_SEARCH)
@@ -648,44 +702,15 @@ class MainScreen : Screen {
                                     LocalDesktopTabs provides tabs,
                                     LocalDesktopTabKey provides selectedTabKey,
                                     LocalDesktopVisitedTabs provides visitedTabsSnapshot.value,
+                                    LocalTabletFloatingOverlay provides null,
                                 ) {
-                                    Navigator(DesktopContentRootScreen) { nav ->
-                                        // 捕获内嵌 Navigator 引用（见上）—— 供返回链 / 指令消费 /
-                                        // pageCanGoBack 发布使用。
-                                        //
-                                        // ⚠️ 必须用 DisposableEffect，不能是 SideEffect：内嵌 Navigator
-                                        // 只在 **expanded（≥840dp）** 分支装配，窗口拖窄到 <840dp 时
-                                        // 整支被 dispose，而 SideEffect 不会把引用置回 null ⇒ 悬空到
-                                        // 已销毁的栈。此后窄分支点底栏切 tab（selectTab 的 popUntilRoot）
-                                        // 或点标题栏返回，都在操作一个已 dispose 的 Navigator（幽灵返回键 /
-                                        // 最坏抛异常）。onDispose 只在仍是自己时置回，避免与后来者互踩。
-                                        androidx.compose.runtime.DisposableEffect(nav) {
-                                            contentNavigator = nav
-                                            onDispose { if (contentNavigator === nav) contentNavigator = null }
-                                        }
-                                        cp.player.app.ui.navigation.ProvideAppNavigator(
-                                            navigator = nav,
-                                            rootNavigator = cp.player.app.ui.util.LocalRootNavigator.current ?: nav,
-                                        ) {
-                                        // 转场规格只在组合期取一次：`transition` 是普通 lambda，
-                                        // 里面不能调用 @Composable 的 CpMotion 取值函数。
-                                        val pageTransitions = cp.player.app.ui.theme.rememberCpPageTransitions()
-                                        ScreenTransition(
-                                            navigator = nav,
-                                            transition = {
-                                                // 与根 Navigator（App.kt）同一套动效约定：歌单详情
-                                                // fade（配合封面飞行器），其余按 Push/Pop 方向 slide。
-                                                if (targetState is PlaylistDetailScreen ||
-                                                    targetState is HomeGeneratedPlaylistScreen
-                                                ) {
-                                                    fadeIn(tween(300)) togetherWith fadeOut(tween(220))
-                                                } else {
-                                                    pageTransitions.sharedAxisX(isPop = nav.lastEvent == StackEvent.Pop)
-                                                }
-                                            },
-                                        )
-                                        }
-                                    }
+                                    EmbeddedContentNavigator(
+                                        onNavigatorCreated = { contentNavigator = it },
+                                        onNavigatorDisposed = { nav ->
+                                            if (contentNavigator === nav) contentNavigator = null
+                                        },
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
                                 }
                                 AnimatedContent(
                                     targetState = desktopPane,
@@ -751,45 +776,78 @@ class MainScreen : Screen {
                         }
                     }
                 } else if (medium || tabletExpanded) {
+                    val railProfile by AppModel.userProfileFlow.collectAsState()
+                    val tabletOverlay = if (isTablet) {
+                        TabletFloatingOverlayState(
+                            avatarUrl = railProfile?.avatarUrl,
+                            showMessagesAction = tabletMessagesAvailable,
+                            onOpenAccount = openTabletAccount,
+                            onOpenMessages = openTabletMessages,
+                        )
+                    } else {
+                        null
+                    }
                     Row(Modifier.fillMaxSize()) {
                         AppNavigationRail(
                             tabs = tabs,
                             selectedTabKey = selectedTabKey,
                             onSelect = selectTab,
+                            showTopActions = !cp.player.app.ui.component.LocalWindowChromeActive.current,
+                            onOpenSearch = openSearch,
+                            onOpenSettings = openTabletSettings,
                         )
                         androidx.compose.material3.Scaffold(
                             modifier = Modifier
                                 .weight(1f)
-                                .nestedScroll(scrollBehavior.nestedScrollConnection),
+                                .then(
+                                    if (!isTablet) Modifier.nestedScroll(scrollBehavior.nestedScrollConnection)
+                                    else Modifier,
+                                ),
                             topBar = {
-                                AppTopBar(
-                                    title = tabs.firstOrNull { it.key == selectedTabKey }
-                                        ?.labelOf(s.navigation).orEmpty(),
-                                    navigator = navigator,
-                                    scrollBehavior = scrollBehavior,
-                                    onOpenSettings = { rootAppNavigator.push(AppRoute.Settings) },
-                                    onOpenAccount = { rootAppNavigator.push(AppRoute.Account) },
-                                    onOpenMessages = {
-                                        if (showMessages) {
-                                            rootAppNavigator.push(AppRoute.Messages)
-                                            AppModel.refreshUnreadMessages()
-                                        }
-                                    },
-                                    showMessagesAction = showMessages,
-                                    showSearchAction = !searchAsTab,
-                                    onOpenSearch = openSearch,
-                                    showDynamicAction = dynamicAvailable && !dynamicAsTab,
-                                    onOpenDynamic = openDynamic,
-                                )
+                                if (!isTablet) {
+                                    AppTopBar(
+                                        title = tabs.firstOrNull { it.key == selectedTabKey }
+                                            ?.labelOf(s.navigation).orEmpty(),
+                                        navigator = navigator,
+                                        scrollBehavior = scrollBehavior,
+                                        onOpenSettings = { rootAppNavigator.push(AppRoute.Settings) },
+                                        onOpenAccount = { rootAppNavigator.push(AppRoute.Account) },
+                                        onOpenMessages = {
+                                            if (showMessages) {
+                                                rootAppNavigator.push(AppRoute.Messages)
+                                                AppModel.refreshUnreadMessages()
+                                            }
+                                        },
+                                        showMessagesAction = showMessages,
+                                        showSearchAction = !searchAsTab,
+                                        onOpenSearch = openSearch,
+                                        showDynamicAction = dynamicAvailable && !dynamicAsTab,
+                                        onOpenDynamic = openDynamic,
+                                        hide = contentNavSize > 1,
+                                    )
+                                }
+                            },
+                            contentWindowInsets = if (isTablet) {
+                                WindowInsets(0, 0, 0, 0)
+                            } else {
+                                androidx.compose.material3.ScaffoldDefaults.contentWindowInsets
                             },
                             containerColor = Color.Transparent,
                         ) { padding ->
-                            TabContent(
-                                tabs,
-                                visitedTabs,
-                                selectedTabKey,
-                                Modifier.fillMaxSize().padding(padding),
-                            )
+                            CompositionLocalProvider(
+                                LocalDesktopTabs provides tabs,
+                                LocalDesktopTabKey provides selectedTabKey,
+                                LocalDesktopVisitedTabs provides visitedTabsSnapshot.value,
+                                LocalTabletFloatingOverlay provides tabletOverlay,
+                            ) {
+                                EmbeddedContentNavigator(
+                                    onNavigatorCreated = { contentNavigator = it },
+                                    onNavigatorDisposed = { nav ->
+                                        if (contentNavigator === nav) contentNavigator = null
+                                    },
+                                    modifier = Modifier.fillMaxSize().padding(padding),
+                                )
+                            }
                         }
                     }
                 } else {
@@ -1309,42 +1367,119 @@ internal fun AppNavigationRail(
     tabs: List<TabItem>,
     selectedTabKey: String,
     onSelect: (String) -> Unit,
+    showTopActions: Boolean = !cp.player.app.ui.component.LocalWindowChromeActive.current,
+    onOpenSearch: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     val s = cpStrings()
+    val density = LocalDensity.current
     NavigationRail(
         containerColor = cp.player.app.ui.theme.cpPageSurface(),
     ) {
         val haptics = cp.player.app.ui.feedback.LocalCpHaptics.current
-        tabs.forEach { tab ->
-            val selected = selectedTabKey == tab.key
-            val label = tab.labelOf(s.navigation)
-            NavigationRailItem(
-                selected = selected,
-                onClick = {
-                    if (!selected) haptics.perform(cp.player.app.ui.feedback.CpHaptic.Tick)
-                    onSelect(tab.key)
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val viewportHeight = maxHeight
+            Layout(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                content = {
+                    if (showTopActions) {
+                        Column(
+                            modifier = Modifier.padding(top = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            // M3 Expressive 导航栏左上角方形圆角搜索按钮（Rail FAB 语义）
+                            Surface(
+                                onClick = onOpenSearch,
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .cpPressScale(),
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                shadowElevation = 2.dp,
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Filled.Search,
+                                        contentDescription = s.navigation.tabSearch,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+                            }
+                            cp.player.app.ui.component.CpTopBarActionButton(
+                                cp.player.app.ui.component.TopBarAction(
+                                    icon = {
+                                        Icon(
+                                            Icons.Filled.Settings,
+                                            contentDescription = s.navigation.settings,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    },
+                                    onClick = onOpenSettings,
+                                ),
+                            )
+                        }
+                    } else {
+                        Box(Modifier.size(0.dp))
+                    }
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        tabs.forEach { tab ->
+                            val selected = selectedTabKey == tab.key
+                            val label = tab.labelOf(s.navigation)
+                            NavigationRailItem(
+                                selected = selected,
+                                onClick = {
+                                    if (!selected) haptics.perform(cp.player.app.ui.feedback.CpHaptic.Tick)
+                                    onSelect(tab.key)
+                                },
+                                icon = {
+                                    Icon(
+                                        if (selected) tab.selectedIcon else tab.unselectedIcon,
+                                        contentDescription = label,
+                                    )
+                                },
+                                label = {
+                                    CpText(
+                                        label,
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                    )
+                                },
+                                alwaysShowLabel = true,
+                                colors = NavigationRailItemDefaults.colors(
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                            )
+                        }
+                    }
                 },
-                icon = {
-                    Icon(
-                        if (selected) tab.selectedIcon else tab.unselectedIcon,
-                        contentDescription = label,
-                    )
-                },
-                label = {
-                    CpText(
-                        label,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    )
-                },
-                alwaysShowLabel = true,
-                colors = NavigationRailItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.primary,
-                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-            )
+            ) { measurables, constraints ->
+                val itemConstraints = constraints.copy(minWidth = 0, minHeight = 0)
+                val topPlaceable = measurables[0].measure(itemConstraints)
+                val navPlaceable = measurables[1].measure(itemConstraints)
+                val viewportPx = with(density) { viewportHeight.roundToPx() }
+                val minGapPx = with(density) { 12.dp.roundToPx() }
+                val minNavY = if (topPlaceable.height > 0) topPlaceable.height + minGapPx else 0
+                val idealNavY = (viewportPx - navPlaceable.height) / 2
+                val navY = maxOf(idealNavY, minNavY)
+                val layoutHeight = maxOf(viewportPx, navY + navPlaceable.height)
+                val width = maxOf(constraints.minWidth, topPlaceable.width, navPlaceable.width)
+                layout(width, layoutHeight) {
+                    if (topPlaceable.height > 0) {
+                        topPlaceable.placeRelative((width - topPlaceable.width) / 2, 0)
+                    }
+                    navPlaceable.placeRelative((width - navPlaceable.width) / 2, navY)
+                }
+            }
         }
     }
 }
@@ -1932,6 +2067,101 @@ private val DesktopPaneSaver: Saver<DesktopPane, Any> = run {
     )
 }
 
+@Composable
+private fun EmbeddedContentNavigator(
+    onNavigatorCreated: (Navigator) -> Unit,
+    onNavigatorDisposed: (Navigator) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier) {
+        Navigator(DesktopContentRootScreen) { nav ->
+            // 捕获内嵌 Navigator 引用 —— 供返回链 / 指令消费 / pageCanGoBack 发布使用。
+            // 必须用 DisposableEffect 并在仍是自己时置回，避免窗口尺寸切换时悬空到已 dispose 的栈。
+            androidx.compose.runtime.DisposableEffect(nav) {
+                onNavigatorCreated(nav)
+                onDispose { onNavigatorDisposed(nav) }
+            }
+            cp.player.app.ui.navigation.ProvideAppNavigator(
+                navigator = nav,
+                rootNavigator = cp.player.app.ui.util.LocalRootNavigator.current ?: nav,
+            ) {
+                val pageTransitions = cp.player.app.ui.theme.rememberCpPageTransitions()
+                ScreenTransition(
+                    navigator = nav,
+                    transition = {
+                        if (targetState is PlaylistDetailScreen ||
+                            targetState is HomeGeneratedPlaylistScreen
+                        ) {
+                            fadeIn(tween(300)) togetherWith fadeOut(tween(220))
+                        } else {
+                            pageTransitions.sharedAxisX(isPop = nav.lastEvent == StackEvent.Pop)
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TabletFloatingCornerCluster(
+    state: TabletFloatingOverlayState,
+    modifier: Modifier = Modifier,
+) {
+    val s = cpStrings()
+    val isDark = LocalIsDarkTheme.current
+    Surface(
+        modifier = modifier,
+        shape = CircleShape,
+        color = cp.player.app.ui.theme.cpElevatedSurface(),
+        tonalElevation = 0.dp,
+        shadowElevation = if (isDark) 6.dp else 4.dp,
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.18f else 0.24f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            TabletFloatingClusterButton(onClick = state.onOpenAccount) {
+                AccountEntryContent(state.avatarUrl, s.navigation.account)
+            }
+            if (state.showMessagesAction) {
+                TabletFloatingClusterButton(onClick = state.onOpenMessages) {
+                    Icon(
+                        Icons.AutoMirrored.Outlined.Message,
+                        contentDescription = s.navigation.messages,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TabletFloatingClusterButton(
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .size(38.dp)
+            .cpPressScale(),
+        shape = CircleShape,
+        color = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            content()
+        }
+    }
+}
+
 /**
  * 内容区内嵌 Navigator 的**根页**：三个 tab 的宿主（[TabContent]）。
  *
@@ -1947,6 +2177,32 @@ private data object DesktopContentRootScreen : Screen {
         val tabs = LocalDesktopTabs.current
         val selectedTabKey = LocalDesktopTabKey.current
         val visitedTabs = LocalDesktopVisitedTabs.current
-        TabContent(tabs, visitedTabs, selectedTabKey, Modifier.fillMaxSize())
+        val tabletOverlay = LocalTabletFloatingOverlay.current
+        if (tabletOverlay != null) {
+            Box(Modifier.fillMaxSize()) {
+                TabContent(
+                    tabs = tabs,
+                    visitedTabs = visitedTabs,
+                    selectedTabKey = selectedTabKey,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(
+                            WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.End),
+                        )
+                        .padding(top = 52.dp),
+                )
+                TabletFloatingCornerCluster(
+                    state = tabletOverlay,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .windowInsetsPadding(
+                            WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.End),
+                        )
+                        .padding(top = 8.dp, end = 20.dp),
+                )
+            }
+        } else {
+            TabContent(tabs, visitedTabs, selectedTabKey, Modifier.fillMaxSize())
+        }
     }
 }

@@ -1575,22 +1575,14 @@ internal fun Artwork(
     modifier: Modifier,
     targetSize: Dp = 420.dp,
 ) {
-    if (!url.isNullOrBlank()) {
-        val targetPx = with(LocalDensity.current) { targetSize.toPx() }
-            .toInt()
-            .coerceIn(160, 1024)
-        AsyncImage(
-            model = rememberCoverImageRequest(url, targetPx = targetPx),
-            contentDescription = null,
-            modifier = modifier,
-            contentScale = ContentScale.Crop,
-        )
-    } else {
-        // 与移动端 PlayerScreen 统一走静态占位块，避免常驻 MorphingShape 引起死循环渲染
-        CpCoverPlaceholder(
-            modifier = modifier,
-            corner = 24.dp,
-            animated = false,
-        )
-    }
+    val targetPx = with(LocalDensity.current) { targetSize.toPx() }
+        .toInt()
+        .coerceIn(160, 1024)
+    cp.player.app.ui.component.CpArtworkImage(
+        request = rememberCoverImageRequest(url, targetPx = targetPx, placeholderBucketPx = 256),
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        placeholderCorner = 24.dp,
+        modifier = modifier,
+    )
 }
