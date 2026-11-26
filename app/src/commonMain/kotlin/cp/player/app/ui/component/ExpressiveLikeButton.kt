@@ -2,6 +2,7 @@ package cp.player.app.ui.component
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -77,7 +78,7 @@ fun ExpressiveLikeButton(
             imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
             contentDescription = if (isFavorite) s.downloads.unfavorite else s.downloads.favorite,
             tint = tint,
-            modifier = Modifier.scale(scale),
+            modifier = Modifier.size(CpSpacing.playerFavoriteIcon).scale(scale),
         )
     }
 }

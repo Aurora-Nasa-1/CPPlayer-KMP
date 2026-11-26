@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import cp.player.app.AppModel
+import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.BackHandler
 import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.feedback.CpHaptic
@@ -86,7 +87,7 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
 
     val anySheetOpen = showQueue || showComments || more.showMoreMenu || more.showSimilarSongs ||
         more.showAddToPlaylist || more.showSleepTimer || more.showSongInfo || more.showDevicePicker || more.showLyricOffset
-    val isImmersive = lyricsExpanded && config.lyricsImmersiveEnabled && isImmersiveActive && !anySheetOpen
+    val isImmersive = isAndroidPlatform() && lyricsExpanded && config.lyricsImmersiveEnabled && isImmersiveActive && !anySheetOpen
 
     BackHandler(enabled = isImmersive) {
         isImmersiveActive = false
@@ -134,7 +135,7 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
     }
 
     val currentTrack = state.currentTrack
-    val containerSharedModifier = if (allowSharedBounds) {
+    val containerSharedModifier = if (allowSharedBounds && LocalPlayerShareContainer.current) {
         Modifier.sharedBounds(
             sharedContentState = rememberSharedContentState("player-container"),
             animatedVisibilityScope = animatedVisibilityScope,
@@ -269,10 +270,6 @@ fun SharedTransitionScope.ModernPlayerScreenContent(
             onMove = onMoveQueue,
             onClear = onClearQueue,
             onClose = { showQueue = false },
-            onOpenSimilar = {
-                showQueue = false
-                more.showSimilarSongs = true
-            },
             shuffleEnabled = state.shuffleEnabled,
             repeatMode = state.repeatMode,
             onShuffle = onShuffle,

@@ -7,6 +7,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -17,12 +18,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.AccessAlarm
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Cast
@@ -30,19 +28,15 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lyrics
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.filled.AvTimer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import cp.player.app.ui.theme.cpCardSurface
 import cp.player.app.ui.theme.cpSheetInnerSurface
 import cp.player.app.ui.theme.cpSheetSurface
 import androidx.compose.material3.Surface
@@ -61,15 +55,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.ui.a2ui.A2UI_ENTRY_ENABLED
 import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.shareText
 import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.util.UiEvents
+import cp.player.app.ui.util.LyricOffsetManager
 import cp.player.app.ui.util.formatTimeMs
 import cp.player.app.ui.util.rememberCoverImageRequest
 import cp.player.core.music.CPMediaId
@@ -83,55 +78,45 @@ import kotlinx.coroutines.launch
 fun PlayerMoreBottomSheet(
     track: TrackSummary,
     isDownloaded: Boolean,
-    formatInfo: AudioFormatInfo?,
-    lyricsInfo: LyricsInfo?,
     sleepAfterTrack: Boolean,
     sleepTimerRemainingMs: Long?,
     onDismiss: () -> Unit,
-    onOpenSimilar: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onDownload: () -> Unit,
     onSleepTimer: () -> Unit,
     onShare: () -> Unit,
     onShowInfo: () -> Unit,
+    onOpenSimilar: () -> Unit,
+    onOpenLyricOffset: () -> Unit,
     onDislike: () -> Unit,
     onListenTogether: () -> Unit,
     onHandoff: () -> Unit,
-    onLyricOffset: () -> Unit = {},
     onOpenDjDesk: () -> Unit = {},
     /** 当前全局音质档位（落盘 level，不是展示名）—— 由 [PlayerMoreSheets] 从 AppModel 传入。 */
     qualityLevel: String = "",
-    /** 当前曲目实际加载/播放音质档位（由 [PlayerMoreSheets] 从 PlaybackUiState 传入）。 */
-    trackQualityLevel: String = "",
-    /** 当前音源自定义音质文案（由 [PlayerMoreSheets] 从 PlaybackUiState 传入）。 */
-    sourceQualityLabel: String? = null,
     onSelectQuality: (String) -> Unit = {},
     immersiveLyrics: Boolean = false,
-    onToggleImmersiveLyrics: () -> Unit = {},
+    onToggleImmersiveLyrics: (() -> Unit)? = null,
     onOpenPlayerSettings: () -> Unit = {},
 ) {
     LegacyModalBottomSheet(onDismissRequest = onDismiss) {
         PlayerMoreContent(
             track = track,
             isDownloaded = isDownloaded,
-            formatInfo = formatInfo,
-            lyricsInfo = lyricsInfo,
             sleepAfterTrack = sleepAfterTrack,
             sleepTimerRemainingMs = sleepTimerRemainingMs,
             onDismiss = onDismiss,
-            onOpenSimilar = onOpenSimilar,
             onAddToPlaylist = onAddToPlaylist,
             onDownload = onDownload,
             onSleepTimer = onSleepTimer,
             onShare = onShare,
             onShowInfo = onShowInfo,
+            onOpenSimilar = onOpenSimilar,
+            onOpenLyricOffset = onOpenLyricOffset,
             onDislike = onDislike,
             onListenTogether = onListenTogether,
             onHandoff = onHandoff,
-            onLyricOffset = onLyricOffset,
             qualityLevel = qualityLevel,
-            trackQualityLevel = trackQualityLevel,
-            sourceQualityLabel = sourceQualityLabel,
             onSelectQuality = onSelectQuality,
             immersiveLyrics = immersiveLyrics,
             onToggleImmersiveLyrics = onToggleImmersiveLyrics,
@@ -152,33 +137,35 @@ fun PlayerMoreBottomSheet(
 fun PlayerMoreContent(
     track: TrackSummary,
     isDownloaded: Boolean,
-    formatInfo: AudioFormatInfo?,
-    lyricsInfo: LyricsInfo?,
     sleepAfterTrack: Boolean,
     sleepTimerRemainingMs: Long?,
     onDismiss: () -> Unit,
-    onOpenSimilar: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onDownload: () -> Unit,
     onSleepTimer: () -> Unit,
     onShare: () -> Unit,
     onShowInfo: () -> Unit,
+    onOpenSimilar: () -> Unit,
+    onOpenLyricOffset: () -> Unit,
     onDislike: () -> Unit,
     onListenTogether: () -> Unit,
     onHandoff: () -> Unit,
-    onLyricOffset: () -> Unit = {},
     onOpenDjDesk: () -> Unit = {},
     qualityLevel: String = "",
-    trackQualityLevel: String = "",
-    sourceQualityLabel: String? = null,
     onSelectQuality: (String) -> Unit = {},
     immersiveLyrics: Boolean = false,
-    onToggleImmersiveLyrics: () -> Unit = {},
+    onToggleImmersiveLyrics: (() -> Unit)? = null,
     onOpenPlayerSettings: () -> Unit = {},
     onClose: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val s = cpStrings()
+    val colors = MaterialTheme.colorScheme
+    val lyricOffset = LyricOffsetManager.getOffset(track.id)
+    val lyricOffsetLabel = if (lyricOffset == 0L) s.player.lyricOffset else {
+        val sign = if (lyricOffset > 0L) "+" else ""
+        s.player.lyricOffsetChipValue(s.player.lyricOffset, "$sign${lyricOffset / 1000f}s")
+    }
     Column(
         // 可滚动：加入「音质」卡片后这一屏在 640dp 级的手机上会顶到窗口底，
         // 而 ModalBottomSheet 不会自己给内容套滚动 —— 不加就是**底部被裁掉**，
@@ -197,7 +184,7 @@ fun PlayerMoreContent(
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Box(
-                    Modifier.size(76.dp).aspectRatio(1f).clip(RoundedCornerShape(20.dp))
+                    Modifier.size(76.dp).aspectRatio(1f).clip(MaterialTheme.shapes.large)
                         .background(cpSheetInnerSurface()),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -205,7 +192,7 @@ fun PlayerMoreContent(
                         AsyncImage(
                             model = rememberCoverImageRequest(track.coverUrl, targetPx = 256, placeholderBucketPx = 128),
                             contentDescription = null,
-                            modifier = Modifier.size(76.dp).clip(RoundedCornerShape(20.dp)),
+                            modifier = Modifier.size(76.dp).clip(MaterialTheme.shapes.large),
                             contentScale = ContentScale.Crop,
                         )
                     } else {
@@ -267,57 +254,6 @@ fun PlayerMoreContent(
                 }
             }
 
-            // PixelPlayer 核心焦点行动点：探索相似歌曲推荐大胶囊卡片
-            Surface(
-                onClick = {
-                    onOpenSimilar()
-                    onDismiss()
-                },
-                shape = MaterialTheme.shapes.extraLarge,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Filled.AutoAwesome,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                    }
-                    Column(Modifier.weight(1f)) {
-                        CpText(
-                            s.player.exploreSimilar,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                        CpText(
-                            s.player.exploreSimilarNote,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                        )
-                    }
-                    Icon(
-                        Icons.Filled.PlayArrow,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-            }
-
             // A2UI 私人 DJ 台：当前曲目、队列与真实声场动作。
             // 入口是否展示由 `A2UI_ENTRY_ENABLED` 统一控制，不要在调用点单独写死。
             if (A2UI_ENTRY_ENABLED) {
@@ -326,7 +262,7 @@ fun PlayerMoreContent(
                     onDismiss()
                     onOpenDjDesk()
                 },
-                shape = RoundedCornerShape(18.dp),
+                shape = MaterialTheme.shapes.large,
                 color = MaterialTheme.colorScheme.tertiaryContainer,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -406,6 +342,36 @@ fun PlayerMoreContent(
                 }
 
                 Row(
+                    modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    PlayerPillButton(
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        text = s.player.similarSongs,
+                        icon = Icons.Filled.AutoAwesome,
+                        bgColor = colors.primaryContainer,
+                        textColor = colors.onPrimaryContainer,
+                        maxLines = 2,
+                        onClick = {
+                            onDismiss()
+                            onOpenSimilar()
+                        },
+                    )
+                    PlayerPillButton(
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        text = lyricOffsetLabel,
+                        icon = Icons.Filled.AvTimer,
+                        bgColor = if (lyricOffset != 0L) colors.secondaryContainer else cpSheetInnerSurface(),
+                        textColor = if (lyricOffset != 0L) colors.onSecondaryContainer else colors.onSurface,
+                        maxLines = 2,
+                        onClick = {
+                            onDismiss()
+                            onOpenLyricOffset()
+                        },
+                    )
+                }
+
+                Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -470,14 +436,28 @@ fun PlayerMoreContent(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    PlayerPillButton(
-                        modifier = Modifier.weight(1f),
-                        text = if (immersiveLyrics) s.player.immersiveLyricsOn else s.player.immersiveLyricsOff,
-                        icon = Icons.Filled.Fullscreen,
-                        bgColor = if (immersiveLyrics) MaterialTheme.colorScheme.primaryContainer else cpSheetInnerSurface(),
-                        textColor = if (immersiveLyrics) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                        onClick = onToggleImmersiveLyrics,
-                    )
+                    if (onToggleImmersiveLyrics != null) {
+                        PlayerPillButton(
+                            modifier = Modifier.weight(1f),
+                            text = if (immersiveLyrics) s.player.immersiveLyricsOn else s.player.immersiveLyricsOff,
+                            icon = Icons.Filled.Fullscreen,
+                            bgColor = if (immersiveLyrics) MaterialTheme.colorScheme.primaryContainer else cpSheetInnerSurface(),
+                            textColor = if (immersiveLyrics) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                            onClick = onToggleImmersiveLyrics,
+                        )
+                    } else {
+                        PlayerPillButton(
+                            modifier = Modifier.weight(1f),
+                            text = s.player.songInfo,
+                            icon = Icons.Filled.Info,
+                            bgColor = cpSheetInnerSurface(),
+                            textColor = colors.onSurface,
+                            onClick = {
+                                onDismiss()
+                                onShowInfo()
+                            },
+                        )
+                    }
                     PlayerPillButton(
                         modifier = Modifier.weight(1f),
                         text = s.player.playerSettings,
@@ -493,141 +473,25 @@ fun PlayerMoreContent(
             }
 
             // 音质：档位是**全局设置**（写盘 + 同步给控制器），不是「只对这首生效」。
-            // 放在动作胶囊之后、详情卡之前：它是设置而不是动作，但比「查看元数据」更常改。
             if (qualityLevel.isNotBlank()) {
                 QualitySectionCard(level = qualityLevel, onSelect = onSelectQuality)
             }
 
-            // PixelPlayer 风格详情信息分段卡片
-            Surface(
-                color = cpSheetInnerSurface(),
-                shape = RoundedCornerShape(20.dp),
-                modifier = Modifier.fillMaxWidth().clickable {
-                    onShowInfo()
-                    onDismiss()
-                },
-            ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Info,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            CpText(
-                                text = s.player.songInfo,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                        CpText(
-                            text = s.player.viewFullMetadata,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-
-                    // 详情小胶囊分段
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        DetailChip(
-                            icon = Icons.Filled.AccessAlarm,
-                            label = formatTimeMs(track.durationMs),
-                            modifier = Modifier.weight(1f),
-                        )
-                        val detailedFormat = formatInfo?.qualityLabel?.takeIf {
-                            it.isNotBlank() && it != s.quality.labelOf("standard")
-                        }
-                        val effectiveLevel = trackQualityLevel.ifBlank { qualityLevel }.ifBlank { "standard" }
-                        val qualityLabel = when {
-                            !sourceQualityLabel.isNullOrBlank() && detailedFormat != null -> "$sourceQualityLabel · $detailedFormat"
-                            !sourceQualityLabel.isNullOrBlank() -> sourceQualityLabel
-                            detailedFormat != null -> detailedFormat
-                            formatInfo?.codecName?.isNotBlank() == true -> {
-                                val codec = formatInfo.codecName
-                                val br = formatInfo.bitrate?.let { " · ${it / 1000}k" } ?: ""
-                                "$codec$br"
-                            }
-                            else -> s.quality.fullLabelOf(effectiveLevel)
-                        }
-                        DetailChip(
-                            icon = Icons.Filled.GraphicEq,
-                            label = qualityLabel,
-                            modifier = Modifier.weight(1f),
-                        )
-                        val lyricStatus = if (lyricsInfo?.hasWordLevel == true) {
-                            s.player.wordByWordLyrics
-                        } else {
-                            s.player.dynamicLyrics
-                        }
-                        val currentOffset = cp.player.app.ui.util.LyricOffsetManager.getOffset(track.id)
-                        val lyricLabel = if (currentOffset != 0L) {
-                            val sign = if (currentOffset > 0) "+" else ""
-                            s.player.lyricOffsetChipValue(lyricStatus, "$sign${currentOffset / 1000f}s")
-                        } else {
-                            "$lyricStatus · ${s.player.lyricOffsetChip}"
-                        }
-                        DetailChip(
-                            icon = Icons.Filled.Lyrics,
-                            label = lyricLabel,
-                            modifier = Modifier.weight(1f).clickable {
-                                onLyricOffset()
-                                onDismiss()
-                            },
-                        )
-                    }
-                }
+            if (onToggleImmersiveLyrics != null) {
+                PlayerPillButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    text = s.player.songInfo,
+                    icon = Icons.Filled.Info,
+                    bgColor = cpSheetInnerSurface(),
+                    textColor = MaterialTheme.colorScheme.onSurface,
+                    onClick = {
+                        onDismiss()
+                        onShowInfo()
+                    },
+                )
             }
         }
     }
-
-@Composable
-private fun DetailChip(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = cpCardSurface(),
-        modifier = modifier,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                modifier = Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.width(4.dp))
-            CpText(
-                label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-        }
-    }
-}
 
 @Composable
 private fun PlayerPillButton(
@@ -636,11 +500,12 @@ private fun PlayerPillButton(
     bgColor: androidx.compose.ui.graphics.Color,
     textColor: androidx.compose.ui.graphics.Color,
     modifier: Modifier = Modifier,
+    maxLines: Int = 1,
     onClick: () -> Unit,
 ) {
     Surface(
         modifier = modifier.heightIn(min = 54.dp),
-        shape = RoundedCornerShape(18.dp),
+        shape = MaterialTheme.shapes.large,
         color = bgColor,
         onClick = onClick,
     ) {
@@ -655,7 +520,7 @@ private fun PlayerPillButton(
                 color = textColor,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
+                maxLines = maxLines,
             )
         }
     }
@@ -725,12 +590,9 @@ fun PlayerMoreSheets(
         PlayerMoreBottomSheet(
             track = track,
             isDownloaded = AppModel.isDownloaded(track.id),
-            formatInfo = state.formatInfo,
-            lyricsInfo = state.lyricsInfo,
             sleepAfterTrack = state.sleepAfterTrack,
             sleepTimerRemainingMs = state.sleepTimerRemainingMs,
             onDismiss = { sheets.showMoreMenu = false },
-            onOpenSimilar = { sheets.showSimilarSongs = true },
             onAddToPlaylist = { sheets.showAddToPlaylist = true },
             onDownload = { AppModel.downloadTrack(track) },
             onSleepTimer = { sheets.showSleepTimer = true },
@@ -738,6 +600,8 @@ fun PlayerMoreSheets(
                 shareText("${track.name} - ${track.artist}\nhttps://music.163.com/song?id=${runCatching { CPMediaId.parse(track.id).resourceId }.getOrDefault(track.id)}")
             },
             onShowInfo = { sheets.showSongInfo = true },
+            onOpenSimilar = { sheets.showSimilarSongs = true },
+            onOpenLyricOffset = { sheets.showLyricOffset = true },
             // 一起听是**整页**体验（要盖住窗口含侧栏），所以走 pushRoot。
             onListenTogether = {
                 appNavigator.pushRoot(AppRoute.ListenTogether)
@@ -753,15 +617,12 @@ fun PlayerMoreSheets(
                     }
                 }
             },
-            onLyricOffset = { sheets.showLyricOffset = true },
             qualityLevel = qualityLevel,
-            trackQualityLevel = state.qualityLevel,
-            sourceQualityLabel = state.sourceQualityLabel,
             onSelectQuality = AppModel::setPlaybackQuality,
             immersiveLyrics = mobileConfig.lyricsImmersiveEnabled,
-            onToggleImmersiveLyrics = {
-                AppModel.updateMobilePlayerCustomConfig { it.copy(lyricsImmersiveEnabled = !it.lyricsImmersiveEnabled) }
-            },
+            onToggleImmersiveLyrics = if (isAndroidPlatform()) {
+                { AppModel.updateMobilePlayerCustomConfig { it.copy(lyricsImmersiveEnabled = !it.lyricsImmersiveEnabled) } }
+            } else null,
             onOpenPlayerSettings = {
                 appNavigator.pushRoot(AppRoute.MobilePlayerSettings())
             },
@@ -830,7 +691,7 @@ fun PlayerMoreSheets(
     }
 }
 
-/** 歌曲信息弹窗（「更多」弹层信息卡的展开版，含 MIME 行）。 */
+/** 歌曲完整信息，含音频 MIME 类型。 */
 @Composable
 fun SongInfoDialog(
     track: TrackSummary,

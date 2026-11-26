@@ -1,6 +1,6 @@
 package cp.player.app
 
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import kotlin.math.roundToInt
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Transition
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -28,7 +29,6 @@ import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -352,7 +352,10 @@ fun App(
                                     val isDesktop = isDesktopExpanded || titleBar != null
                                     val predictiveBackEnabled by AppModel.predictiveBackEnabledFlow.collectAsState()
                                     val overlayCoverageState = remember { mutableFloatStateOf(0f) }
-                                    var isPlayerExiting by remember { mutableStateOf(false) }
+                                    val desktopPlayerMotion = isDesktopExpanded && !cp.player.app.platform.isAndroidPlatform()
+                                    val playerTransition = cp.player.app.ui.navigation.rememberPlayerOverlayTransition(
+                                        playerOverlay, desktopPlayerMotion,
+                                    )
 
                                     // ⚠️ 整个根 Navigator 只此一个 SharedTransitionLayout，且必须同时
                                     // 罩住「页面转场」、「全局 MiniPlayer」与「独立播放页覆盖层」三端：
@@ -367,18 +370,18 @@ fun App(
                                                     lastItem = navigator.lastItem,
                                                     miniPlayerBlockedByChat =
                                                         cp.player.app.ui.util.DesktopShell.miniPlayerBlockedByChat,
-                                                    playerExpanded = playerOverlay.isExpanded && !isPlayerExiting,
                                                 ),
                                                 mainScreenVisible = navigator.lastItem is MainScreen,
-                                                fastReturn = isPlayerExiting,
+                                                playerTransition = playerTransition,
+                                                desktopPlayerMotion = desktopPlayerMotion,
                                                 onClick = { playerOverlay.open() },
                                                 overlayContent = {
                                                     cp.player.app.ui.navigation.PlayerOverlayHost(
                                                         controller = playerOverlay,
-                                                        isDesktopExpanded = isDesktopExpanded,
+                                                        transition = playerTransition,
+                                                        desktopMotion = desktopPlayerMotion,
                                                         predictiveBackEnabled = predictiveBackEnabled,
                                                         overlayCoverageState = overlayCoverageState,
-                                                        onExitingChange = { isPlayerExiting = it },
                                                     ) {
                                                         CompositionLocalProvider(
                                                             cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope provides this,
@@ -396,24 +399,14 @@ fun App(
                                                     modifier = Modifier
                                                         .fillMaxSize()
                                                         .graphicsLayer {
-                                                            if (!isDesktop) {
-                                                                val coverage = overlayCoverageState.floatValue
-                                                                if (coverage > 0.001f) {
-                                                                    val sVal = 1f - 0.06f * coverage
-                                                                    scaleX = sVal
-                                                                    scaleY = sVal
-                                                                    val radiusPx = with(densityForBg) { (20.dp * coverage).toPx() }
-                                                                    if (radiusPx > 0.5f) {
-                                                                        shape = RoundedCornerShape(radiusPx)
-                                                                        clip = true
-                                                                    } else {
-                                                                        clip = false
-                                                                    }
-                                                                } else {
-                                                                    clip = false
-                                                                }
-                                                            } else {
-                                                                clip = false
+                                                            val coverage = if (desktopPlayerMotion) 0f else overlayCoverageState.floatValue
+                                                            val scale = 1f - 0.06f * coverage
+                                                            scaleX = scale
+                                                            scaleY = scale
+                                                            clip = coverage > 0.001f
+                                                            if (clip) {
+                                                                val radiusPx = with(densityForBg) { (20.dp * coverage).toPx() }
+                                                                shape = RoundedCornerShape(radiusPx)
                                                             }
                                                         },
                                                 ) {
@@ -473,7 +466,7 @@ fun App(
                                                         },
                                                     )
                                                     // 播放页背景压暗遮罩（只读 FloatState 在 Draw 阶段绘制，0 重组）
-                                                    if (!isDesktop) {
+                                                    if (!desktopPlayerMotion) {
                                                         Box(
                                                             Modifier
                                                                 .fillMaxSize()
@@ -576,7 +569,8 @@ internal fun shouldShowGlobalMiniPlayer(
 private fun SharedTransitionScope.GlobalMiniPlayerHost(
     show: Boolean,
     mainScreenVisible: Boolean,
-    fastReturn: Boolean = false,
+    playerTransition: Transition<Boolean>,
+    desktopPlayerMotion: Boolean,
     onClick: () -> Unit,
     overlayContent: @Composable SharedTransitionScope.() -> Unit = {},
     pageContent: @Composable () -> Unit,
@@ -621,7 +615,7 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
     )
     val safeBottomGap = animatedBottomGap.coerceAtLeast(0.dp)
     val tailSpace by animateDpAsState(
-        targetValue = if (show && hasTrack && barHeightPx > 0) {
+        targetValue = if (show && hasTrack && barHeightPx > 0 && (!desktopPlayerMotion || !playerTransition.targetState)) {
             with(density) { barHeightPx.toDp() } + 12.dp +
                 if (mainScreenVisible && (expanded || isTablet)) safeBottomGap else 0.dp
         } else 0.dp,
@@ -640,7 +634,8 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
             GlobalMiniPlayerBar(
                 show = show,
                 isDockedToBottomBar = isBottomBarShowing,
-                fastReturn = fastReturn,
+                playerTransition = playerTransition,
+                desktopPlayerMotion = desktopPlayerMotion,
                 onClick = onClick,
                 onBarHeight = { barHeightPx = it },
                 modifier = Modifier
@@ -666,40 +661,34 @@ private fun SharedTransitionScope.GlobalMiniPlayerHost(
 private fun SharedTransitionScope.GlobalMiniPlayerBar(
     show: Boolean,
     isDockedToBottomBar: Boolean,
-    fastReturn: Boolean,
+    playerTransition: Transition<Boolean>,
+    desktopPlayerMotion: Boolean,
     onClick: () -> Unit,
     onBarHeight: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val playbackState by AppModel.playback.state.collectAsState()
-    AnimatedContent(
-        targetState = show && playbackState.currentTrack != null,
-        transitionSpec = {
-            val enterMs = if (fastReturn) 240 else CpMotion.PlayerExpandMs
-            fadeIn(tween(enterMs, easing = FastOutSlowInEasing)) togetherWith
-                fadeOut(tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing))
-        },
-        label = "GlobalMiniPlayer",
+    val fade = if (desktopPlayerMotion) {
+        tween(CpMotion.PlayerExpandMs, easing = FastOutSlowInEasing)
+    } else CpMotion.effects<Float>()
+    playerTransition.AnimatedVisibility(
+        visible = { expanded -> !expanded && show && playbackState.currentTrack != null },
+        enter = fadeIn(fade),
+        exit = fadeOut(fade),
         modifier = modifier,
-    ) { visible ->
-        if (visible) {
-            // this（AnimatedContentScope）要在 with(this@…) 进到 SharedTransitionScope
-            // 之前捕获 —— with 块里 `this` 已经换人了。
-            val animScope = this
-            with(this@GlobalMiniPlayerBar) {
-                MiniPlayer(
-                    state = playbackState,
-                    animatedVisibilityScope = animScope,
-                    isDockedToBottomBar = isDockedToBottomBar,
-                    onClick = onClick,
-                    onTogglePlay = AppModel.playback::togglePlayPause,
-                    onSkipPrev = AppModel.playback::skipPrevious,
-                    onSkipNext = AppModel.playback::skipNext,
-                    modifier = Modifier
-                        // 实测高度回传给宿主的尾留白（只量浮层自身，不含底部 inset）。
-                        .onSizeChanged { onBarHeight(it.height) },
-                )
-            }
+    ) {
+        val animScope = this
+        with(this@GlobalMiniPlayerBar) {
+            MiniPlayer(
+                state = playbackState,
+                animatedVisibilityScope = animScope,
+                isDockedToBottomBar = isDockedToBottomBar,
+                onClick = onClick,
+                onTogglePlay = AppModel.playback::togglePlayPause,
+                onSkipPrev = AppModel.playback::skipPrevious,
+                onSkipNext = AppModel.playback::skipNext,
+                modifier = Modifier.onSizeChanged { onBarHeight(it.height) },
+            )
         }
     }
 }

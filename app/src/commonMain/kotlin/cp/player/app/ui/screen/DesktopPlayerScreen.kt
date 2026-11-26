@@ -523,14 +523,16 @@ internal fun DesktopPlayerLayout(
                         ),
                     )
                 }
-                add(
-                    CpContextMenuItem(
-                        label = if (isZenMode) s.player.exitImmersive else s.player.immersive,
-                        icon = if (isZenMode) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
-                        isSelected = isZenMode,
-                        onClick = { isZenMode = !isZenMode },
-                    ),
-                )
+                if (cp.player.app.platform.isAndroidPlatform()) {
+                    add(
+                        CpContextMenuItem(
+                            label = if (isZenMode) s.player.exitImmersive else s.player.immersive,
+                            icon = if (isZenMode) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+                            isSelected = isZenMode,
+                            onClick = { isZenMode = !isZenMode },
+                        ),
+                    )
+                }
                 onChangeLyricsSource?.let { changeSource ->
                     add(
                         CpContextMenuItem(
@@ -639,7 +641,7 @@ internal fun DesktopPlayerLayout(
                             artworkModifier = artworkModifier,
                             overlay = {
                                 androidx.compose.animation.AnimatedVisibility(
-                                    visible = artHovered || isZenMode,
+                                    visible = cp.player.app.platform.isAndroidPlatform() && (artHovered || isZenMode),
                                     enter = fadeIn(CpMotion.effectsFast()),
                                     exit = fadeOut(CpMotion.effectsFast()),
                                     modifier = Modifier
@@ -761,7 +763,9 @@ internal fun DesktopPlayerLayout(
                                     AppModel.updateMobilePlayerCustomConfig { it.copy(showTranslation = next) }
                                 },
                                 isImmersive = isZenMode,
-                                onToggleImmersive = { isZenMode = !isZenMode },
+                                onToggleImmersive = if (cp.player.app.platform.isAndroidPlatform()) {
+                                    { isZenMode = !isZenMode }
+                                } else null,
                                 onOpenMore = { moreSheets.showMoreMenu = true },
                                 showMiniPlayerAction = !cp.player.app.platform.isAndroidPlatform(),
                                 onOpenMiniPlayer = { cp.player.app.ui.util.DesktopShell.isMiniMode = true },

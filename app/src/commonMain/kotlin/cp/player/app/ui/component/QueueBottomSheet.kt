@@ -27,9 +27,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.DragIndicator
@@ -101,7 +99,6 @@ fun QueueBottomSheet(
     onMove: (Int, Int) -> Unit,
     onClear: () -> Unit,
     onClose: () -> Unit,
-    onOpenSimilar: (() -> Unit)? = null,
     shuffleEnabled: Boolean = false,
     repeatMode: RepeatMode = RepeatMode.OFF,
     onShuffle: (() -> Unit)? = null,
@@ -118,7 +115,6 @@ fun QueueBottomSheet(
             onMove = onMove,
             onClear = onClear,
             onClose = onClose,
-            onOpenSimilar = onOpenSimilar,
             shuffleEnabled = shuffleEnabled,
             repeatMode = repeatMode,
             onShuffle = onShuffle,
@@ -142,7 +138,6 @@ fun QueueContent(
     onMove: (Int, Int) -> Unit,
     onClear: () -> Unit,
     onClose: (() -> Unit)? = null,
-    onOpenSimilar: (() -> Unit)? = null,
     shuffleEnabled: Boolean = false,
     repeatMode: RepeatMode = RepeatMode.OFF,
     onShuffle: (() -> Unit)? = null,
@@ -365,48 +360,6 @@ fun QueueContent(
                         // 顺序的列表，没有这层动画的话每次重排都是一次「集体瞬移」。
                         modifier = Modifier.animateItem(),
                     )
-                }
-
-                if (onOpenSimilar != null) {
-                    item {
-                        androidx.compose.material3.Surface(
-                            onClick = onOpenSimilar,
-                            shape = MaterialTheme.shapes.large,
-                            color = cpSheetInnerSurface(),
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        ) {
-                            Row(
-                                Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
-                                Icon(
-                                    Icons.Rounded.AutoAwesome,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Column(Modifier.weight(1f)) {
-                                    CpText(
-                                        s.player.exploreSimilar,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                    CpText(
-                                        s.player.exploreSimilarNote,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                Icon(
-                                    Icons.AutoMirrored.Rounded.ArrowForwardIos,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(14.dp),
-                                )
-                            }
-                        }
-                    }
                 }
             }
 

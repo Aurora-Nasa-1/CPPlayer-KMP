@@ -27,6 +27,7 @@ import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.rememberNavigationEventState
+import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.ui.screen.HomeGeneratedPlaylistScreen
 import cp.player.app.ui.screen.MainScreen
 import cp.player.app.ui.screen.PlayerScreen
@@ -136,10 +137,12 @@ internal fun RouteDisplay(
     val saveable = rememberSaveableStateHolderNavEntryDecorator<PageEntry>()
     val models = rememberViewModelStoreNavEntryDecorator<PageEntry>(stack.models)
     val decorators = remember(saveable, models) { listOf(saveable, models) }
-    // Android supplies its system dispatcher. The custom desktop window uses its own Esc chain.
+    // 桌面 Esc 由 DesktopBackDispatcher 处理。每个 NavDisplay 独立持有 dispatcher，
+    // 避免切换迷你播放器时，根组合先释放仍在子组合中的 dispatcher，导致子组合再次释放它。
+    val parentDispatcherOwner = if (isAndroidPlatform()) LocalNavigationEventDispatcherOwner.current else null
     val dispatcher = rememberNavigationEventDispatcherOwner(
         enabled = backEnabled,
-        parent = LocalNavigationEventDispatcherOwner.current,
+        parent = parentDispatcherOwner,
     )
     CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides dispatcher) {
         NavDisplay(

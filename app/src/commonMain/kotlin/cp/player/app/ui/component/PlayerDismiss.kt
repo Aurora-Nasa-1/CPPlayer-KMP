@@ -22,11 +22,11 @@ interface PlayerDismissHandler {
 
 val LocalPlayerDismissHandler = staticCompositionLocalOf<PlayerDismissHandler?> { null }
 
-/**
- * 播放页进入时与 MiniPlayer 走 sharedBounds；下拉、预测性返回或退场动画期间关闭 sharedBounds，
- * 让整页带着屏幕圆角顺滑向下退场，不被共享元素扯回底栏。
- */
+/** Interactive drags move all children with the sheet instead of using the shared overlay. */
 val LocalPlayerAllowSharedBounds = compositionLocalOf { true }
+
+/** Mobile animates the sheet itself and shares only its artwork and track headings. */
+val LocalPlayerShareContainer = compositionLocalOf { true }
 
 /**
  * 把纵向拖拽收起手势绑定到 [handler]。

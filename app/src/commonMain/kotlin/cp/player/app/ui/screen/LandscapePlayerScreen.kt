@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
 import cp.player.app.presentation.navigation.AppRoute
+import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.LyricContent
 import cp.player.app.ui.component.PlayerMoreSheets
@@ -94,6 +95,9 @@ internal fun LandscapePlayerScreen(
     onRemoveQueue: (Int) -> Unit,
     onClearQueue: () -> Unit,
     transitionRunning: Boolean = false,
+    artworkModifier: Modifier = Modifier,
+    titleModifier: Modifier = Modifier,
+    artistModifier: Modifier = Modifier,
 ) {
     val track = state.currentTrack ?: return
     val s = cpStrings()
@@ -111,15 +115,17 @@ internal fun LandscapePlayerScreen(
             Column(Modifier.weight(1f)) {
                 CpText(
                     track.name,
+                    modifier = titleModifier,
                     style = if (large) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium,
                     color = colors.onSurface,
                     fontWeight = FontWeight.SemiBold,
                     emphasized = true,
                     maxLines = 1,
-                    marqueeEnabled = state.isPlaying,
+                    marqueeEnabled = state.isPlaying && !transitionRunning,
                 )
                 TrackArtistText(
                     track = track,
+                    modifier = artistModifier,
                     onArtistClick = { navigator.push(AppRoute.UserProfile(it.id, it.name, it.resourceId)) },
                     style = if (large) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
                     color = colors.onSurfaceVariant,
@@ -130,6 +136,7 @@ internal fun LandscapePlayerScreen(
                 Icon(
                     if (state.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     if (state.isFavorite) s.player.unfavoriteTrack else s.player.favoriteTrack,
+                    modifier = Modifier.size(CpSpacing.playerFavoriteIcon),
                     tint = if (state.isFavorite) colors.primary else colors.onSurfaceVariant,
                 )
             }
@@ -137,7 +144,7 @@ internal fun LandscapePlayerScreen(
     }
     val cover: @Composable (Dp) -> Unit = { size ->
         val shape = MaterialTheme.shapes.large
-        Artwork(track.coverUrl, Modifier.size(size).shadow(10.dp, shape).clip(shape), size)
+        Artwork(track.coverUrl, Modifier.size(size).then(artworkModifier).shadow(10.dp, shape).clip(shape), size)
     }
     val transport: @Composable (Float) -> Unit = { scale ->
         PlayerTimeline(state, positionFlow, initialPositionMs, onSeek)

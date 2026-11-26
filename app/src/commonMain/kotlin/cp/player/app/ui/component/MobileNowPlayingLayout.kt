@@ -84,10 +84,12 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.ui.model.MobilePlayerCustomConfig
 import cp.player.app.ui.theme.CpMotion
 import cp.player.app.ui.util.SeekAvailability
@@ -301,19 +303,29 @@ internal fun MobileNowPlayingLayout(
                             ) {
                                 PlayerArtwork(
                                     track, state.isPlaying,
-                                    Modifier.size(52.dp).clickable(
+                                    Modifier.size(52.dp).then(if (lyricsExpanded) artworkModifier else Modifier).clickable(
                                         role = Role.Button, onClickLabel = s.player.lyricsCollapse,
                                         onClick = onToggleLyrics,
                                     ),
                                 )
                                 Spacer(Modifier.width(12.dp))
-                                TrackHeading(track, false, onArtistClick, Modifier.weight(1f))
-                                PlayerIconButton(
-                                    if (isImmersive) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
-                                    if (isImmersive) s.player.exitImmersive else s.player.immersive,
-                                    onToggleImmersive,
-                                    selected = isImmersive,
+                                TrackHeading(
+                                    track = track,
+                                    large = false,
+                                    onArtistClick = onArtistClick,
+                                    modifier = Modifier.weight(1f),
+                                    titleModifier = if (lyricsExpanded) titleModifier else Modifier,
+                                    artistModifier = if (lyricsExpanded) artistModifier else Modifier,
+                                    marqueeEnabled = state.isPlaying && !isTransitionRunning,
                                 )
+                                if (isAndroidPlatform()) {
+                                    PlayerIconButton(
+                                        if (isImmersive) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+                                        if (isImmersive) s.player.exitImmersive else s.player.immersive,
+                                        onToggleImmersive,
+                                        selected = isImmersive,
+                                    )
+                                }
                                 PlayerIconButton(
                                     Icons.Rounded.Translate, s.player.translation, onToggleTranslation,
                                     selected = config.showTranslation,
@@ -341,7 +353,7 @@ internal fun MobileNowPlayingLayout(
                             Spacer(Modifier.height(topGap))
                             PlayerArtwork(
                                 track, state.isPlaying,
-                                Modifier.size(artSize).then(artworkModifier).then(dismissGesture)
+                                Modifier.size(artSize).then(if (lyricsExpanded) Modifier else artworkModifier).then(dismissGesture)
                                     .testTag("player-artwork"),
                             )
                             Spacer(Modifier.height(artworkGap))
@@ -360,21 +372,21 @@ internal fun MobileNowPlayingLayout(
                                         large = !compact,
                                         onArtistClick = onArtistClick,
                                         modifier = Modifier.weight(1f),
-                                        titleModifier = titleModifier,
-                                        artistModifier = artistModifier,
+                                        titleModifier = if (lyricsExpanded) Modifier else titleModifier,
+                                        artistModifier = if (lyricsExpanded) Modifier else artistModifier,
                                         marqueeEnabled = state.isPlaying && !isTransitionRunning,
                                     )
                                     PlayerIconButton(
                                         if (state.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                                         if (state.isFavorite) s.player.unlike else s.player.like,
                                         onLike, selected = state.isFavorite,
-                                        iconSize = 22,
+                                        iconSize = CpSpacing.playerFavoriteIcon,
                                         showSelectionContainer = false,
                                         modifier = Modifier.testTag("player-favorite"),
                                     )
                                     PlayerIconButton(
                                         Icons.Rounded.MoreHoriz, s.player.more, onMore,
-                                        iconSize = 22,
+                                        iconSize = 22.dp,
                                         modifier = Modifier.testTag("player-more"),
                                     )
                                 }
@@ -404,13 +416,13 @@ internal fun MobileNowPlayingLayout(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         PlayerIconButton(
-                            Icons.Rounded.SkipPrevious, s.player.previousTrack, onSkipPrevious, iconSize = 34,
+                            Icons.Rounded.SkipPrevious, s.player.previousTrack, onSkipPrevious, iconSize = 34.dp,
                         )
                         Box(contentAlignment = Alignment.Center) {
                             PlayerIconButton(
                                 if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                                 s.player.playOrPause(state.isPlaying),
-                                onTogglePlay, iconSize = 48,
+                                onTogglePlay, iconSize = 48.dp,
                                 modifier = Modifier.size(72.dp).testTag("player-play-pause"),
                             )
                             if (state.isBuffering) {
@@ -418,7 +430,7 @@ internal fun MobileNowPlayingLayout(
                             }
                         }
                         PlayerIconButton(
-                            Icons.Rounded.SkipNext, s.player.nextTrack, onSkipNext, iconSize = 34,
+                            Icons.Rounded.SkipNext, s.player.nextTrack, onSkipNext, iconSize = 34.dp,
                         )
                     }
                     state.error?.takeIf(String::isNotBlank)?.let { error ->
@@ -682,7 +694,7 @@ private fun PlayerIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     selected: Boolean? = null,
-    iconSize: Int = 23,
+    iconSize: Dp = 23.dp,
     showSelectionContainer: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -701,10 +713,14 @@ private fun PlayerIconButton(
             } else {
                 Color.Transparent
             },
-            contentColor = if (selected == true) colors.onPrimaryContainer else colors.onSurface,
+            contentColor = when {
+                selected != true -> colors.onSurface
+                showSelectionContainer -> colors.onPrimaryContainer
+                else -> colors.primary
+            },
         ),
     ) {
-        Icon(icon, label, Modifier.size(iconSize.dp))
+        Icon(icon, label, Modifier.size(iconSize))
     }
 }
 

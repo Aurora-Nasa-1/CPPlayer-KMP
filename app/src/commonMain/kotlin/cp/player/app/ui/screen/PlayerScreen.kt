@@ -4,7 +4,6 @@ import cp.player.app.ui.component.CpText
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -16,7 +15,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -84,7 +82,6 @@ import androidx.compose.material3.ripple
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import cp.player.app.ui.theme.cpCardSurface
-import cp.player.app.ui.theme.cpElevatedSurface
 import cp.player.app.ui.theme.cpNestedSurface
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBar
@@ -129,6 +126,7 @@ import cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope
 import cp.player.app.ui.anim.LocalSharedTransitionScope
 import cp.player.app.ui.component.LocalPlayerAllowSharedBounds
 import cp.player.app.ui.component.LocalPlayerDismissHandler
+import cp.player.app.ui.component.LocalPlayerShareContainer
 import cp.player.app.ui.component.isWindowAdaptiveExpanded
 import cp.player.app.ui.component.playerDismissDragGesture
 import cp.player.app.ui.component.LazyScrollColumn
@@ -137,6 +135,7 @@ import cp.player.app.ui.component.cpFluidBackground
 import cp.player.app.ui.component.shouldPauseFluidBackgroundDuringNavigation
 import cp.player.app.ui.component.desktopPagerMouseControl
 import cp.player.app.ui.component.PlayerMoreSheets
+import cp.player.app.ui.component.PlayerSectionTabs
 import cp.player.app.ui.component.ModernPlayerScreenContent
 import cp.player.app.ui.component.ProviderFeatureGate
 import cp.player.app.ui.component.QueueBottomSheet
@@ -223,7 +222,7 @@ class PlayerScreen : RoutePage {
             Unit
         }
         val currentTrack = effectiveState.currentTrack
-        val sharedContainerModifier = if (allowSharedBounds && sharedScope != null && navAnimScope != null) {
+        val sharedContainerModifier = if (allowSharedBounds && LocalPlayerShareContainer.current && sharedScope != null && navAnimScope != null) {
             with(sharedScope) {
                 Modifier.sharedBounds(
                     rememberSharedContentState("player-container"),
@@ -289,6 +288,9 @@ class PlayerScreen : RoutePage {
                     onRemoveQueue = { idx -> scope.launch { controller.removeQueueItem(idx) } },
                     onClearQueue = { scope.launch { controller.clearQueue() } },
                     transitionRunning = navAnimScope?.transition?.isRunning == true,
+                    artworkModifier = sharedCoverModifier,
+                    titleModifier = sharedTitleModifier,
+                    artistModifier = sharedArtistModifier,
                 )
             } else if (isTablet) {
                 TabletPlayerScreen(
@@ -724,7 +726,7 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
 
     val dismissHandler = LocalPlayerDismissHandler.current
     val allowSharedBounds = LocalPlayerAllowSharedBounds.current
-    val containerSharedModifier = if (allowSharedBounds) {
+    val containerSharedModifier = if (allowSharedBounds && LocalPlayerShareContainer.current) {
         Modifier.sharedBounds(
             sharedContentState = rememberSharedContentState(key = "player-container"),
             animatedVisibilityScope = animatedVisibilityScope,
@@ -965,8 +967,6 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
                                 onShuffle = onShuffle,
                                 onLikeClick = { AppModel.toggleFavoriteOf(track.id) },
                                 onArtistClick = onArtistClick,
-                                // 弹层本体与全部动作实现已收进共享宿主 PlayerMoreSheets
-                                // （本页末尾调用），这里只传两个入口回调。
                                 onMoreClick = { moreSheets.showMoreMenu = true },
                                 onSleepTimer = {
                                     moreSheets.showMoreMenu = false
@@ -991,10 +991,6 @@ fun androidx.compose.animation.SharedTransitionScope.PlayerScreenContent(
             onMove = onMoveQueue,
             onClear = onClearQueue,
             onClose = { showQueueSheet = false },
-            onOpenSimilar = {
-                showQueueSheet = false
-                moreSheets.showSimilarSongs = true
-            },
         )
     }
 
@@ -1338,7 +1334,6 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
                 )
             }
 
-            // 底部工具行：随机 / 循环 / 睡眠定时 / 更多
             cp.player.app.ui.component.CpFloatingToolbar(
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             ) {
@@ -1380,83 +1375,26 @@ private fun androidx.compose.animation.SharedTransitionScope.PlayerPage(
 // ui/component/PlayerMoreBottomSheet.kt —— 桌面播放页（DesktopPlayerScreen）与
 // 窄屏布局共用同一宿主，SongInfoDialog 作为其二级弹窗必须同处一处。
 
-/**
- * 手机端顶栏页面指示器：极简圆角胶囊形态。
- *
- * 将原先占用较大面积的「歌词 / 歌曲 / 评论」大文本胶囊收敛为精致灵动的微型指示条：
- * - 紧凑磨砂胶囊外壳，视觉轻盈、不抢封面与全屏背景视线；
- * - 选中的页面胶囊自然伸展为指示条，未选中为微圆点，伴随平滑弹簧动效；
- * - 保留直接点击切换能力与无障碍语义（歌词 / 歌曲 / 评论），让用户一眼可知有三个界面可滑动切换。
- */
 @Composable
 private fun MobilePlayerTabSelector(
     currentPage: Int,
     onSelect: (Int) -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     val s = cpStrings()
-    val isDark = LocalIsDarkTheme.current
     val supportsComments = rememberActiveProviderSupports(ProviderCapability.COMMENTS)
     val tabs = remember(supportsComments, s) {
-        if (supportsComments) {
-            listOf(s.player.tabLyrics, s.player.tabSong, s.player.tabComments)
-        } else {
-            listOf(s.player.tabLyrics, s.player.tabSong)
+        buildList {
+            add(Icons.Rounded.Lyrics to s.player.tabLyrics)
+            add(Icons.Rounded.MusicNote to s.player.tabSong)
+            if (supportsComments) add(Icons.AutoMirrored.Rounded.Comment to s.player.tabComments)
         }
     }
-    Surface(
-        modifier = modifier,
-        shape = CircleShape,
-        color = cpElevatedSurface().copy(alpha = if (isDark) 0.30f else 0.40f),
-        border = BorderStroke(
-            width = 0.5.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.15f else 0.25f),
-        ),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            tabs.forEachIndexed { index, title ->
-                val selected = currentPage == index
-                val indicatorWidth by animateDpAsState(
-                    targetValue = if (selected) 18.dp else 5.dp,
-                    animationSpec = CpMotion.spatial(),
-                    label = "mobileIndicatorWidth$index",
-                )
-                val indicatorColor by animateColorAsState(
-                    targetValue = if (selected) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isDark) 0.35f else 0.45f)
-                    },
-                    animationSpec = CpMotion.effects(),
-                    label = "mobileIndicatorColor$index",
-                )
-
-                Box(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = ripple(),
-                            onClickLabel = s.player.switchToTab(title),
-                        ) { onSelect(index) }
-                        .padding(vertical = 3.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .height(4.5.dp)
-                            .width(indicatorWidth)
-                            .clip(CircleShape)
-                            .background(indicatorColor)
-                    )
-                }
-            }
-        }
-    }
+    PlayerSectionTabs(
+        tabs = tabs,
+        selectedTab = currentPage,
+        onTabSelect = onSelect,
+        touchFriendly = isAndroidPlatform(),
+    )
 }
 
 @Composable

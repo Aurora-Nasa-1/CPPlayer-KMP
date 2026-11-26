@@ -43,7 +43,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Comment
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.AccessAlarm
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Cast
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
@@ -90,6 +89,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.isAndroidPlatform
 import cp.player.app.platform.BackHandler
 import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.component.CpLoadingIndicator
@@ -236,7 +236,7 @@ internal fun TabletPlayerLayout(
         moreSheets.showSongInfo || moreSheets.showDevicePicker ||
         moreSheets.showLyricOffset || moreSheets.showDjDesk
 
-    val isImmersive = isImmersiveActive && !anySheetOpen
+    val isImmersive = isAndroidPlatform() && isImmersiveActive && !anySheetOpen
 
     val fallbackColors = remember(
         colors.surfaceContainerHigh,
@@ -671,11 +671,6 @@ private fun TabletLandscapeContent(
                                         label = s.audioEffect.screenTitle,
                                         onClick = onOpenAudioEffects,
                                     )
-                                    TabletDockIconButton(
-                                        icon = Icons.Rounded.AutoAwesome,
-                                        label = s.player.exploreSimilar,
-                                        onClick = { moreSheets.showSimilarSongs = true },
-                                    )
                                 }
                             }
                         }
@@ -696,7 +691,7 @@ private fun TabletLandscapeContent(
                             showTranslation = showTranslation,
                             onToggleTranslation = onToggleTranslation,
                             isImmersive = isImmersive,
-                            onToggleImmersive = onToggleImmersive,
+                            onToggleImmersive = onToggleImmersive.takeIf { isAndroidPlatform() },
                             onOpenMore = { moreSheets.showMoreMenu = true },
                             showMiniPlayerAction = false,
                             showDjDeskAction = cp.player.app.ui.a2ui.A2UI_ENTRY_ENABLED,
@@ -965,14 +960,16 @@ private fun TabletPortraitContent(
                                         showTooltip = false,
                                         onClick = onToggleTranslation,
                                     )
-                                    PlayerHeaderToolButton(
-                                        icon = if (isImmersive) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
-                                        label = if (isImmersive) s.player.exitImmersive else s.player.immersive,
-                                        active = isImmersive,
-                                        size = CpSpacing.touchTarget,
-                                        showTooltip = false,
-                                        onClick = onToggleImmersive,
-                                    )
+                                    if (isAndroidPlatform()) {
+                                        PlayerHeaderToolButton(
+                                            icon = if (isImmersive) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+                                            label = if (isImmersive) s.player.exitImmersive else s.player.immersive,
+                                            active = isImmersive,
+                                            size = CpSpacing.touchTarget,
+                                            showTooltip = false,
+                                            onClick = onToggleImmersive,
+                                        )
+                                    }
                                 }
                             }
                         }

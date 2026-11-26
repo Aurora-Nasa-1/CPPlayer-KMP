@@ -174,6 +174,7 @@ object CpSpacing {
      * `minimumInteractiveComponentSize()` 保证，**不要再叠一层** —— 会白白撑高行。
      */
     val touchTarget = 48.dp
+    val playerFavoriteIcon = 28.dp
 
     // ======================================================== 组件级：列表
 
