@@ -223,4 +223,8 @@ abstract class ExtendedJniProviderMethods : MusicProvider {
         dispatch(ProviderProtocol.RESOLVEDRM, request) as ResolvedMedia
     override suspend fun exchangeLicense(request: LicenseRequest): LicenseResponse =
         dispatch(ProviderProtocol.EXCHANGELICENSE, request) as LicenseResponse
+    override suspend fun searchEvents(request: EventSearchRequest): EventPage =
+        dispatch(ProviderProtocol.SEARCHEVENTS, request) as EventPage
+    override suspend fun publishEvent(request: PublishEventRequest): MutationResult =
+        dispatch(ProviderProtocol.PUBLISHEVENT, request) as MutationResult
 }

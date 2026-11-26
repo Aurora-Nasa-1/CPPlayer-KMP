@@ -702,12 +702,12 @@ impl PagedIdRequest {
     }
 }
 
-/// A bounded recommendation/discovery selection, not offset pagination.
+/// A bounded recommendation/discovery selection, not offset pagination. mode selects daily or dailyStyle when the provider supports both.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct RecommendationsRequest {
     /// Requested item bound, 1..500; a response must not exceed it.
     pub limit: i32,
-    /// Provider-specific recommendation mode.
+    /// Provider-specific recommendation mode; daily is the compatibility default and dailyStyle selects the newer style-based daily feed.
     pub mode: String,
 }
 
@@ -722,6 +722,34 @@ impl RecommendationsRequest {
         Ok(Self {
             limit: r.int()?,
             mode: r.string()?,
+        })
+    }
+}
+
+/// A bounded personal-radio request. mode and subMode are provider-defined selectors; limit is the maximum number of tracks.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FmModeRequest {
+    /// Provider-specific recommendation mode; daily is the compatibility default and dailyStyle selects the newer style-based daily feed.
+    pub mode: String,
+    /// Optional provider-specific sub-mode for recommendation or personal-radio requests.
+    pub sub_mode: String,
+    /// Requested item bound, 1..500; a response must not exceed it.
+    pub limit: i32,
+}
+
+impl FmModeRequest {
+    pub fn write(&self, w: &mut WireWriter) -> Result<(), WireError> {
+        w.string(&self.mode)?;
+        w.string(&self.sub_mode)?;
+        w.int(*&self.limit)?;
+        Ok(())
+    }
+
+    pub fn read(r: &mut WireReader<'_>) -> Result<Self, WireError> {
+        Ok(Self {
+            mode: r.string()?,
+            sub_mode: r.string()?,
+            limit: r.int()?,
         })
     }
 }
@@ -3590,6 +3618,54 @@ impl EventPageRequest {
         Ok(Self {
             limit: r.int()?,
             cursor: r.optional(|r| r.string())?,
+        })
+    }
+}
+
+/// Keyword and opaque continuation cursor for a page of visible posts.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct EventSearchRequest {
+    /// Search text, not an encoded query string.
+    pub keyword: String,
+    /// Requested item bound, 1..500; a response must not exceed it.
+    pub limit: i32,
+    /// Opaque continuation token. Preserve empty strings and punctuation; at most 4096 characters for extended operations.
+    pub cursor: Option<String>,
+}
+
+impl EventSearchRequest {
+    pub fn write(&self, w: &mut WireWriter) -> Result<(), WireError> {
+        w.string(&self.keyword)?;
+        w.int(*&self.limit)?;
+        w.optional(self.cursor.as_deref(), |w, value| w.string(value))?;
+        Ok(())
+    }
+
+    pub fn read(r: &mut WireReader<'_>) -> Result<Self, WireError> {
+        Ok(Self {
+            keyword: r.string()?,
+            limit: r.int()?,
+            cursor: r.optional(|r| r.string())?,
+        })
+    }
+}
+
+/// Non-blank plain text for a post without a resource attachment, up to 140 Unicode code points.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PublishEventRequest {
+    /// Plain text, never an upstream JSON message envelope.
+    pub text: String,
+}
+
+impl PublishEventRequest {
+    pub fn write(&self, w: &mut WireWriter) -> Result<(), WireError> {
+        w.string(&self.text)?;
+        Ok(())
+    }
+
+    pub fn read(r: &mut WireReader<'_>) -> Result<Self, WireError> {
+        Ok(Self {
+            text: r.string()?,
         })
     }
 }

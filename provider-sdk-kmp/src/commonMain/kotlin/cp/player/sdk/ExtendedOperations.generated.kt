@@ -221,6 +221,10 @@ interface ExtendedOperations {
     suspend fun resolveDrm(request: DrmResolveRequest): ResolvedMedia = unsupported()
     /** Exchange one host CDM challenge for a provider license. Treat challenge and license bytes as sensitive and never log or persist them. Capability: tracks.exchangeLicense. Tag: 169. Undeclared or unimplemented capabilities fail with Unsupported. */
     suspend fun exchangeLicense(request: LicenseRequest): LicenseResponse = unsupported()
+    /** Search visible social posts by keyword. Pass the continuation cursor back unchanged with the same keyword; start over when the keyword changes. Capability: social.events.search. Tag: 171. Undeclared or unimplemented capabilities fail with Unsupported. */
+    suspend fun searchEvents(request: EventSearchRequest): EventPage = unsupported()
+    /** Publish a plain-text post as the active account. Use shareResource for a post with an attached song. Do not retry a publish automatically after an ambiguous failure. Capability: social.events.publish. Tag: 172. Undeclared or unimplemented capabilities fail with Unsupported. */
+    suspend fun publishEvent(request: PublishEventRequest): MutationResult = unsupported()
 }
 
 object ExtendedCapability {
@@ -333,4 +337,6 @@ object ExtendedCapability {
     const val LIKERESOURCE = "social.likeResource"
     const val RESOLVEDRM = "tracks.resolveDrm"
     const val EXCHANGELICENSE = "tracks.exchangeLicense"
+    const val SEARCHEVENTS = "social.events.search"
+    const val PUBLISHEVENT = "social.events.publish"
 }

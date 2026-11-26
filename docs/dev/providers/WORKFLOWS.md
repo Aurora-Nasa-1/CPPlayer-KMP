@@ -192,19 +192,22 @@ const provider = defineProvider({
 
 `Notification` 只含文本、时间与已知的发送人 / 资源引用，不回传旧 API 封套。`getUnreadCount` 的各类计数独立，不能合并到私信数。
 
-`getCalendar` 的可选范围用 epoch 毫秒；`getEvents` / `getUserEvents` 用不透明 cursor。
+`getCalendar` 的可选范围用 epoch 毫秒；动态列表和搜索都使用不透明 `cursor`。只有 `hasMore` 为 `true` 且游标非空时才继续翻页，换关键词从首页重新请求。
 
 | 动态方法 | 语义 |
 |---|---|
 | `getEvents` | 当前账号的关注流；返回 `EventPage` 与不透明 `cursor` |
 | `getUserEvents` | 指定用户的动态；请求里的用户 ID 保持字符串 |
+| `searchEvents` | 按关键词查找当前会话可见的动态（`social.events.search`，tag 171） |
+| `publishEvent` | 以当前账号发纯文字动态（`social.events.publish`，tag 172）；正文最多 140 个 Unicode 码点 |
 | `deleteEvent` | 删除有权限的动态 |
 | `forwardEvent` | 转发动态并附纯文本 |
-| `shareResource` | 把 `song` / `album` / `playlist` 分享到动态 |
+| `shareResource` | 分享歌曲等资源到动态，可附文字。资源类型由音源实现决定；发纯文字用 `publishEvent` |
 | `likeResource` | 显式设置 `liked` 状态；资源类型包含动态本身，不能实现成「切换」 |
 
 | `SocialEvent` 字段 | 约定 |
 |---|---|
+| `id` | 音源私有的不透明标识；点赞、评论、转发和删除都原样回传，不能转为数字或自行拼接线程 ID |
 | `text` | 正文纯文本，不是 JSON 或 HTML |
 | `imageUrls` | 明确 URL 列表，不塞入未拆分的图片封套 |
 | `resourceType` / `resourceId` | typed 资源快照；未知类型不要猜成歌曲 |
@@ -215,7 +218,10 @@ const provider = defineProvider({
 
 宿主把 `social.events` / `social.userEvents` 映射为 UI 能力 `socialFeed`，把
 `messages.unread` / `messages.conversations` / `messages.history` 映射为 `messages`。
-音源未实现时返回 `Unsupported`；当前契约未提供发布动态接口。
+搜索、纯文字发布与资源分享分别声明能力。旧音源无需改动；未实现时返回 `Unsupported`。
+发布或分享遇到超时等结果不确定的错误时，先检查自己的动态，避免自动重试造成重复发表。
+
+网易云原生音源把搜索映射到 `event/search/list/get/v1`，把文字和歌曲发布映射到 `share/friends/resource`。网易云的偏移仅作为音源内部的游标格式；宿主不解析它，也不把歌曲 ID 当作新动态 ID。
 
 ## 6. 一起听
 

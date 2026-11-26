@@ -46,12 +46,14 @@ Core 后端源码层 (ProviderHost + ScopedProviderRuntime)
 1. **UI / `SwrCache`**（`app/src/commonMain/kotlin/cp/player/app/repository/SwrCache.kt`）：处于托盘后台 / 省流 / 离线时，命中 `stale` 窗口只返回缓存结果，**不再悄悄启动后台网络刷新协程**。
 2. **`ProviderHost`**（`core/src/commonMain/kotlin/cp/player/core/provider/typed/ProviderHost.kt`）：
    - 对安全只读接口启用并发合并（Singleflight）与有界 LRU 读缓存（`MAX_READ_CACHE_ENTRIES = 48`），写操作（`mutation`）与会话失效（`invalidate`）自动清空读缓存；
+   - 网易云原生音源和其他 SDK 音源共用这层缓存。相似歌手、歌手浏览、歌手 MV 的结果缓存 60 秒；动态流、用户动态和动态搜索只合并同一会话内同时发出的相同请求，显式刷新仍会查上游。成功发布、删除、转发、分享动态或变更关注后，新请求不会复用写入前的在途读取；
    - 后台/省流/离线模式下复用 stale 宽限窗口，不唤醒底层插件与网络；
    - 后台压缩时调用 `trimCache()` 裁至热点 8 条。
 3. **`ScopedProviderRuntime`**（`core/src/jvmMain/kotlin/cp/player/core/provider/typed/ScopedProviderRuntime.kt`）：
    - 对非敏感、允许缓存的 `GET` 请求自动执行 `If-None-Match` / `If-Modified-Since` 条件验证；
    - 仅将无 `Cookie`/`Authorization` 且响应无 `Set-Cookie`/`no-store`/`private` 的公共 HTTP 响应写入桌面端 `~/.cpplayer/cache/sdk-http` 磁盘缓存，防止认证凭证落盘或跨账号串号；
    - 通过 `hostState()` 向插件提供只读运行态快照。
+   - 网易云 Rust 音源通过自己的 `reqwest` 客户端直接访问上游；其加密业务请求不走宿主的公共 GET 磁盘缓存。播放地址、登录及写操作也不走宿主读缓存。
 
 ---
 

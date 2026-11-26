@@ -421,7 +421,7 @@ suspend fun ProviderHost.getCalendar(request: CalendarRequest): CalendarPage {
 suspend fun ProviderHost.getEvents(request: EventPageRequest): EventPage {
     validateExtendedRequest(request)
     request.write(WireWriter())
-    return callExtended(ExtendedCapability.GETEVENTS) { provider ->
+    return callExtendedRead(ExtendedCapability.GETEVENTS, request, 0L) { provider ->
         provider.getEvents(request).also {
             validateExtendedResult(it.values(), request.values())
             it.write(WireWriter())
@@ -432,7 +432,7 @@ suspend fun ProviderHost.getEvents(request: EventPageRequest): EventPage {
 suspend fun ProviderHost.getUserEvents(request: UserEventRequest): EventPage {
     validateExtendedRequest(request)
     request.write(WireWriter())
-    return callExtended(ExtendedCapability.GETUSEREVENTS) { provider ->
+    return callExtendedRead(ExtendedCapability.GETUSEREVENTS, request, 0L) { provider ->
         provider.getUserEvents(request).also {
             validateExtendedResult(it.values(), request.values())
             it.write(WireWriter())
@@ -447,6 +447,7 @@ suspend fun ProviderHost.deleteEvent(request: IdRequest): MutationResult {
         provider.deleteEvent(request).also {
             validateExtendedResult(it.values(), request.values())
             it.write(WireWriter())
+            if (it.success) clearReadCache()
         }
     }
 }
@@ -458,6 +459,7 @@ suspend fun ProviderHost.forwardEvent(request: ForwardEventRequest): MutationRes
         provider.forwardEvent(request).also {
             validateExtendedResult(it.values(), request.values())
             it.write(WireWriter())
+            if (it.success) clearReadCache()
         }
     }
 }
@@ -469,6 +471,7 @@ suspend fun ProviderHost.shareResource(request: ShareResourceRequest): MutationR
         provider.shareResource(request).also {
             validateExtendedResult(it.values(), request.values())
             it.write(WireWriter())
+            if (it.success) clearReadCache()
         }
     }
 }
@@ -583,6 +586,7 @@ suspend fun ProviderHost.followUser(request: FollowUserRequest): MutationResult 
         provider.followUser(request).also {
             validateExtendedResult(it.values(), request.values())
             it.write(WireWriter())
+            if (it.success) clearReadCache()
         }
     }
 }
@@ -623,7 +627,7 @@ suspend fun ProviderHost.cloudMatch(request: CloudMatchRequest): MutationResult 
 suspend fun ProviderHost.getSimilarArtists(request: IdRequest): ArtistPage {
     validateExtendedRequest(request)
     request.write(WireWriter())
-    return callExtended(ExtendedCapability.GETSIMILARARTISTS) { provider ->
+    return callExtendedRead(ExtendedCapability.GETSIMILARARTISTS, request, 60000L) { provider ->
         provider.getSimilarArtists(request).also {
             validateExtendedResult(it.values(), request.values())
             it.write(WireWriter())
@@ -649,6 +653,7 @@ suspend fun ProviderHost.subscribeArtist(request: SubscriptionRequest): Mutation
         provider.subscribeArtist(request).also {
             validateExtendedResult(it.values(), request.values())
             it.write(WireWriter())
+            if (it.success) clearReadCache()
         }
     }
 }
@@ -667,7 +672,7 @@ suspend fun ProviderHost.getSubscribedArtists(request: PageRequest): ArtistPage 
 suspend fun ProviderHost.getArtistMvs(request: PagedIdRequest): VideoPage {
     validateExtendedRequest(request)
     request.write(WireWriter())
-    return callExtended(ExtendedCapability.GETARTISTMVS) { provider ->
+    return callExtendedRead(ExtendedCapability.GETARTISTMVS, request, 60000L) { provider ->
         provider.getArtistMvs(request).also {
             validateExtendedResult(it.values(), request.values())
             it.write(WireWriter())
@@ -678,7 +683,7 @@ suspend fun ProviderHost.getArtistMvs(request: PagedIdRequest): VideoPage {
 suspend fun ProviderHost.browseArtists(request: ArtistBrowseRequest): ArtistPage {
     validateExtendedRequest(request)
     request.write(WireWriter())
-    return callExtended(ExtendedCapability.BROWSEARTISTS) { provider ->
+    return callExtendedRead(ExtendedCapability.BROWSEARTISTS, request, 60000L) { provider ->
         provider.browseArtists(request).also {
             validateExtendedResult(it.values(), request.values())
             it.write(WireWriter())
@@ -1219,6 +1224,29 @@ suspend fun ProviderHost.exchangeLicense(request: LicenseRequest): LicenseRespon
         provider.exchangeLicense(snapshot).also {
             validateExtendedResult(it.values(), snapshot.values())
             it.write(WireWriter())
+        }
+    }
+}
+
+suspend fun ProviderHost.searchEvents(request: EventSearchRequest): EventPage {
+    validateExtendedRequest(request)
+    request.write(WireWriter())
+    return callExtendedRead(ExtendedCapability.SEARCHEVENTS, request, 0L) { provider ->
+        provider.searchEvents(request).also {
+            validateExtendedResult(it.values(), request.values())
+            it.write(WireWriter())
+        }
+    }
+}
+
+suspend fun ProviderHost.publishEvent(request: PublishEventRequest): MutationResult {
+    validateExtendedRequest(request)
+    request.write(WireWriter())
+    return callExtended(ExtendedCapability.PUBLISHEVENT) { provider ->
+        provider.publishEvent(request).also {
+            validateExtendedResult(it.values(), request.values())
+            it.write(WireWriter())
+            if (it.success) clearReadCache()
         }
     }
 }

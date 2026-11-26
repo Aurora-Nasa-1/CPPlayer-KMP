@@ -223,4 +223,8 @@ abstract class ExtendedJsProviderMethods : MusicProvider {
         extendedBusiness("resolveDrm", request.values(), ResolvedMedia::fromValues)
     override suspend fun exchangeLicense(request: LicenseRequest): LicenseResponse =
         extendedBusiness("exchangeLicense", request.values(), LicenseResponse::fromValues)
+    override suspend fun searchEvents(request: EventSearchRequest): EventPage =
+        extendedBusiness("searchEvents", request.values(), EventPage::fromValues)
+    override suspend fun publishEvent(request: PublishEventRequest): MutationResult =
+        extendedBusiness("publishEvent", request.values(), MutationResult::fromValues)
 }

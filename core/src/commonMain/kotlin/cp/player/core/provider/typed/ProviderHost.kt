@@ -9,7 +9,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
-import java.util.concurrent.atomic.AtomicInteger
 
 /** A session identity, never a credential. A new revision requires a new host. */
 data class ProviderSessionKey(val providerId: String, val accountId: String, val revision: Long) {
@@ -41,7 +40,7 @@ class ProviderHost(
     private val adapter: MusicProvider,
     private val isCurrent: () -> Boolean = { true },
     private val timeoutMs: Long = 15_000,
-    maxConcurrency: Int = 4,
+    maxConcurrency: Int = MAX_CONCURRENCY,
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     private val sessionJob = SupervisorJob()
@@ -49,14 +48,14 @@ class ProviderHost(
     private val permits: Semaphore
     private val closeMutex = Mutex()
     private val cacheLock = Any()
-    private val readCache = LinkedHashMap<String, CachedReadEntry>(48, 0.75f, true)
-    private val inflightReads = HashMap<String, InflightRead>()
+    private val readCache = LinkedHashMap<ReadKey, CachedReadEntry>(48, 0.75f, true)
+    private val inflightReads = HashMap<ReadKey, InflightRead>()
     private var disposed = false
     val isActive: Boolean get() = sessionJob.isActive
-    init { require(timeoutMs > 0); require(maxConcurrency in 1..16); permits = Semaphore(maxConcurrency) }
+    init { require(timeoutMs > 0); require(maxConcurrency in 1..MAX_CONCURRENCY); permits = Semaphore(maxConcurrency) }
 
     fun invalidate() {
-        synchronized(cacheLock) { readCache.clear() }
+        clearReadCache()
         sessionJob.cancel(CancellationException("Provider session retired"))
     }
 
@@ -76,7 +75,11 @@ class ProviderHost(
     }
 
     internal fun clearReadCache() {
-        synchronized(cacheLock) { readCache.clear() }
+        synchronized(cacheLock) {
+            readCache.clear()
+            // Existing callers can finish, but new readers must not join a pre-mutation read.
+            inflightReads.clear()
+        }
     }
     private fun fence() {
         sessionJob.ensureActive()
@@ -118,23 +121,33 @@ class ProviderHost(
         requireCapability(capability)
         action(adapter)
     }
+    internal suspend fun <T : Any> callExtendedRead(
+        capability: String,
+        request: Any,
+        ttlMs: Long,
+        action: suspend (MusicProvider) -> T,
+    ): T = cachedRead(capability, request, ttlMs) {
+        requireCapability(capability)
+        action(adapter)
+    }
+
     private suspend fun <T : Any> cachedRead(
         op: String,
-        key: String,
+        key: Any,
         ttlMs: Long,
         block: suspend () -> T,
     ): T {
         fence()
-        val cacheKey = "$op|$key"
+        val cacheKey = ReadKey(op, key)
         val now = currentTimeMillis()
         val staleGraceMs = ttlMs * 3L
         val deferBackground = HostTrafficPolicy.shouldDeferNetworkFallback()
 
-        @Suppress("UNCHECKED_CAST")
-        synchronized(cacheLock) {
+        val entry = synchronized(cacheLock) {
             val entry = readCache[cacheKey]
             if (entry != null) {
                 val age = now - entry.storedAtMs
+                @Suppress("UNCHECKED_CAST")
                 if (age < entry.ttlMs || (deferBackground && age < entry.staleGraceMs)) {
                     return entry.value as T
                 }
@@ -142,21 +155,18 @@ class ProviderHost(
                     readCache.remove(cacheKey)
                 }
             }
-        }
-
-        val entry: InflightRead = synchronized(cacheLock) {
             val existing = inflightReads[cacheKey]
             if (existing != null) {
-                existing.waiters.incrementAndGet()
+                existing.waiters++
                 existing
             } else {
                 val created = InflightRead()
                 inflightReads[cacheKey] = created
-                created.task = scope.async {
+                created.task = scope.async(start = CoroutineStart.LAZY) {
                     try {
                         val value = call { block() }
                         synchronized(cacheLock) {
-                            if (sessionJob.isActive && isCurrent()) {
+                            if (ttlMs > 0 && inflightReads[cacheKey] === created && sessionJob.isActive && isCurrent()) {
                                 readCache[cacheKey] = CachedReadEntry(value, currentTimeMillis(), ttlMs, staleGraceMs)
                                 while (readCache.size > MAX_READ_CACHE_ENTRIES) {
                                     readCache.remove(readCache.keys.first())
@@ -181,13 +191,21 @@ class ProviderHost(
             fence()
             return result
         } finally {
-            if (entry.waiters.decrementAndGet() <= 0 && !deferred.isCompleted) {
+            val cancel = synchronized(cacheLock) {
+                entry.waiters--
+                (entry.waiters == 0 && !deferred.isCompleted).also {
+                    if (it && inflightReads[cacheKey] === entry) inflightReads.remove(cacheKey)
+                }
+            }
+            if (cancel) {
                 withContext(NonCancellable) {
                     deferred.cancelAndJoin()
                 }
             }
         }
     }
+
+    private data class ReadKey(val operation: String, val request: Any)
 
     private class CachedReadEntry(
         val value: Any,
@@ -197,11 +215,12 @@ class ProviderHost(
     )
 
     private class InflightRead {
-        val waiters = AtomicInteger(1)
+        var waiters = 1
         lateinit var task: Deferred<Any>
     }
 
     private companion object {
+        const val MAX_CONCURRENCY = 8
         const val MAX_READ_CACHE_ENTRIES = 48
         const val MAX_TRIMMED_READ_CACHE_ENTRIES = 8
         const val SHORT_TTL_MS = 60_000L

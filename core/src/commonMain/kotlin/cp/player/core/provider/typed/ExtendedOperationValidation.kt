@@ -95,6 +95,12 @@ internal fun validateExtendedRequest(request: Any) {
             if (start != null && end != null) require(start <= end)
         }
         is EventPageRequest -> request.values()
+        is EventSearchRequest -> request.values().also {
+            require(request.keyword.isNotBlank() && request.keyword.length <= 128)
+        }
+        is PublishEventRequest -> request.values().also {
+            require(request.text.isNotBlank() && cp.player.core.music.commentCodePointLength(request.text) <= 140)
+        }
         is UserEventRequest -> request.values()
         is ForwardEventRequest -> request.values()
         is ShareResourceRequest -> request.values()

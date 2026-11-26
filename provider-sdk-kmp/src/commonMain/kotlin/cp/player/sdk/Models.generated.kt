@@ -4285,6 +4285,60 @@ data class EventPageRequest(
     }
 }
 
+/** Keyword and opaque continuation cursor for a page of visible posts. */
+data class EventSearchRequest(
+    /** Search text, not an encoded query string. */
+    val keyword: String,
+    /** Requested item bound, 1..500; a response must not exceed it. */
+    val limit: Int = 30,
+    /** Opaque continuation token. Preserve empty strings and punctuation; at most 4096 characters for extended operations. */
+    val cursor: String? = null,
+) {
+    fun write(w: WireWriter) { with(w) {
+        string(this@EventSearchRequest.keyword)
+        int(this@EventSearchRequest.limit)
+        optional(this@EventSearchRequest.cursor) { v -> string(v) }
+    } }
+    fun values(): Map<String, Any?> = mapOf(
+        "keyword" to keyword,
+        "limit" to limit,
+        "cursor" to cursor?.let { it },
+    )
+    companion object {
+        fun read(r: WireReader): EventSearchRequest = with(r) { EventSearchRequest(
+            string(),
+            int(),
+            optional { string() },
+        ) }
+        fun fromValues(v: Map<String, Any?>): EventSearchRequest = EventSearchRequest(
+            valueString(v["keyword"]),
+            valueInt(v["limit"]),
+            v["cursor"]?.let { valueString(it) },
+        )
+    }
+}
+
+/** Non-blank plain text for a post without a resource attachment, up to 140 Unicode code points. */
+data class PublishEventRequest(
+    /** Plain text, never an upstream JSON message envelope. */
+    val text: String,
+) {
+    fun write(w: WireWriter) { with(w) {
+        string(this@PublishEventRequest.text)
+    } }
+    fun values(): Map<String, Any?> = mapOf(
+        "text" to text,
+    )
+    companion object {
+        fun read(r: WireReader): PublishEventRequest = with(r) { PublishEventRequest(
+            string(),
+        ) }
+        fun fromValues(v: Map<String, Any?>): PublishEventRequest = PublishEventRequest(
+            valueString(v["text"]),
+        )
+    }
+}
+
 /** User-scoped social-feed cursor input. */
 data class UserEventRequest(
     /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
@@ -6014,4 +6068,6 @@ object ProviderProtocol {
     const val LIKERESOURCE = 167
     const val RESOLVEDRM = 168
     const val EXCHANGELICENSE = 169
+    const val SEARCHEVENTS = 171
+    const val PUBLISHEVENT = 172
 }

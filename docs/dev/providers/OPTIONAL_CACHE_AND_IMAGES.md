@@ -1,14 +1,14 @@
 # 可选扩展：缓存配合、宿主状态感知与多档封面规则
 
-> 本文面向 **SDK Provider 作者**。**本页描述的所有能力均为可选项**：如果你不添加任何额外代码，宿主已经会在底层自动提供 HTTP 条件缓存、并发请求合并、后台降载与封面本地高转低复用。
+> 本文面向 **SDK Provider 作者**。会话级读缓存、并发合并、后台降载与封面复用由宿主提供。HTTP 条件缓存适用于通过宿主 HTTP 接口发出的公共 GET。
 
 ---
 
 ## 1. 为什么你可以“零代码”直接受益
 
 宿主在以下两层已经默认托管了大部分省流量与抗重下工作：
-1. **`ProviderHost` 会话级防重与读缓存**：同一账号会话内并发或短时间重复调用 `get`、`getPlaylist`、`getAlbum`、`getLyrics`、`search` 等只读接口会自动合并与缓存；写操作（收藏、增删歌单等）会自动失效缓存；`tracks.resolve` 与登录接口绝不缓存。
-2. **`ScopedProviderRuntime.http()` 自动条件缓存**：对插件发起的可缓存公共 `GET` 请求，宿主会自动合并并发请求并在持有 `ETag` / `Last-Modified` 时附带 `If-None-Match` / `If-Modified-Since`（命中 `304` 零正文流量）。
+1. **`ProviderHost` 会话级防重与读缓存**：同一账号会话内并发或短时间重复调用 `get`、`getPlaylist`、`getAlbum`、`getLyrics`、`search` 等只读接口会自动合并与缓存。`getSimilarArtists`、`browseArtists` 和 `getArtistMvs` 的有效期为 60 秒。`getEvents`、`getUserEvents` 和 `searchEvents` 只合并同时进行的相同请求，完成后不保留结果，方便用户随时刷新。收藏、增删歌单、发动态等写入会使相关读缓存失效；`tracks.resolve` 与登录接口不缓存。
+2. **`ScopedProviderRuntime.http()` 自动条件缓存**：对经宿主发出的可缓存公共 `GET`，宿主会自动合并并发请求并在持有 `ETag` / `Last-Modified` 时附带 `If-None-Match` / `If-Modified-Since`（命中 `304` 零正文流量）。JNI 和 C ABI 音源同样经过 `ProviderHost`；网易云等直接用原生 HTTP 客户端的音源不会经过这层 HTTP 磁盘缓存。
 3. **封面本地降采样复用**：同一张封面只要本地已经下载过原图或任意更高分辨率分档，列表、迷你播控或托盘再请求小尺寸时由宿主本地 Skia/Bitmap 直接裁剪生成，**不发任何网络请求**。
 
 如果你希望针对特殊图床或省流模式进一步压榨流量，只需按需选用下方**三个极轻量入口**中的任意一个。

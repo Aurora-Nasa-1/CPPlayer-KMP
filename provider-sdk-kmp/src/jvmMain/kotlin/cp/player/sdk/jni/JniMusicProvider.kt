@@ -39,6 +39,7 @@ class JniMusicProvider private constructor(
     constructor(session: JniProviderSession) : this(null, session, 1)
 
     private class Lane(val session: JniProviderSession) {
+        var idleRetirement: Job? = null
         val executor = Executors.newSingleThreadExecutor { task ->
             Thread(task, "provider-sdk-jni-${laneIds.incrementAndGet()}").apply { isDaemon = true }
         }
@@ -49,9 +50,12 @@ class JniMusicProvider private constructor(
     private val lock = Any()
     private val idle = ArrayDeque<Lane>()
     private val lanes = mutableSetOf<Lane>()
+    private val retirementScope = CoroutineScope(Dispatchers.Default)
     private val drained = CompletableDeferred<Unit>()
     private val closeMutex = Mutex()
     private var active = 0
+    private var retiring = 0
+    private var retirementFailure: Throwable? = null
     private var closed = false
     private var disposed = false
 
@@ -83,6 +87,8 @@ class JniMusicProvider private constructor(
             synchronized(lock) {
                 check(!closed) { "JNI provider closed" }
                 val lane = idle.removeLastOrNull() ?: openLaneLocked()
+                lane.idleRetirement?.cancel()
+                lane.idleRetirement = null
                 lanes.add(lane)
                 active++
                 lane
@@ -105,11 +111,46 @@ class JniMusicProvider private constructor(
     private fun releaseLane(lane: Lane) {
         val complete = synchronized(lock) {
             active--
-            if (!closed) idle.addLast(lane)
-            closed && active == 0
+            if (!closed) {
+                idle.addLast(lane)
+                if (openSession != null) {
+                    lane.idleRetirement = retirementScope.launch {
+                        delay(IDLE_LANE_TIMEOUT_MS)
+                        retireIdleLane(lane, coroutineContext.job)
+                    }
+                }
+            }
+            closed && active == 0 && retiring == 0
         }
         permits.release()
         if (complete) drained.complete(Unit)
+    }
+
+    private fun retireIdleLane(lane: Lane, timer: Job) {
+        synchronized(lock) {
+            if (lane.idleRetirement !== timer) return
+            lane.idleRetirement = null
+            if (closed || idle.size <= WARM_IDLE_LANES || !permits.tryAcquire()) return
+            // Keep a permit until close finishes to cap live native handles during a new burst.
+            idle.remove(lane)
+            lanes.remove(lane)
+            retiring++
+        }
+        lane.executor.execute {
+            try {
+                lane.session.close()
+            } catch (error: Throwable) {
+                synchronized(lock) { if (retirementFailure == null) retirementFailure = error }
+            } finally {
+                lane.executor.shutdown()
+                val complete = synchronized(lock) {
+                    retiring--
+                    closed && active == 0 && retiring == 0
+                }
+                permits.release()
+                if (complete) drained.complete(Unit)
+            }
+        }
     }
 
     private suspend fun invokeOnLane(lane: Lane, operation: Int, request: Any): Any {
@@ -152,11 +193,12 @@ class JniMusicProvider private constructor(
                 disposed = true
                 synchronized(lock) {
                     closed = true
-                    if (active == 0) drained.complete(Unit)
+                    if (active == 0 && retiring == 0) drained.complete(Unit)
                 }
+                retirementScope.cancel()
                 drained.await()
                 val closing = synchronized(lock) { lanes.toList().also { lanes.clear(); idle.clear() } }
-                var failure: Throwable? = null
+                var failure = synchronized(lock) { retirementFailure }
                 for (lane in closing) {
                     try {
                         lane.executor.submit { lane.session.close() }.get()
@@ -175,7 +217,9 @@ class JniMusicProvider private constructor(
 
     companion object {
         /** Matches the host's per-session call concurrency (`ProviderHost`). */
-        const val MAX_CONCURRENCY = 4
+        const val MAX_CONCURRENCY = 8
+        private const val WARM_IDLE_LANES = 2
+        private const val IDLE_LANE_TIMEOUT_MS = 30_000L
         private val laneIds = AtomicInteger()
 
         /**

@@ -60,6 +60,7 @@ pub mod tags {
     pub const POST_COMMENT: i32 = 50;
     pub const LIKE_COMMENT: i32 = 51;
     pub const GET_PERSONAL_FM: i32 = 52;
+    pub const GET_PERSONAL_FM_MODE: i32 = 170;
     pub const GET_SIMILAR_SONGS: i32 = 53;
     pub const GET_INTELLIGENCE_SONGS: i32 = 54;
     pub const SUBSCRIBE_ALBUM: i32 = 55;
@@ -177,6 +178,8 @@ pub mod tags {
     pub const LIKE_RESOURCE: i32 = 167;
     pub const RESOLVE_DRM: i32 = 168;
     pub const EXCHANGE_LICENSE: i32 = 169;
+    pub const SEARCH_EVENTS: i32 = 171;
+    pub const PUBLISH_EVENT: i32 = 172;
 }
 
 pub mod Capability {
@@ -227,6 +230,7 @@ pub mod Capability {
     pub const POST_COMMENT: &'static str = "comments.post";
     pub const LIKE_COMMENT: &'static str = "comments.like";
     pub const GET_PERSONAL_FM: &'static str = "recommendations.personalFm";
+    pub const GET_PERSONAL_FM_MODE: &'static str = "recommendations.personalFmMode";
     pub const GET_SIMILAR_SONGS: &'static str = "recommendations.similarSongs";
     pub const GET_INTELLIGENCE_SONGS: &'static str = "recommendations.intelligenceSongs";
     pub const SUBSCRIBE_ALBUM: &'static str = "albums.subscribe";
@@ -344,6 +348,8 @@ pub mod Capability {
     pub const LIKE_RESOURCE: &'static str = "social.likeResource";
     pub const RESOLVE_DRM: &'static str = "tracks.resolveDrm";
     pub const EXCHANGE_LICENSE: &'static str = "tracks.exchangeLicense";
+    pub const SEARCH_EVENTS: &'static str = "social.events.search";
+    pub const PUBLISH_EVENT: &'static str = "social.events.publish";
 }
 
 /// Every capability name this contract version defines. Declaring a capability
@@ -396,6 +402,7 @@ pub const ALL_CAPABILITIES: &[&str] = &[
     "comments.post",
     "comments.like",
     "recommendations.personalFm",
+    "recommendations.personalFmMode",
     "recommendations.similarSongs",
     "recommendations.intelligenceSongs",
     "albums.subscribe",
@@ -513,6 +520,8 @@ pub const ALL_CAPABILITIES: &[&str] = &[
     "social.likeResource",
     "tracks.resolveDrm",
     "tracks.exchangeLicense",
+    "social.events.search",
+    "social.events.publish",
 ];
 
 pub fn all_capabilities() -> Vec<&'static str> {
@@ -811,6 +820,12 @@ pub trait MusicProvider: Send {
 
     /// Get a personal-radio selection for the current account. Capability: `recommendations.personalFm`. Tag: 52.
     fn get_personal_fm(&mut self, request: Bytes, context: &ProviderContext) -> ProviderResult<TrackPage> {
+        let _ = (request, context);
+        unsupported()
+    }
+
+    /// Get a personal-radio selection using a provider-supported mode and sub-mode. Capability: `recommendations.personalFmMode`. Tag: 170.
+    fn get_personal_fm_mode(&mut self, request: FmModeRequest, context: &ProviderContext) -> ProviderResult<TrackPage> {
         let _ = (request, context);
         unsupported()
     }
@@ -1517,6 +1532,18 @@ pub trait MusicProvider: Send {
         unsupported()
     }
 
+    /// Search visible social posts by keyword. Pass the continuation cursor back unchanged with the same keyword; start over when the keyword changes. Capability: `social.events.search`. Tag: 171.
+    fn search_events(&mut self, request: EventSearchRequest, context: &ProviderContext) -> ProviderResult<EventPage> {
+        let _ = (request, context);
+        unsupported()
+    }
+
+    /// Publish a plain-text post as the active account. Use shareResource for a post with an attached song. Do not retry a publish automatically after an ambiguous failure. Capability: `social.events.publish`. Tag: 172.
+    fn publish_event(&mut self, request: PublishEventRequest, context: &ProviderContext) -> ProviderResult<MutationResult> {
+        let _ = (request, context);
+        unsupported()
+    }
+
 }
 
 fn supported(provider: &dyn MusicProvider, context: &ProviderContext, capability: &str) -> bool {
@@ -1938,6 +1965,14 @@ pub fn dispatch(
                 return unsupported();
             }
             let value = provider.get_personal_fm(request, context)?;
+            encode(&value, TrackPage::write)
+        }
+        170 => {
+            let request = decode(&mut r, FmModeRequest::read)?;
+            if !supported(provider, context, "recommendations.personalFmMode") {
+                return unsupported();
+            }
+            let value = provider.get_personal_fm_mode(request, context)?;
             encode(&value, TrackPage::write)
         }
         53 => {
@@ -2875,6 +2910,22 @@ pub fn dispatch(
             }
             let value = provider.exchange_license(request, context)?;
             encode(&value, LicenseResponse::write)
+        }
+        171 => {
+            let request = decode(&mut r, EventSearchRequest::read)?;
+            if !supported(provider, context, "social.events.search") {
+                return unsupported();
+            }
+            let value = provider.search_events(request, context)?;
+            encode(&value, EventPage::write)
+        }
+        172 => {
+            let request = decode(&mut r, PublishEventRequest::read)?;
+            if !supported(provider, context, "social.events.publish") {
+                return unsupported();
+            }
+            let value = provider.publish_event(request, context)?;
+            encode(&value, MutationResult::write)
         }
         _ => Err(Failure::new(FailureCategory::Unsupported, format!("Unknown operation {operation}"))),
     };

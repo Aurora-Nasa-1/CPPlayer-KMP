@@ -11,6 +11,7 @@ export default {
     "VideoResolveRequest": { "resolution": 1080 },
     "DjProgramsRequest": { "limit": 30, "offset": 0, "ascending": false },
     "EventPageRequest": { "limit": 30 },
+    "EventSearchRequest": { "limit": 30 },
     "UserEventRequest": { "limit": 30 },
     "ArtistBrowseRequest": { "type": -1, "area": -100, "initial": "", "limit": 30, "offset": 0 },
     "CommentQuery": { "limit": 20, "offset": 0, "sortType": 1 },
@@ -140,6 +141,8 @@ export default {
     "SocialEvent": { "id": "string", "user": "SocialUser", "text": "string", "publishedAtEpochMs": "long", "resourceId": "string?", "resourceType": "string?", "resourceTitle": "string?", "resourceCoverUrl": "string?", "resourceSubtitle": "string?", "imageUrls": "string[]", "liked": "bool", "likedCount": "int", "commentCount": "int", "forwardCount": "int", "forwardedFrom": "EventOrigin?", "location": "string?" },
     "EventPage": { "items": "SocialEvent[]", "hasMore": "bool?", "cursor": "string?" },
     "EventPageRequest": { "limit": "int", "cursor": "string?" },
+    "EventSearchRequest": { "keyword": "string", "limit": "int", "cursor": "string?" },
+    "PublishEventRequest": { "text": "string" },
     "UserEventRequest": { "id": "string", "limit": "int", "cursor": "string?" },
     "ForwardEventRequest": { "eventId": "string", "userId": "string", "text": "string" },
     "ResourceLikeRequest": { "id": "string", "type": "string", "liked": "bool" },
@@ -356,6 +359,8 @@ export default {
     "getLikeListPage": { "tag": 166, "request": "PagedIdRequest", "response": "IdPage", "group": "Accounts", "capability": "accounts.likes.page", "extended": true },
     "likeResource": { "tag": 167, "request": "ResourceLikeRequest", "response": "MutationResult", "group": "SocialOperations", "capability": "social.likeResource", "extended": true },
     "resolveDrm": { "tag": 168, "request": "DrmResolveRequest", "response": "ResolvedMedia", "group": "Tracks", "capability": "tracks.resolveDrm", "extended": true },
-    "exchangeLicense": { "tag": 169, "request": "LicenseRequest", "response": "LicenseResponse", "group": "Tracks", "capability": "tracks.exchangeLicense", "extended": true }
+    "exchangeLicense": { "tag": 169, "request": "LicenseRequest", "response": "LicenseResponse", "group": "Tracks", "capability": "tracks.exchangeLicense", "extended": true },
+    "searchEvents": { "tag": 171, "request": "EventSearchRequest", "response": "EventPage", "group": "SocialOperations", "capability": "social.events.search", "extended": true },
+    "publishEvent": { "tag": 172, "request": "PublishEventRequest", "response": "MutationResult", "group": "SocialOperations", "capability": "social.events.publish", "extended": true }
   }
 };

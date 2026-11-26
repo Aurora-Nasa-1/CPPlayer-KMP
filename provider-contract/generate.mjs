@@ -197,20 +197,38 @@ const extendedJs = banner + `package cp.player.core.provider.typed\n\nimport cp.
   extended.map(([n, op]) => `    override suspend fun ${signature(n, op)} =\n` +
     `        extendedBusiness("${n}", request.values(), ${op.response}::fromValues)`).join("\n") + `\n}\n`;
 // Host operations remain explicit typed calls, under the existing session task/fence.
+// Host-only policy: zero TTL joins in-flight calls while keeping explicit refreshes fresh.
+const hostReadTtl = new Map([
+  ["getSimilarArtists", 60_000],
+  ["browseArtists", 60_000],
+  ["getArtistMvs", 60_000],
+  ["getEvents", 0],
+  ["getUserEvents", 0],
+  ["searchEvents", 0],
+]);
+const hostReadInvalidators = new Set([
+  "deleteEvent", "forwardEvent", "shareResource", "publishEvent", "followUser", "subscribeArtist",
+]);
 const hostKotlin = banner + `package cp.player.core.provider.typed\n\nimport cp.player.sdk.*\n\n` +
   extended.map(([n, op]) => {
     const binary = Object.values(schema.records[op.request]).includes("bytes");
     const input = binary ? "snapshot" : "request";
+    const capability = `ExtendedCapability.${n.toUpperCase()}`;
+    const ttl = hostReadTtl.get(n);
+    const dispatch = ttl === undefined ? `callExtended(${capability})` :
+      `callExtendedRead(${capability}, ${input}, ${ttl}L)`;
     return `suspend fun ProviderHost.${signature(n, op)} {\n` +
     (binary ? `    val snapshot = ${op.request}.fromValues(request.values())\n` : "") +
     `    validateExtendedRequest(${input})\n    ${input}.write(WireWriter())\n` +
-    `    return callExtended(ExtendedCapability.${n.toUpperCase()}) { provider ->\n` +
+    `    return ${dispatch} { provider ->\n` +
     `        provider.${n}(${input}).also {\n` +
     `            validateExtendedResult(it.values(), ${input}.values())\n` +
     (op.response === "IdPage" ? `            validateIdPage(it)\n` : "") +
     (schema.records[op.request].id && schema.records[op.response].id && op.response !== "MutationResult"
       ? `            require(it.id == request.id)\n` : "") +
-    `            it.write(WireWriter())\n        }\n    }\n}\n`;
+    `            it.write(WireWriter())\n` +
+    (hostReadInvalidators.has(n) ? `            if (it.success) clearReadCache()\n` : "") +
+    `        }\n    }\n}\n`;
   }).join("\n");
 const sourceKotlin = banner + `package cp.player.core.music\n\n` +
   `import cp.player.core.BackendResult\nimport cp.player.core.provider.typed.*\nimport cp.player.sdk.*\n\n` +

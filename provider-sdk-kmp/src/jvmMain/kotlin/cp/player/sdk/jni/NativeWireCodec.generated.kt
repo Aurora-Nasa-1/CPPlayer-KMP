@@ -178,6 +178,8 @@ object NativeWireCodec {
             ProviderProtocol.LIKERESOURCE -> (request as ResourceLikeRequest).write(writer)
             ProviderProtocol.RESOLVEDRM -> (request as DrmResolveRequest).write(writer)
             ProviderProtocol.EXCHANGELICENSE -> (request as LicenseRequest).write(writer)
+            ProviderProtocol.SEARCHEVENTS -> (request as EventSearchRequest).write(writer)
+            ProviderProtocol.PUBLISHEVENT -> (request as PublishEventRequest).write(writer)
             else -> error("Unknown native SDK operation: $operation")
         }
         return writer.finish()
@@ -391,6 +393,8 @@ object NativeWireCodec {
             ProviderProtocol.LIKERESOURCE -> MutationResult.read(reader)
             ProviderProtocol.RESOLVEDRM -> ResolvedMedia.read(reader)
             ProviderProtocol.EXCHANGELICENSE -> LicenseResponse.read(reader)
+            ProviderProtocol.SEARCHEVENTS -> EventPage.read(reader)
+            ProviderProtocol.PUBLISHEVENT -> MutationResult.read(reader)
             else -> error("Unknown native SDK operation: $operation")
         }
         reader.finish()

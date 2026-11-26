@@ -133,6 +133,8 @@ internal fun extendedOperationCases(): List<ExtendedOperationCase> = listOf(
     extendedCase167(),
     extendedCase168(),
     extendedCase169(),
+    extendedCase171(),
+    extendedCase172(),
 )
 
 private fun extendedCase61(): ExtendedOperationCase {
@@ -2748,5 +2750,53 @@ private fun extendedCase169(): ExtendedOperationCase {
                     extendedValues(response.values()) == extendedValues(responseRoundTrip.values())
             },
             { actual -> actual is LicenseRequest && extendedValues(actual.values()) == extendedValues(request.values()) },
+        )
+}
+
+private fun extendedCase171(): ExtendedOperationCase {
+        val request = EventSearchRequest(keyword = "keyword", limit = 30, cursor = "cursor")
+        val response = EventPage(items = listOf(SocialEvent(id = "Opaque-A", user = SocialUser(id = "Opaque-A", nickname = "nickname", avatarUrl = null), text = "{\"msg\":\"literal text\"}", publishedAtEpochMs = 1L, resourceId = null, resourceType = null, resourceTitle = null, resourceCoverUrl = null, resourceSubtitle = null, imageUrls = listOf("https://example.test/media"), liked = true, likedCount = 1, commentCount = 1, forwardCount = 1, forwardedFrom = null, location = null)), hasMore = true, cursor = "cursor")
+        return ExtendedOperationCase("searchEvents", "social.events.search", 171, request, request.values(), response, response.values(),
+            { it.searchEvents(request).values() },
+            { source -> when (val result = source.searchEvents(request)) {
+                is BackendResult.Success -> BackendResult.Success(result.data.values())
+                is BackendResult.Error -> result
+                is BackendResult.Unsupported -> result
+            } },
+            {
+                val requestReader = WireReader(WireWriter().also(request::write).finish())
+                val requestRoundTrip = EventSearchRequest.read(requestReader)
+                requestReader.finish()
+                val responseReader = WireReader(WireWriter().also(response::write).finish())
+                val responseRoundTrip = EventPage.read(responseReader)
+                responseReader.finish()
+                extendedValues(request.values()) == extendedValues(requestRoundTrip.values()) &&
+                    extendedValues(response.values()) == extendedValues(responseRoundTrip.values())
+            },
+            { actual -> actual is EventSearchRequest && extendedValues(actual.values()) == extendedValues(request.values()) },
+        )
+}
+
+private fun extendedCase172(): ExtendedOperationCase {
+        val request = PublishEventRequest(text = "{\"msg\":\"literal text\"}")
+        val response = MutationResult(success = true, id = "Opaque-A")
+        return ExtendedOperationCase("publishEvent", "social.events.publish", 172, request, request.values(), response, response.values(),
+            { it.publishEvent(request).values() },
+            { source -> when (val result = source.publishEvent(request)) {
+                is BackendResult.Success -> BackendResult.Success(result.data.values())
+                is BackendResult.Error -> result
+                is BackendResult.Unsupported -> result
+            } },
+            {
+                val requestReader = WireReader(WireWriter().also(request::write).finish())
+                val requestRoundTrip = PublishEventRequest.read(requestReader)
+                requestReader.finish()
+                val responseReader = WireReader(WireWriter().also(response::write).finish())
+                val responseRoundTrip = MutationResult.read(responseReader)
+                responseReader.finish()
+                extendedValues(request.values()) == extendedValues(requestRoundTrip.values()) &&
+                    extendedValues(response.values()) == extendedValues(responseRoundTrip.values())
+            },
+            { actual -> actual is PublishEventRequest && extendedValues(actual.values()) == extendedValues(request.values()) },
         )
 }

@@ -164,5 +164,7 @@ export const providerMethods = Object.freeze({
   "accounts.likes.page": "getLikeListPage",
   "social.likeResource": "likeResource",
   "tracks.resolveDrm": "resolveDrm",
-  "tracks.exchangeLicense": "exchangeLicense"
+  "tracks.exchangeLicense": "exchangeLicense",
+  "social.events.search": "searchEvents",
+  "social.events.publish": "publishEvent"
 });

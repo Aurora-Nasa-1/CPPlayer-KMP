@@ -1312,6 +1312,22 @@ export interface EventPageRequest {
   readonly cursor?: string | null;
 }
 
+/** Keyword and opaque continuation cursor for a page of visible posts. */
+export interface EventSearchRequest {
+  /** Search text, not an encoded query string. */
+  readonly keyword: string;
+  /** Requested item bound, 1..500; a response must not exceed it. */
+  readonly limit: number;
+  /** Opaque continuation token. Preserve empty strings and punctuation; at most 4096 characters for extended operations. */
+  readonly cursor?: string | null;
+}
+
+/** Non-blank plain text for a post without a resource attachment, up to 140 Unicode code points. */
+export interface PublishEventRequest {
+  /** Plain text, never an upstream JSON message envelope. */
+  readonly text: string;
+}
+
 /** User-scoped social-feed cursor input. */
 export interface UserEventRequest {
   /** Opaque, case-sensitive provider-local identity; preserve leading zeros and punctuation. */
@@ -1952,7 +1968,9 @@ export type KnownCapability =
   | "accounts.likes.page"
   | "social.likeResource"
   | "tracks.resolveDrm"
-  | "tracks.exchangeLicense";
+  | "tracks.exchangeLicense"
+  | "social.events.search"
+  | "social.events.publish";
 
 export interface Tracks {
   /** Search audio tracks using item-offset pagination. Capability: tracks.search. Tag: 2. Undeclared or unimplemented capabilities fail with Unsupported. */
@@ -2131,6 +2149,10 @@ export interface SocialOperations {
   shareResource(request: ShareResourceRequest, context: Context): Promise<MutationResult>;
   /** Set the current account's liked state for one typed social resource, including an event. Capability: social.likeResource. Tag: 167. Undeclared or unimplemented capabilities fail with Unsupported. */
   likeResource(request: ResourceLikeRequest, context: Context): Promise<MutationResult>;
+  /** Search visible social posts by keyword. Pass the continuation cursor back unchanged with the same keyword; start over when the keyword changes. Capability: social.events.search. Tag: 171. Undeclared or unimplemented capabilities fail with Unsupported. */
+  searchEvents(request: EventSearchRequest, context: Context): Promise<EventPage>;
+  /** Publish a plain-text post as the active account. Use shareResource for a post with an attached song. Do not retry a publish automatically after an ambiguous failure. Capability: social.events.publish. Tag: 172. Undeclared or unimplemented capabilities fail with Unsupported. */
+  publishEvent(request: PublishEventRequest, context: Context): Promise<MutationResult>;
 }
 
 export interface Messaging {
