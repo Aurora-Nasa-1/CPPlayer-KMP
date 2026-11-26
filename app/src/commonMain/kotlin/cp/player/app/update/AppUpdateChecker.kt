@@ -17,6 +17,13 @@ import kotlinx.serialization.json.Json
 
 object AppUpdateChecker {
 
+    data class UpdateAsset(
+        val name: String,
+        val downloadUrl: String,
+        val sha256: String?,
+        val size: Long?,
+    )
+
     data class UpdateResult(
         val versionName: String,
         val versionCode: Int,
@@ -27,6 +34,7 @@ object AppUpdateChecker {
         val assetName: String? = null,
         val assetSha256: String? = null,
         val assetSize: Long? = null,
+        val availableAssets: List<UpdateAsset> = emptyList(),
         val announcement: RemoteAnnouncement? = null,
         val destructivePolicy: DestructiveUpdatePolicy? = null,
     )
@@ -170,6 +178,14 @@ object AppUpdateChecker {
                 assetName = asset?.name,
                 assetSha256 = asset?.sha256(),
                 assetSize = asset?.size,
+                availableAssets = release.assets.map { item ->
+                    UpdateAsset(
+                        name = item.name,
+                        downloadUrl = item.browserDownloadUrl,
+                        sha256 = item.sha256(),
+                        size = item.size,
+                    )
+                },
                 announcement = announcement,
                 destructivePolicy = policy,
             )

@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
 package cp.player.app.ui.component
 
 import androidx.compose.foundation.BorderStroke
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
@@ -32,14 +36,16 @@ import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -69,310 +75,117 @@ import cp.player.app.update.AppUpdateChecker
 import cp.player.app.version.AppVersion
 
 /**
- * 软件更新弹窗。
+ * 软件更新弹窗：Kazumi 的信息结构 + Material 3 Expressive 的标准控件。
  *
- * 遵循 Material 3 Expressive (M3E) 设计规范与现代工程表现力视觉层级：
- * - 风格严谨、正式、高信息密度，界面与文案完全剔除任何 Emoji；
- * - 规范的头部 Hero 区域：展示当前版本至目标版本的演进、架构格式、包体大小与发布时间；
- * - 智能结构化更新日志渲染：深度适配 Release CI 中由 AI 提炼的结构化更新内容
- *   （功能新增、问题修复、性能优化、界面与交互、其他改进），
- *   并支持优雅回退展示传统日志；
- * - 强表现力操作按钮组，桌面端与移动端自适应排版。
+ * - 结构仍按 `auto_updater.dart:200-340`：标题 → 正文 → 发布时间 → 安装类型区 → 动作区；
+ * - 安装类型行用 M3E [OutlinedButton] + `ButtonDefaults.shapes()`，按压时按钮形状形变；
+ * - 底部用官方 M3E [ButtonGroup]（[CpActionButtonGroup]），按下会横向撑开、邻居收窄；
+ * - 限制弹窗宽度，避免桌面端 Dialog 撑满整个窗口。
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppUpdateDialog(
     result: AppUpdateChecker.UpdateResult,
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
+    onDownloadAsset: (AppUpdateChecker.UpdateAsset) -> Unit,
+    isAutoCheck: Boolean = false,
+    onDisableAutoUpdate: (() -> Unit)? = null,
 ) {
     val isExpanded = LocalIsExpanded.current
     val s = cpStrings().update
-
-    // 对话框 = 浮层层；日志块 = 浮层内部的次级块。两者刻意不同档，否则整块糊在一起。
-    val changelogContainerColor = cp.player.app.ui.theme.cpSheetInnerSurface()
+    val installTypes = resolveInstallTypes(result, s)
 
     CpAlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier
-            .widthIn(min = 320.dp, max = if (isExpanded) 620.dp else 440.dp)
-            .fillMaxWidth(if (isExpanded) 0.65f else 0.94f),
-        icon = {
-            // M3E 风格的 Hero 图标容器
-            Surface(
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.size(52.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.RocketLaunch,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(26.dp),
-                    )
-                }
-            }
-        },
+            .widthIn(min = 320.dp, max = if (isExpanded) 620.dp else 520.dp)
+            .fillMaxWidth(if (isExpanded) 0.68f else 0.9f),
         title = {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                CpText(
-                    text = s.title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-
-                // 版本迭代指示栏：当前版本 ➔ 目标版本
-                Surface(
-                    shape = MaterialTheme.shapes.medium,
-                    color = changelogContainerColor,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    ) {
-                        CpText(
-                            text = "v${AppVersion.versionName}",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(14.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Surface(
-                            shape = MaterialTheme.shapes.small,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                        ) {
-                            CpText(
-                                text = "v${result.versionName}",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                            )
-                        }
-                    }
-                }
-            }
+            CpText(
+                text = s.titleWithVersion(result.versionName),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = Int.MAX_VALUE,
+            )
         },
         text = {
             Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.Start,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
             ) {
-                // 远端重要公告 (Banner)
-                result.announcement?.let { notice ->
-                    Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.tertiaryContainer,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.Top,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                CpText(
-                                    text = stripEmojis(notice.title),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                )
-                                CpText(
-                                    text = stripEmojis(notice.message),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    maxLines = Int.MAX_VALUE,
-                                )
-                            }
-                        }
-                    }
-                }
+                CpText(
+                    text = stripEmojis(result.changelog?.takeIf { it.isNotBlank() } ?: s.title),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = Int.MAX_VALUE,
+                )
 
-                // 破坏性变更/关键警示 (Critical Alert Banner)
-                result.destructivePolicy?.let { policy ->
-                    Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.Top,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.size(20.dp),
-                            )
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                CpText(
-                                    text = stripEmojis(policy.title),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                )
-                                CpText(
-                                    text = stripEmojis(policy.message),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    maxLines = Int.MAX_VALUE,
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // 高信息密度元数据胶囊条 (Meta Chips Bar)
-                val isPreRelease = result.versionName.contains("-") || result.versionName.contains("debug")
-                val pkgInfo = resolveTargetPackageInfo(result.assetName, s)
-
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    // 发布渠道
-                    ExpressiveMetaChip(
-                        icon = if (isPreRelease) Icons.Default.NewReleases else Icons.Default.RocketLaunch,
-                        text = if (isPreRelease) "预发布版" else "正式版",
-                        tint = if (isPreRelease) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
-                        containerColor = if (isPreRelease) {
-                            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f)
-                        } else {
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-                        },
-                    )
-
-                    // 目标包格式
-                    ExpressiveMetaChip(
-                        icon = pkgInfo.icon,
-                        text = pkgInfo.label,
-                    )
-
-                    // 安装包体积
-                    result.assetSize?.takeIf { it > 0 }?.let { bytes ->
-                        ExpressiveMetaChip(
-                            icon = Icons.Default.Storage,
-                            text = formatBytes(bytes),
-                        )
-                    }
-
-                    // 发布日期
-                    result.publishedAt?.take(10)?.let { date ->
-                        ExpressiveMetaChip(
-                            icon = Icons.Default.CalendarToday,
-                            text = s.publishedAt(date),
-                        )
-                    }
-                }
-
-                // 更新说明小标题
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                ) {
+                result.publishedAt?.take(10)?.let { date ->
+                    Spacer(Modifier.height(8.dp))
                     CpText(
-                        text = s.changelogTitle,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        text = s.publishedAt(date),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = Int.MAX_VALUE,
                     )
                 }
 
-                // 更新日志滚动容器
-                Surface(
-                    shape = MaterialTheme.shapes.large,
-                    color = changelogContainerColor,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 120.dp, max = if (isExpanded) 380.dp else 270.dp),
-                ) {
-                    val scrollState = rememberScrollState()
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(scrollState)
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                Spacer(Modifier.height(8.dp))
+                if (installTypes.isNotEmpty()) {
+                    Surface(
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
-                        val parsedChangelog = parseChangelog(result.changelog)
-
-                        if (parsedChangelog.sections.isEmpty() && parsedChangelog.uncategorized.isEmpty()) {
+                        Column(
+                            horizontalAlignment = Alignment.Start,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(8.dp),
+                        ) {
                             CpText(
-                                text = s.defaultChangelog,
-                                style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                                text = s.installPackage,
+                                style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = Int.MAX_VALUE,
                             )
-                        } else {
-                            // 渲染结构化分类卡片
-                            for (section in parsedChangelog.sections) {
-                                ExpressiveCategoryCard(section)
-                            }
-
-                            // 渲染未分类或传统段落条目
-                            if (parsedChangelog.uncategorized.isNotEmpty()) {
-                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    for (item in parsedChangelog.uncategorized) {
-                                        ChangelogItemRow(item, dotColor = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-                            }
-
-                            // 查看完整变更对比链接
-                            parsedChangelog.compareUrl?.let { url ->
-                                Surface(
-                                    shape = MaterialTheme.shapes.small,
-                                    color = changelogContainerColor,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(MaterialTheme.shapes.small)
-                                        .clickable { openUrl(url) }
-                                        .padding(top = 4.dp),
+                            for (installType in installTypes) {
+                                // M3E：整行是一颗 OutlinedButton，按压时容器形状形变。
+                                OutlinedButton(
+                                    onClick = { onDownloadAsset(installType.asset) },
+                                    shapes = ButtonDefaults.shapes(),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                    ),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.onSurface,
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                    modifier = Modifier.fillMaxWidth(),
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(15.dp),
-                                        )
-                                        Spacer(Modifier.width(6.dp))
-                                        CpText(
-                                            text = s.viewDiffOnGithub,
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.Download,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    CpText(
+                                        text = installType.label,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = Int.MAX_VALUE,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.outline,
+                                        modifier = Modifier.size(12.dp),
+                                    )
                                 }
                             }
                         }
@@ -381,65 +194,93 @@ fun AppUpdateDialog(
             }
         },
         confirmButton = {
-            Button(
-                onClick = onDownload,
-                shape = MaterialTheme.shapes.medium,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ),
-                modifier = Modifier.height(42.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Download,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(6.dp))
-                val downloadButtonText = result.assetSize?.takeIf { it > 0 }?.let { bytes ->
-                    "${s.downloadNow} · ${formatBytes(bytes)}"
-                } ?: s.downloadNow
-                CpText(
-                    text = downloadButtonText,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        },
-        dismissButton = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                OutlinedButton(
-                    onClick = { openUrl(result.releaseUrl) },
-                    shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.height(42.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
+            // M3E 标准动作组：官方 ButtonGroup，按住时当前按钮撑开、相邻按钮收窄。
+            CpActionButtonGroup(
+                items = buildList {
+                    if (isAutoCheck && onDisableAutoUpdate != null) {
+                        add(
+                            CpActionGroupItem(
+                                label = s.disableAutoUpdate,
+                                icon = Icons.Default.NotificationsOff,
+                                onClick = onDisableAutoUpdate,
+                            ),
+                        )
+                    }
+                    add(
+                        CpActionGroupItem(
+                            label = s.later,
+                            icon = Icons.Default.Schedule,
+                            onClick = onDismiss,
+                        ),
                     )
-                    Spacer(Modifier.width(4.dp))
-                    CpText(
-                        text = s.releasePage,
-                        style = MaterialTheme.typography.labelLarge,
+                    if (result.releaseUrl.isNotBlank()) {
+                        add(
+                            CpActionGroupItem(
+                                label = s.releasePage,
+                                icon = Icons.AutoMirrored.Filled.OpenInNew,
+                                onClick = { openUrl(result.releaseUrl) },
+                            ),
+                        )
+                    }
+                    add(
+                        CpActionGroupItem(
+                            label = s.downloadNow,
+                            icon = Icons.Default.Download,
+                            onClick = onDownload,
+                        ),
                     )
-                }
-                TextButton(
-                    onClick = onDismiss,
-                    shape = MaterialTheme.shapes.medium,
-                    modifier = Modifier.height(42.dp),
-                ) {
-                    CpText(
-                        text = s.later,
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                }
-            }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
         },
     )
+}
+
+private data class UpdateInstallType(
+    val label: String,
+    val asset: AppUpdateChecker.UpdateAsset,
+)
+
+/** 按 Kazumi `_detectAvailableInstallationTypes` 的平台分支生成安装类型行。 */
+private fun resolveInstallTypes(
+    result: AppUpdateChecker.UpdateResult,
+    s: cp.player.app.i18n.AppUpdateStrings,
+): List<UpdateInstallType> {
+    if (desktopPlatform() == "linux") return emptyList()
+
+    val assets = result.availableAssets.ifEmpty {
+        val url = result.downloadUrl ?: return emptyList()
+        listOf(
+            AppUpdateChecker.UpdateAsset(
+                name = result.assetName ?: "CPPlayer-${result.versionName}",
+                downloadUrl = url,
+                sha256 = result.assetSha256,
+                size = result.assetSize,
+            ),
+        )
+    }
+
+    return when {
+        isAndroidPlatform() -> assets
+            .filter { it.name.endsWith(".apk", ignoreCase = true) }
+            .map { UpdateInstallType(s.packageAndroid, it) }
+
+        desktopPlatform() == "windows" -> buildList {
+            assets.firstOrNull {
+                it.name.endsWith("-Setup.exe", ignoreCase = true) || it.name.endsWith(".exe", ignoreCase = true)
+            }?.let { add(UpdateInstallType(s.packageWindows, it)) }
+            assets.firstOrNull {
+                it.name.endsWith("-portable.zip", ignoreCase = true) ||
+                    (it.name.endsWith(".zip", ignoreCase = true) && !it.name.contains("nupkg", ignoreCase = true))
+            }?.let { add(UpdateInstallType(s.packageWindowsPortable, it)) }
+        }
+
+        desktopPlatform() == "macos" -> assets
+            .filter { it.name.endsWith(".dmg", ignoreCase = true) }
+            .map { UpdateInstallType(s.packageMacos, it) }
+
+        else -> emptyList()
+    }
 }
 
 /**

@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
 fun AppUpdateHost() {
     val scope = rememberCoroutineScope()
     val noticeStorage = remember { defaultSettingsStorage("app_update_notices") }
+    val updateSettings = remember { defaultSettingsStorage("app_update_settings") }
     var updateResult by remember { mutableStateOf<AppUpdateChecker.UpdateResult?>(null) }
     var announcement by remember { mutableStateOf<AppUpdateChecker.RemoteAnnouncement?>(null) }
     var showDialog by remember { mutableStateOf(false) }
@@ -43,6 +44,7 @@ fun AppUpdateHost() {
     var showDestructiveConfirm by remember { mutableStateOf(false) }
     var downloading by remember { mutableStateOf(false) }
     var legacyModules by remember { mutableStateOf<List<LegacyProviderModule>>(emptyList()) }
+    var pendingAsset by remember { mutableStateOf<AppUpdateChecker.UpdateAsset?>(null) }
     var operationError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
@@ -51,7 +53,9 @@ fun AppUpdateHost() {
         announcement = status.announcement?.takeIf {
             noticeStorage.getString("seen_announcement_id") != it.id
         }
-        showDialog = status.update != null
+        // Kazumi: 自动检查受「自动更新」开关控制；手动检查不经过这里。
+        val autoUpdateEnabled = updateSettings.getString("auto_update_enabled", "true") != "false"
+        showDialog = status.update != null && autoUpdateEnabled
         showAnnouncement = status.update == null && announcement != null
     }
 
@@ -94,6 +98,24 @@ fun AppUpdateHost() {
     }
 
     if (showDialog && result != null) {
+        fun requestDownload(asset: AppUpdateChecker.UpdateAsset?) {
+            if (result.destructivePolicy != null) {
+                pendingAsset = asset
+                legacyModules = if (result.destructivePolicy.removeLegacyProviders) {
+                    AppModel.legacyProviderModulesToRemove()
+                } else emptyList()
+                showDestructiveConfirm = true
+            } else {
+                startDownload(
+                    asset?.downloadUrl ?: result.downloadUrl,
+                    asset?.name ?: result.assetName ?: "CPPlayer-${result.versionName}",
+                    asset?.sha256 ?: result.assetSha256,
+                    asset?.size ?: result.assetSize,
+                    result.releaseUrl,
+                )
+            }
+        }
+
         AppUpdateDialog(
             result = result,
             onDismiss = {
@@ -102,21 +124,13 @@ fun AppUpdateHost() {
                     showDialog = false
                 }
             },
-            onDownload = {
-                if (result.destructivePolicy != null) {
-                    legacyModules = if (result.destructivePolicy.removeLegacyProviders) {
-                        AppModel.legacyProviderModulesToRemove()
-                    } else emptyList()
-                    showDestructiveConfirm = true
-                } else {
-                    startDownload(
-                        result.downloadUrl,
-                        result.assetName ?: "CPPlayer-${result.versionName}",
-                        result.assetSha256,
-                        result.assetSize,
-                        result.releaseUrl,
-                    )
-                }
+            onDownload = { requestDownload(null) },
+            onDownloadAsset = { requestDownload(it) },
+            isAutoCheck = true,
+            onDisableAutoUpdate = {
+                updateSettings.putString("auto_update_enabled", "false")
+                markAnnouncementSeen()
+                showDialog = false
             },
         )
     }
@@ -179,10 +193,10 @@ fun AppUpdateHost() {
                         val policyForInstall = policy
                         val idsForInstall = legacyModules.map { it.id }.toSet()
                         startDownload(
-                            result.downloadUrl,
-                            result.assetName ?: "CPPlayer-${result.versionName}",
-                            result.assetSha256,
-                            result.assetSize,
+                            pendingAsset?.downloadUrl ?: result.downloadUrl,
+                            pendingAsset?.name ?: result.assetName ?: "CPPlayer-${result.versionName}",
+                            pendingAsset?.sha256 ?: result.assetSha256,
+                            pendingAsset?.size ?: result.assetSize,
                             result.releaseUrl,
                             beforeInstall = {
                                 if (!policyForInstall.removeLegacyProviders || idsForInstall.isEmpty()) true
