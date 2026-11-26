@@ -125,7 +125,8 @@ internal class DynamicDesktopPlatformPlayer(
     override val playbackSpeed: Float
         get() = if (drmActive) webViewDrmPlayer?.playbackSpeed ?: 1f else activePlayer.playbackSpeed
     override val supportsGaplessQueue: Boolean get() = activePlayer.supportsGaplessQueue
-    override val nativeTrackTransitions: StateFlow<NativeTrackTransition?> get() = activePlayer.nativeTrackTransitions
+    private val _nativeTrackTransitions = MutableStateFlow<NativeTrackTransition?>(null)
+    override val nativeTrackTransitions: StateFlow<NativeTrackTransition?> = _nativeTrackTransitions.asStateFlow()
     override val supportsNativeCrossfade: Boolean get() = activePlayer.supportsNativeCrossfade
     override val supportsSeekableRemoteStreams: Boolean get() = activePlayer.supportsSeekableRemoteStreams
 
@@ -251,6 +252,7 @@ internal class DynamicDesktopPlatformPlayer(
             launch { player.durationMs.collect { if (!drmActive) _durationMs.value = it } }
             launch { player.formatInfo.collect { if (!drmActive) _formatInfo.value = it } }
             launch { player.seekFailures.collect { if (!drmActive) _seekFailures.tryEmit(it) } }
+            launch { player.nativeTrackTransitions.collect { if (!drmActive) _nativeTrackTransitions.value = it } }
         }
         player.setVolume(lastVolume)
         lastEffectConfig?.let { player.applyAudioEffect(it) }

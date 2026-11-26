@@ -228,6 +228,7 @@ object DesktopHiResEngine {
         searchCandidates += File(userDir, "native/$libFileName")
         searchCandidates += File(userDir, "../native/$libFileName")
         searchCandidates += File(userDir, "app/native/$libFileName")
+        searchCandidates += File(userDir, "../app/native/$libFileName")
         searchCandidates += File(userDir, "native/flick-player-engine/target/release/$libFileName")
         searchCandidates += File(userDir, "../native/flick-player-engine/target/release/$libFileName")
 
@@ -523,11 +524,11 @@ object DesktopHiResEngine {
         pollJob = null
         progressJob?.cancel()
         progressJob = null
-        if (isInitialized) {
-            try {
-                nativeStop()
-            } catch (_: Throwable) {
-            }
+        isInitialized = false
+        cachedApiLevel = 0
+        try {
+            nativeStop()
+        } catch (_: Throwable) {
         }
     }
 
@@ -708,6 +709,7 @@ object DesktopHiResEngine {
         return try {
             val ok = nativeShutdown()
             isInitialized = false
+            cachedApiLevel = 0
             pollJob?.cancel()
             pollJob = null
             progressJob?.cancel()
@@ -721,25 +723,30 @@ object DesktopHiResEngine {
         }
     }
 
+    @Volatile
+    private var cachedApiLevel: Int = 0
+
     /**
      * 当前 DLL 的 API 等级。`1` = 2026-11-10 之前发布的旧库（只会播本地路径），
      * `2` = 带 HTTP 源 / 变速 / gapless / 动态处理的版本。
      *
-     * ⚠️ 不能靠「方法调一下看抛不抛异常」去逐个猜：那会把探测动作本身变成一次
-     * 真实的播放/配置下发。用一个专门的、无副作用的导出做版本握手最省事。
+     * 用动态查询（初始化完成后缓存、shutdown 时清零）替代 `by lazy`：避免 UI / 能力位
+     * 在 [initEngine] 尚未完成时提前读取而永久锁死在 `1`。
      */
-    val apiLevel: Int by lazy {
-        if (!isInitialized) {
-            1
-        } else {
-            try {
+    val apiLevel: Int
+        get() {
+            if (!isInitialized) return 1
+            val cached = cachedApiLevel
+            if (cached > 0) return cached
+            val queried = try {
                 nativeGetEngineApiLevel().coerceAtLeast(1)
             } catch (t: Throwable) {
                 logger.info("Legacy FlickEngine DLL detected (no nativeGetEngineApiLevel); extended features disabled")
                 1
             }
+            cachedApiLevel = queried
+            return queried
         }
-    }
 
     /** 是否具备本次新增的全部引擎能力（宿主据此决定走直连还是落盘）。 */
     val supportsExtendedFeatures: Boolean get() = apiLevel >= 2

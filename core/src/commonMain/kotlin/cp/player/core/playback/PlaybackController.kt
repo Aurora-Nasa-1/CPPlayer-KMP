@@ -227,6 +227,12 @@ interface PlaybackController {
     /** 重载/热切换底层播放引擎（在用户更改音频内核设置后调用）。默认空实现。 */
     fun reloadEngine() {}
 
+    /** 原地重新绑定输出路由（例如 Android USB 独占开关切换后无感重连）。默认空实现。 */
+    fun reloadOutputRouting() {}
+
+    /** 空闲或暂停退后台/清理服务时释放独占音频资源（不影响暂停态）。默认空实现。 */
+    fun releaseExclusiveAudioIfIdle() {}
+
     /** 后台/低内存时裁剪非活跃缓存（歌词缓存等），默认空实现。 */
     fun trimInMemoryCaches() {}
 

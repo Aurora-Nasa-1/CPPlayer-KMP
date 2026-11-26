@@ -1820,16 +1820,12 @@ interface EngineStrings {
     val dspTitle: String
     val dspNote: String
 
-    // ===== 引擎逐项特性开关（桌面） =====
+    // ===== Android USB 独占 & 引擎硬件选项 =====
     val sectionToggles: String
-    val toggleDirectStream: String
-    val toggleDirectStreamNote: String
-    val toggleGapless: String
-    val toggleGaplessNote: String
-    val toggleNativeCrossfade: String
-    val toggleNativeCrossfadeNote: String
-    val toggleDynamics: String
-    val toggleDynamicsNote: String
+    val androidUsbExclusiveTitle: String
+    val androidUsbExclusiveNote: String
+    val androidUsbAutoResumeTitle: String
+    val androidUsbAutoResumeNote: String
     val dsdModeTitle: String
     val dsdModePcm: String
     val dsdModeDop: String

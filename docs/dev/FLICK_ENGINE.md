@@ -398,6 +398,17 @@ EOF
 
 Linux 的 `.so` **只放 Release，不进 git**。CI 复用已有的 `FLICK_NATIVE_RELEASE_TAG` 下载资产 `librust_lib_flick_player-linux-x64.so`，落地时改名为 `app/native/librust_lib_flick_player.so`。资产必须换个名字：GitHub Release 资产是平铺的，Android arm64 已经占用 `librust_lib_flick_player.so`，同名无法共存（上一版同名会互相覆盖）。**不设 sha256 变量**：CI 改用结构校验（ELF magic、`e_machine=0x3e`、JNI 符号、VIP 公钥），Gradle 的 `packageLinuxTarGz` 也查 ELF 头 —— 挡的是「把 Android arm64 同名库误放进桌面目录」这类真实事故：JVM 会 dlopen 成功，但所有 JNI 调用失败，现象是静音且不报错。
 
+### 7.6 Windows：动态输出缓冲与 MMCSS
+
+Windows PCM 工作流是「解码 → 按需重采样 → 混音和音效 → WASAPI」。Symphonia（含 HTTP）和 WavPack 在源、设备采样率不同时，用独立的重采样线程和有界原始 PCM 队列；相同采样率直接旁路。最终输出队列固定容量，按帧计数，WASAPI 回调只消费预处理样本、补静音并更新原子计数。格式转换暂存区在流启动时分配。WASAPI 输出线程以 MMCSS `Pro Audio` 注册，退出时在原线程撤销；注册失败仍继续播放。
+
+默认低水位、起播水位、高水位分别约为最大已观测回调请求的 2、3、6 倍（周期估算下限 10 ms）。欠载增加水位，连续 30 秒无新增欠载逐步降低。软件队列调节不会重开 WASAPI 流或改变设备周期。seek、停止和换源等待输出消费者确认清空旧软件队列后才重新填充；已经交给系统的帧仍受设备排空时间约束。短曲和曲尾可以低于起播水位排空，曲终事件在有效帧提交并等待估算的设备延迟后发出。进度同样扣除软件积压和估算的设备延迟。
+
+调试时找 `WASAPI reservoir` 日志，对照累计欠载次数、最大回调帧数和三个水位。真机验证应覆盖 WASAPI Shared / Exclusive、本地 44.1/48 kHz、HTTP 抖动、暂停与 seek、变速、无缝切歌和设备拔插。独占路径仍沿用原有格式协商和转换；位完美与 DoP 需要单独采集输出验证。Android 的 Oboe、USB Direct 和 Native DSD 仍使用既有后端。
+
+开发验证可以用 `JAVA_TOOL_OPTIONS` 将 `-Djava.library.path` 指向 Rust 的 `target/release` 目录，再运行 `:app:desktopRun`。启动日志应显示 DLL 从系统库搜索路径加载。这样无需覆盖 `app/native` 中的正式 DLL。
+
+
 ## 相关
 
 - 架构与源集：[ARCHITECTURE](ARCHITECTURE.md)

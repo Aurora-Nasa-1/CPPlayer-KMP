@@ -200,6 +200,15 @@ interface PlatformPlayer : PlatformMediaPlayer {
      * 默认空实现。
      */
     fun reloadEngine() {}
+
+    /**
+     * 重新绑定当前输出路由（例如切换 Android USB 独占开关时，不销毁播放器原地切 AAudio/USB）。
+     * 默认空实现。
+     */
+    fun reloadOutputRouting() {}
+
+    /** 在空闲/暂停退至后台或服务清理时释放可抢占的独占声卡句柄。默认空实现。 */
+    fun releaseExclusiveAudioIfIdle() {}
 }
 
 

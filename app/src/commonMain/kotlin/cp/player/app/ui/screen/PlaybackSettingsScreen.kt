@@ -82,6 +82,8 @@ class PlaybackSettingsScreen(
         // ⚠️ 桌面端「发烧」不是一个二选一的引擎，而是一个独占开关（默认关）。
         // 见 `PlaybackSessionSettings.KEY_WASAPI_EXCLUSIVE` 与 [AudioEngineSettingsScreen] 的平台对照表。
         val wasapiExclusive by AppModel.wasapiExclusiveFlow.collectAsState()
+        val androidUsbExclusive by AppModel.androidUsbExclusiveFlow.collectAsState()
+        val androidUsbAutoResume by AppModel.androidUsbAutoResumeFlow.collectAsState()
         val vipInfo by VipLicenseManager.licenseState.collectAsState()
         var showVipDialog by remember { mutableStateOf(false) }
         // 卡密框可能从多个入口打开（换内核 / 开独占 / 只想看看状态），
@@ -172,7 +174,7 @@ class PlaybackSettingsScreen(
                     } else {
                         if (exclusiveActive) 1 else 0
                     }
-                    val kernelTotal = 3
+                    val kernelTotal = if (isAndroid) 5 else 3
                     SettingsSegmentedItem(
                         title = if (isAndroid) s.playback.activeKernel else s.playback.wasapiMode,
                         modifier = Modifier.settingsSearchTarget("playback_audio_engine", targetSettingId),
@@ -220,6 +222,33 @@ class PlaybackSettingsScreen(
                         index = 0,
                         total = kernelTotal,
                     )
+                    if (isAndroid) {
+                        SettingsSwitchItem(
+                            title = s.engine.androidUsbExclusiveTitle,
+                            modifier = Modifier.settingsSearchTarget("playback_android_usb_exclusive", targetSettingId),
+                            subtitle = s.engine.androidUsbExclusiveNote,
+                            checked = androidUsbExclusive,
+                            onCheckedChange = { enabled ->
+                                if (enabled && !vipInfo.isActivated) {
+                                    afterVipAction = { AppModel.setAndroidUsbExclusive(true) }
+                                    showVipDialog = true
+                                } else {
+                                    AppModel.setAndroidUsbExclusive(enabled)
+                                }
+                            },
+                            index = 1,
+                            total = kernelTotal,
+                        )
+                        SettingsSwitchItem(
+                            title = s.engine.androidUsbAutoResumeTitle,
+                            modifier = Modifier.settingsSearchTarget("playback_android_usb_auto_resume", targetSettingId),
+                            subtitle = s.engine.androidUsbAutoResumeNote,
+                            checked = androidUsbAutoResume,
+                            onCheckedChange = AppModel::setAndroidUsbAutoResume,
+                            index = 2,
+                            total = kernelTotal,
+                        )
+                    }
                     SettingsClickItem(
                         title = if (isAndroid) {
                             s.playback.engineDetailAndroid
@@ -234,7 +263,7 @@ class PlaybackSettingsScreen(
                         } else {
                             s.playback.engineDetailDesktopNote
                         },
-                        index = 1,
+                        index = if (isAndroid) 3 else 1,
                         total = kernelTotal,
                         onClick = { navigator.push(AppRoute.AudioEngineSettings) },
                         trailingContent = {
@@ -251,7 +280,7 @@ class PlaybackSettingsScreen(
                         // 不是真正的环绕声。见 docs/dev/FLICK_ENGINE.md §2 能力矩阵。
                         subtitle = s.playback.dspNote,
                         icon = Icons.Filled.Equalizer,
-                        index = 2,
+                        index = if (isAndroid) 4 else 2,
                         total = kernelTotal,
                         onClick = { navigator.push(AppRoute.AudioEffectSettings) },
                         trailingContent = {

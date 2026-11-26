@@ -437,6 +437,26 @@ private fun generalEntries(): List<SettingsEntry> = listOfNotNull(
                 desktopOnly = true,
             ),
             SettingsSubItem(
+                id = "playback_android_usb_exclusive",
+                titleOf = { "USB DAC 独占输出 / 默认 AAudio" },
+                subtitleOf = { "默认使用系统 AAudio 共享输出；开启后仅在播放时独占 USB DAC，不播立即释放" },
+                keywords = listOf(
+                    "aaudio", "usb", "dac", "uac2", "独占", "exclusive", "小尾巴", "释放", "无声",
+                ),
+                sectionOf = { "音频输出内核架构" },
+                androidOnly = true,
+            ),
+            SettingsSubItem(
+                id = "playback_android_usb_auto_resume",
+                titleOf = { "USB 断开 3 秒重连自动恢复播放" },
+                subtitleOf = { "外接 USB 音频设备断开后 3 秒内重连自动恢复播放（跨引擎、跨独占模式生效）" },
+                keywords = listOf(
+                    "usb", "重连", "断开", "自动恢复", "小尾巴", "耳机", "插拔", "reconnect", "resume",
+                ),
+                sectionOf = { "音频输出内核架构" },
+                androidOnly = true,
+            ),
+            SettingsSubItem(
                 id = "playback_crossfade",
                 titleOf = { "音频淡入淡出 (Crossfade)" },
                 subtitleOf = { "开始播放、暂停及切换歌曲时的音量平滑渐变过渡" },

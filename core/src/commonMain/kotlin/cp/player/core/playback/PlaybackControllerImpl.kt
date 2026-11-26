@@ -700,6 +700,14 @@ class PlaybackControllerImpl(
         platform.reloadEngine()
     }
 
+    override fun reloadOutputRouting() {
+        platform.reloadOutputRouting()
+    }
+
+    override fun releaseExclusiveAudioIfIdle() {
+        platform.releaseExclusiveAudioIfIdle()
+    }
+
     override fun release() {
         persistSessionBlocking()
         fadeController.cancel()

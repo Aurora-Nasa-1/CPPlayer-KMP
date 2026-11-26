@@ -856,69 +856,30 @@ object AppModel {
         runCatching { playback.reloadEngine() }
     }
 
-    // ============ Flick 引擎特性开关（桌面，逐项可关） ============
-    //
-    // 这些不是「音质档位」，而是排障/降级用的逃生门：直连流在个别音源上失败、
-    // 某些声卡不接受 DoP、动态处理改变听感时，用户需要一个不换播放器就能关掉的入口。
-    // 键与默认值在 `FlickEngineSettings`；运行期镜像是 `FlickEngineToggles`（能力位直接读它）。
-    //
-    // ⚠️ 生效时机不同，文案必须如实写：
-    // | 开关 | 何时生效 |
-    // | --- | --- |
-    // | 直连流 | **下一次 load**（当前曲不打断） |
-    // | 无缝队列 | **下一首**（预取时才走 queueNext） |
-    // | 原生交叉淡化 | **立刻**（重提淡入淡出配置，让控制器在两套机制间换边） |
-    // | 动态响度 | **立刻**（重提音效配置，宿主会把链上的压缩器/限幅器摘掉） |
-    // | DSD 模式 | 立刻下发；引擎重建后由 initEngine 补发 |
+    // ============ Android USB DAC 独占 & 3 秒重连恢复（持久化） ============
 
-    private val _flickDirectStream = MutableStateFlow(FlickEngineSettings.directStream(settings))
+    private val _androidUsbExclusive = MutableStateFlow(PlaybackSessionSettings.androidUsbExclusive(settings))
 
-    /** 直连 HTTP(S) 流是否开启（关 = 整首落盘再播）。 */
-    val flickDirectStreamFlow: StateFlow<Boolean> = _flickDirectStream.asStateFlow()
+    /** Android UAC2 USB 硬件独占开关（默认 false，默认走 AAudio）。 */
+    val androidUsbExclusiveFlow: StateFlow<Boolean> = _androidUsbExclusive.asStateFlow()
 
-    fun setFlickDirectStream(enabled: Boolean) {
-        settings.putString(FlickEngineSettings.KEY_DIRECT_STREAM, enabled.toString())
-        FlickEngineToggles.directStream = enabled
-        _flickDirectStream.value = enabled
+    fun setAndroidUsbExclusive(enabled: Boolean) {
+        settings.putString(PlaybackSessionSettings.KEY_ANDROID_USB_EXCLUSIVE, enabled.toString())
+        _androidUsbExclusive.value = enabled
+        runCatching { playback.reloadOutputRouting() }
     }
 
-    private val _flickGaplessQueue = MutableStateFlow(FlickEngineSettings.gaplessQueue(settings))
+    private val _androidUsbAutoResume = MutableStateFlow(PlaybackSessionSettings.androidUsbAutoResume(settings))
 
-    /** 无缝队列是否开启（关 = 播完再 load 下一首）。 */
-    val flickGaplessQueueFlow: StateFlow<Boolean> = _flickGaplessQueue.asStateFlow()
+    /** Android USB 断开后 3 秒内重连自动恢复播放开关（跨引擎、跨独占生效）。 */
+    val androidUsbAutoResumeFlow: StateFlow<Boolean> = _androidUsbAutoResume.asStateFlow()
 
-    fun setFlickGaplessQueue(enabled: Boolean) {
-        settings.putString(FlickEngineSettings.KEY_GAPLESS_QUEUE, enabled.toString())
-        FlickEngineToggles.gaplessQueue = enabled
-        _flickGaplessQueue.value = enabled
+    fun setAndroidUsbAutoResume(enabled: Boolean) {
+        settings.putString(PlaybackSessionSettings.KEY_ANDROID_USB_AUTO_RESUME, enabled.toString())
+        _androidUsbAutoResume.value = enabled
     }
 
-    private val _flickNativeCrossfade = MutableStateFlow(FlickEngineSettings.nativeCrossfade(settings))
-
-    /** 原生交叉淡化（双源重叠）是否开启（关 = 交回宿主的音量斜坡）。 */
-    val flickNativeCrossfadeFlow: StateFlow<Boolean> = _flickNativeCrossfade.asStateFlow()
-
-    fun setFlickNativeCrossfade(enabled: Boolean) {
-        settings.putString(FlickEngineSettings.KEY_NATIVE_CROSSFADE, enabled.toString())
-        FlickEngineToggles.nativeCrossfade = enabled
-        _flickNativeCrossfade.value = enabled
-        // 控制器在 setFade 里按能力位决定「引擎交叉淡化」还是「宿主斜坡」，
-        // 重提一次当前配置就能让这次切换立刻生效，不必等下一首。
-        runCatching { playback.setFade(_fade.value) }
-    }
-
-    private val _flickDynamics = MutableStateFlow(FlickEngineSettings.dynamics(settings))
-
-    /** 动态响度处理（压缩器 + 限幅器）是否开启。 */
-    val flickDynamicsFlow: StateFlow<Boolean> = _flickDynamics.asStateFlow()
-
-    fun setFlickDynamics(enabled: Boolean) {
-        settings.putString(FlickEngineSettings.KEY_DYNAMICS, enabled.toString())
-        FlickEngineToggles.dynamics = enabled
-        _flickDynamics.value = enabled
-        // 能力位变了：重提音效配置，宿主会把已挂上的压缩器/限幅器摘掉（或恢复）。
-        runCatching { playback.setAudioEffect(_audioEffect.value) }
-    }
+    // ============ Flick 引擎硬件选项（持久化） ============
 
     private val _flickDsdMode = MutableStateFlow(FlickEngineSettings.dsdMode(settings))
 
@@ -933,18 +894,10 @@ object AppModel {
     }
 
     /**
-     * 启动时把引擎开关同步进运行时快照。
-     *
-     * 与 [syncAudioEffect] 同一类：设置页不在监听链路上时（冷启动直接播放），
-     * 能力位也必须按用户上次的选择走。快照的默认值与磁盘默认值一致，
-     * 所以这一步失败最坏也只是「全部按默认」，不会静默关掉引擎。
+     * 启动时把引擎硬件选项同步进运行时快照（DSD 模式等）。
      */
     fun syncFlickEngineToggles() {
         FlickEngineToggles.applyFrom(settings)
-        _flickDirectStream.value = FlickEngineToggles.directStream
-        _flickGaplessQueue.value = FlickEngineToggles.gaplessQueue
-        _flickNativeCrossfade.value = FlickEngineToggles.nativeCrossfade
-        _flickDynamics.value = FlickEngineToggles.dynamics
         _flickDsdMode.value = FlickEngineToggles.dsdMode
     }
 

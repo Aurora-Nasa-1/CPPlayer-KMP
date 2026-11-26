@@ -76,11 +76,8 @@ class AudioEngineSettingsScreen : RoutePage {
         val engineKey by AppModel.audioEngineFlow.collectAsState()
         // ⚠️ 桌面端不再用 KEY_AUDIO_ENGINE 决定内核（只有 FlickEngine），独占才是那个选择。
         val exclusivePref by AppModel.wasapiExclusiveFlow.collectAsState()
-        // 引擎逐项特性开关（仅桌面）：直连流 / 无缝队列 / 原生交叉淡化 / 动态响度 / DSD 模式。
-        val flickDirectStream by AppModel.flickDirectStreamFlow.collectAsState()
-        val flickGapless by AppModel.flickGaplessQueueFlow.collectAsState()
-        val flickNativeCrossfade by AppModel.flickNativeCrossfadeFlow.collectAsState()
-        val flickDynamics by AppModel.flickDynamicsFlow.collectAsState()
+        val androidUsbExclusive by AppModel.androidUsbExclusiveFlow.collectAsState()
+        val androidUsbAutoResume by AppModel.androidUsbAutoResumeFlow.collectAsState()
         val flickDsdMode by AppModel.flickDsdModeFlow.collectAsState()
 
         var showVipDialog by remember { mutableStateOf(false) }
@@ -107,10 +104,8 @@ class AudioEngineSettingsScreen : RoutePage {
                 vipLicenseKey = vipInfo.licenseKey,
                 engineKey = engineKey,
                 exclusivePref = exclusivePref,
-                flickDirectStream = flickDirectStream,
-                flickGapless = flickGapless,
-                flickNativeCrossfade = flickNativeCrossfade,
-                flickDynamics = flickDynamics,
+                androidUsbExclusive = androidUsbExclusive,
+                androidUsbAutoResume = androidUsbAutoResume,
                 flickDsdMode = flickDsdMode,
             ),
             onSelectEngine = { index ->
@@ -139,16 +134,21 @@ class AudioEngineSettingsScreen : RoutePage {
                     AppModel.setWasapiExclusive(false)
                 }
             },
+            onToggleAndroidUsbExclusive = { enabled ->
+                if (enabled && !vipInfo.isActivated) {
+                    afterVipAction = { AppModel.setAndroidUsbExclusive(true) }
+                    showVipDialog = true
+                } else {
+                    AppModel.setAndroidUsbExclusive(enabled)
+                }
+            },
+            onToggleAndroidUsbAutoResume = AppModel::setAndroidUsbAutoResume,
             onOpenVipDialog = {
                 afterVipAction = null
                 showVipDialog = true
             },
             onOpenAudioEffect = { navigator.push(AppRoute.AudioEffectSettings) },
             onOpenFlickHome = { openUrl("https://github.com/moss-apps/Flick") },
-            onToggleDirectStream = AppModel::setFlickDirectStream,
-            onToggleGapless = AppModel::setFlickGaplessQueue,
-            onToggleNativeCrossfade = AppModel::setFlickNativeCrossfade,
-            onToggleDynamics = AppModel::setFlickDynamics,
             onSelectDsdMode = AppModel::setFlickDsdMode,
             onBack = { navigator.pop() },
         )
@@ -156,7 +156,7 @@ class AudioEngineSettingsScreen : RoutePage {
 }
 
 /**
- * 页面渲染所需的**全部**输入：平台 + 授权 + 两个开关。
+ * 页面渲染所需的**全部**输入：平台 + 授权 + 硬件开关。
  *
  * 不可变快照，不含 `AppModel` / CompositionLocal 依赖 —— 这样离屏测试能直接构造
  * 「Windows 且已激活独占」「Android 未激活」这类真机上很难复现的组合。
@@ -169,11 +169,8 @@ internal data class AudioEngineUiState(
     val vipLicenseKey: String? = null,
     val engineKey: String = PlaybackSessionSettings.ENGINE_STANDARD,
     val exclusivePref: Boolean = false,
-    /** 引擎逐项特性开关（仅桌面有意义）。 */
-    val flickDirectStream: Boolean = FlickEngineSettings.DEFAULT_DIRECT_STREAM,
-    val flickGapless: Boolean = FlickEngineSettings.DEFAULT_GAPLESS_QUEUE,
-    val flickNativeCrossfade: Boolean = FlickEngineSettings.DEFAULT_NATIVE_CROSSFADE,
-    val flickDynamics: Boolean = FlickEngineSettings.DEFAULT_DYNAMICS,
+    val androidUsbExclusive: Boolean = PlaybackSessionSettings.DEFAULT_ANDROID_USB_EXCLUSIVE,
+    val androidUsbAutoResume: Boolean = PlaybackSessionSettings.DEFAULT_ANDROID_USB_AUTO_RESUME,
     val flickDsdMode: Int = FlickEngineSettings.DEFAULT_DSD_MODE,
 ) {
     /** 发烧内核是否**真的**在跑（Android 才存在「换内核」这件事）。 */
@@ -185,9 +182,13 @@ internal data class AudioEngineUiState(
             true
         }
 
-    /** 独占是否**真的**生效：平台支持 + VIP 有效 + 用户显式打开，三者缺一不可。 */
+    /** 桌面 WASAPI 独占是否**真的**生效：平台支持 + VIP 有效 + 用户显式打开，三者缺一不可。 */
     val exclusiveActive: Boolean
         get() = isWindowsDesktop && vipActivated && exclusivePref
+
+    /** Android UAC 2.0 USB 独占是否开启且已满足前置（FlickEngine 激活 + 开关开启）。 */
+    val androidUsbExclusiveActive: Boolean
+        get() = isAndroid && flickEngineActive && androidUsbExclusive
 }
 
 /**
@@ -200,13 +201,11 @@ internal fun AudioEngineSettingsContent(
     state: AudioEngineUiState,
     onSelectEngine: (Int) -> Unit,
     onSelectExclusive: (Int) -> Unit,
+    onToggleAndroidUsbExclusive: (Boolean) -> Unit = {},
+    onToggleAndroidUsbAutoResume: (Boolean) -> Unit = {},
     onOpenVipDialog: () -> Unit,
     onOpenAudioEffect: () -> Unit,
     onOpenFlickHome: () -> Unit,
-    onToggleDirectStream: (Boolean) -> Unit = {},
-    onToggleGapless: (Boolean) -> Unit = {},
-    onToggleNativeCrossfade: (Boolean) -> Unit = {},
-    onToggleDynamics: (Boolean) -> Unit = {},
     onSelectDsdMode: (Int) -> Unit = {},
     onBack: () -> Unit,
 ) {
@@ -303,16 +302,24 @@ internal fun AudioEngineSettingsContent(
                     FeatureRow(
                         title = engine.oboeTitle,
                         subtitle = engine.oboeNote,
-                        badge = if (state.flickEngineActive) engine.badgeActive else engine.badgeNeedsFlick,
-                        active = state.flickEngineActive,
+                        badge = when {
+                            !state.flickEngineActive -> engine.badgeNeedsFlick
+                            state.androidUsbExclusive -> engine.badgeAvailable
+                            else -> engine.badgeActive
+                        },
+                        active = state.flickEngineActive && !state.androidUsbExclusive,
                         index = 0,
                         total = 3,
                     )
                     FeatureRow(
                         title = engine.usbDacTitle,
                         subtitle = engine.usbDacNote,
-                        badge = if (state.flickEngineActive) engine.badgeActive else engine.badgeNeedsFlick,
-                        active = state.flickEngineActive,
+                        badge = when {
+                            state.androidUsbExclusiveActive -> engine.badgeActive
+                            state.flickEngineActive -> engine.badgeOff
+                            else -> engine.badgeNeedsFlick
+                        },
+                        active = state.androidUsbExclusiveActive,
                         index = 1,
                         total = 3,
                     )
@@ -382,47 +389,43 @@ internal fun AudioEngineSettingsContent(
                 }
             }
 
-            // ---------------- 引擎特性开关（逐项可关） ----------------
+            // ---------------- 硬件输出与解码选项 ----------------
             //
-            // 这一组不是「音质档位」，而是排障/降级的逃生门：直连流在个别音源上失败、
-            // 某些声卡不接受 DoP、动态处理改变听感时，用户需要不换播放器就能关掉。
-            // ⚠️ 每行副标题必须写清**生效时机**（下一次 load / 下一首 / 立刻），
-            // 否则「关了没反应」会被当成 bug。
-            if (!isAndroid) {
-                SettingsSection(engine.sectionToggles) {
-                    val total = 5
+            // 只保留真正控制硬件路由 / 解码格式的选项（不再展示与音效页、播放控制页重复的开关）：
+            // - Android：USB 独占开关（默认关闭走 AAudio，不播时立刻释放）、USB 断连 3 秒恢复、DSD 模式；
+            // - 桌面：DSD 输出模式（PCM 抽取 / DoP / Native / 自动）。
+            SettingsSection(engine.sectionToggles) {
+                if (isAndroid) {
                     SettingsSwitchItem(
-                        title = engine.toggleDirectStream,
-                        subtitle = engine.toggleDirectStreamNote,
-                        checked = state.flickDirectStream,
-                        onCheckedChange = onToggleDirectStream,
+                        title = engine.androidUsbExclusiveTitle,
+                        subtitle = engine.androidUsbExclusiveNote,
+                        checked = state.androidUsbExclusive,
+                        onCheckedChange = onToggleAndroidUsbExclusive,
                         index = 0,
-                        total = total,
+                        total = 3,
                     )
                     SettingsSwitchItem(
-                        title = engine.toggleGapless,
-                        subtitle = engine.toggleGaplessNote,
-                        checked = state.flickGapless,
-                        onCheckedChange = onToggleGapless,
+                        title = engine.androidUsbAutoResumeTitle,
+                        subtitle = engine.androidUsbAutoResumeNote,
+                        checked = state.androidUsbAutoResume,
+                        onCheckedChange = onToggleAndroidUsbAutoResume,
                         index = 1,
-                        total = total,
+                        total = 3,
                     )
-                    SettingsSwitchItem(
-                        title = engine.toggleNativeCrossfade,
-                        subtitle = engine.toggleNativeCrossfadeNote,
-                        checked = state.flickNativeCrossfade,
-                        onCheckedChange = onToggleNativeCrossfade,
+                    SettingsDropdownItem(
+                        title = engine.dsdModeTitle,
+                        options = listOf(
+                            engine.dsdModePcm,
+                            engine.dsdModeDop,
+                            engine.dsdModeNative,
+                            engine.dsdModeAuto,
+                        ),
+                        selectedIndex = state.flickDsdMode.coerceIn(0, 3),
+                        onSelect = onSelectDsdMode,
                         index = 2,
-                        total = total,
+                        total = 3,
                     )
-                    SettingsSwitchItem(
-                        title = engine.toggleDynamics,
-                        subtitle = engine.toggleDynamicsNote,
-                        checked = state.flickDynamics,
-                        onCheckedChange = onToggleDynamics,
-                        index = 3,
-                        total = total,
-                    )
+                } else {
                     SettingsDropdownItem(
                         title = engine.dsdModeTitle,
                         // ⚠️ 不传 subtitle：SettingsDropdownItem 的副标题位就是「当前值」的
@@ -436,12 +439,12 @@ internal fun AudioEngineSettingsContent(
                         ),
                         selectedIndex = state.flickDsdMode.coerceIn(0, 3),
                         onSelect = onSelectDsdMode,
-                        index = 4,
-                        total = total,
+                        index = 0,
+                        total = 1,
                     )
                 }
-                SettingsNote(engine.togglesNote)
             }
+            SettingsNote(engine.togglesNote)
 
             SettingsSection(engine.sectionEffects) {
                 SettingsClickItem(

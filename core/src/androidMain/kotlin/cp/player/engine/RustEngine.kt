@@ -125,7 +125,13 @@ object RustEngine {
             _isAvailable = false
             Log.e(TAG, "Failed to load rust audio library: ${e.message}", e)
         }
+        cp.player.core.playback.FlickEngineToggles.registerDsdApplier { mode ->
+            scope.launch(engineDispatcher) { setDsdOutputMode(mode) }
+        }
     }
+
+    @Synchronized
+    fun ensureInitialized(context: Context): Boolean = isInitialized || initEngine(context)
 
     @Synchronized
     fun initEngine(context: Context): Boolean {
@@ -139,6 +145,7 @@ object RustEngine {
             Log.i(TAG, "nativeInit: $success")
             if (success) {
                 isInitialized = true
+                runCatching { nativeSetDsdOutputMode(cp.player.core.playback.FlickEngineToggles.dsdMode) }
                 startPolling()
                 startProgressPolling()
             }
@@ -320,18 +327,28 @@ object RustEngine {
 
     @Synchronized
     fun stopEngine() {
+        shutdownEngine()
+    }
+
+    /**
+     * 彻底关闭底层 Rust 引擎（调用 `nativeShutdown` 释放 Oboe / AAudio 流与 USB 独占句柄）。
+     * 下次播放通过 [ensureInitialized] 自动重新初始化。
+     */
+    @Synchronized
+    fun shutdownEngine() {
         pollJob?.cancel()
         pollJob = null
         progressJob?.cancel()
         progressJob = null
-        if (isInitialized) {
-            isInitialized = false
-            try {
-                nativeStop()
-            } catch (e: Throwable) {
-                Log.w(TAG, "nativeStop error on stopEngine", e)
-            }
+        val wasInit = isInitialized
+        isInitialized = false
+        if (wasInit) {
+            runCatching { nativeStop() }.onFailure { Log.w(TAG, "nativeStop error on shutdownEngine", it) }
         }
+        if (isAvailable) {
+            runCatching { nativeShutdown() }.onFailure { Log.w(TAG, "nativeShutdown error", it) }
+        }
+        _engineState.value = "Idle"
     }
 
     // ═══════════════════════════════════════════════
@@ -360,9 +377,39 @@ object RustEngine {
         }
     }
 
+    @get:Synchronized
+    val isEngineInitialized: Boolean
+        get() = isInitialized
+
     // ═══════════════════════════════════════════════
     // USB Audio Class 2.0 (UAC2) 直通输出支持
     // ═══════════════════════════════════════════════
+
+    /** 开启/关闭 Rust Direct USB 输出开关（新 .so 使用；旧 .so 不含此符号时安全忽略）。 */
+    fun setDirectUsbEnabled(enabled: Boolean): Boolean {
+        if (!isAvailable) return false
+        return runCatching { nativeSetDirectUsbEnabled(enabled) }.getOrDefault(false)
+    }
+
+    /** 控制底层是否在停播时保留 idle interface lock；释放 USB 时务必传 false。 */
+    fun setDirectUsbLockEnabled(enabled: Boolean): Boolean {
+        if (!isAvailable) return false
+        return runCatching { nativeSetRustDirectUsbLockEnabled(enabled) }.getOrDefault(false)
+    }
+
+    /** 预配置 UAC2 USB 独占协商格式，避免未下发格式时直接跳过 USB 输出。 */
+    fun setDirectUsbPlaybackFormat(
+        sampleRate: Int,
+        bitDepth: Int,
+        channels: Int,
+        isDop: Boolean = false,
+        isNativeDsd: Boolean = false,
+    ): Boolean {
+        if (!isAvailable) return false
+        return runCatching {
+            nativeSetRustDirectUsbPlaybackFormat(sampleRate, bitDepth, channels, isDop, isNativeDsd)
+        }.getOrDefault(false)
+    }
 
     fun registerDirectUsbDevice(
         fd: Int,
@@ -373,7 +420,7 @@ object RustEngine {
         serial: String?,
         deviceName: String?,
     ): Boolean {
-        if (!isInitialized) return false
+        if (!isAvailable) return false
         return try {
             nativeRegisterRustDirectUsbDevice(fd, vendorId, productId, productName, manufacturer, serial, deviceName)
         } catch (e: Throwable) {
@@ -382,7 +429,7 @@ object RustEngine {
     }
 
     fun clearDirectUsbPlayback(): Boolean {
-        if (!isInitialized) return false
+        if (!isAvailable) return false
         return try {
             nativeClearRustDirectUsbPlayback()
         } catch (e: Throwable) {
@@ -391,7 +438,7 @@ object RustEngine {
     }
 
     fun waitDirectUsbSessionStopped(timeoutMs: Int): Boolean {
-        if (!isInitialized) return true
+        if (!isAvailable) return true
         return try {
             nativeWaitRustDirectUsbSessionStopped(timeoutMs)
         } catch (e: Throwable) {
@@ -400,7 +447,7 @@ object RustEngine {
     }
 
     fun isRustDirectUsbSessionActive(): Boolean {
-        if (!isInitialized) return false
+        if (!isAvailable) return false
         return try {
             nativeIsRustDirectUsbSessionActive()
         } catch (e: Throwable) {
@@ -509,6 +556,7 @@ object RustEngine {
 
     private external fun nativeSetVipLicenseV2(token: String): Boolean
     private external fun nativeInit(): Boolean
+    private external fun nativeShutdown(): Boolean
     private external fun nativeInitRustAndroidContext(context: Context): Boolean
     private external fun nativePlay(path: String): Boolean
     private external fun nativePlayUrl(url: String, headers: Array<String>): Boolean
@@ -535,6 +583,11 @@ object RustEngine {
     private external fun nativeSetDsdOutputMode(mode: Int): Boolean
     private external fun nativeSetDapBitPerfectEnabled(enabled: Boolean): Boolean
 
+    private external fun nativeSetDirectUsbEnabled(enabled: Boolean): Boolean
+    private external fun nativeSetRustDirectUsbLockEnabled(enabled: Boolean): Boolean
+    private external fun nativeSetRustDirectUsbPlaybackFormat(
+        sampleRate: Int, bitDepth: Int, channels: Int, isDop: Boolean, isNativeDsd: Boolean,
+    ): Boolean
     private external fun nativeRegisterRustDirectUsbDevice(
         fd: Int, vendorId: Int, productId: Int, productName: String?,
         manufacturer: String?, serial: String?, deviceName: String?,

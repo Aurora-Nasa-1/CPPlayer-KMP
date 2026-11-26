@@ -21,22 +21,29 @@ import kotlinx.coroutines.launch
 /**
  * Android 平台发烧音频生命周期与硬件外设管理器。
  *
- * 负责四大核心系统级交互：
- * 1. **音频焦点（Audio Focus）**：来电、微信语音、其他音乐软件抢占时的暂停、恢复与优雅降级；
- * 2. **耳机防漏音（Becoming Noisy）**：拔掉耳机或转接线瞬间立即暂停，防止公共场合外放；
- * 3. **USB DAC 热插拔与异常熔断**：外接“小尾巴”或 USB 解码器拔出瞬间熔断底层 UAC2 等时管道，避免 Native Crash；
- * 4. **USB 权限管理**：免驱硬件直通模式下的 USB 设备发现与权限握手。
+ * 负责两大核心系统级交互（USB 断开/3 秒重连监听已上移至 [DynamicAndroidPlatformPlayer]，
+ * 确保标准 Media3 与 FlickEngine 在任意输出模式下表现一致）：
+ * 1. **音频焦点（Audio Focus）**：来电、语音、其它媒体抢占焦点时暂停并释放 USB 独占，焦点恢复后按需续播；
+ * 2. **按需 USB DAC 独占接管与彻底释放**：仅在用户开启 USB 独占且处于实际播放期间打开并注册
+ *    `UsbDeviceConnection`，在暂停/停止/切回 AAudio/退出/拔线瞬间立刻释放内核与 libusb 接口，
+ *    避免「退出软件后其它应用无声」或「播不了也占着声卡」。
  */
 class AndroidAudioLifecycleManager(
     private val context: Context,
-    private val onPauseRequested: () -> Unit,
+    private val onAudioFocusLossPause: (transient: Boolean) -> Unit,
     private val onResumeRequested: () -> Unit,
+    private val onUsbPermissionGranted: () -> Unit = {},
 ) {
 
     companion object {
         private const val TAG = "AndroidAudioLifecycle"
         private const val ACTION_USB_PERMISSION = "cp.player.core.USB_PERMISSION"
-        private const val USB_RECONNECT_DELAY_MS = 500L
+
+        fun isUsbAudioDevice(device: UsbDevice): Boolean =
+            device.deviceClass == UsbConstants.USB_CLASS_AUDIO ||
+                (0 until device.interfaceCount).any {
+                    device.getInterface(it).interfaceClass == UsbConstants.USB_CLASS_AUDIO
+                }
     }
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
@@ -47,33 +54,31 @@ class AndroidAudioLifecycleManager(
     private var wasPlayingBeforeFocusLoss = false
 
     private var isReceiverRegistered = false
+    @Volatile
     private var registeredDeviceName: String? = null
     private var usbConnection: UsbDeviceConnection? = null
     private var pendingUsbDevice: String? = null
-    private var usbReconnectJob: kotlinx.coroutines.Job? = null
-    private val usbScope = kotlinx.coroutines.CoroutineScope(
-        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
-    )
+    private val permissionRequestedDevices = mutableSetOf<String>()
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
             AudioManager.AUDIOFOCUS_LOSS -> {
-                Log.i(TAG, "Audio focus lost permanently (e.g. another media app started). Pausing.")
+                Log.i(TAG, "Audio focus lost permanently (e.g. another media app started). Pausing & releasing USB.")
                 hasAudioFocus = false
                 wasPlayingBeforeFocusLoss = false
-                onPauseRequested()
+                onAudioFocusLossPause(false)
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                Log.i(TAG, "Audio focus lost transiently (e.g. incoming call or notification). Pausing.")
+                Log.i(TAG, "Audio focus lost transiently (e.g. incoming call or notification). Pausing & releasing USB.")
                 hasAudioFocus = false
                 wasPlayingBeforeFocusLoss = true
-                onPauseRequested()
+                onAudioFocusLossPause(true)
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                Log.i(TAG, "Audio focus transient can duck. In Hi-Res bit-perfect mode, pausing instead of ducking.")
+                Log.i(TAG, "Audio focus transient can duck. Pausing cleanly to avoid mixing/clipping.")
                 hasAudioFocus = false
                 wasPlayingBeforeFocusLoss = true
-                onPauseRequested()
+                onAudioFocusLossPause(true)
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
                 Log.i(TAG, "Audio focus gained/restored.")
@@ -86,37 +91,20 @@ class AndroidAudioLifecycleManager(
         }
     }
 
-    private val hardwareBroadcastReceiver = object : BroadcastReceiver() {
-        override fun onReceive(ctx: Context?, intent: Intent?) {
-            when (intent?.action) {
-                AudioManager.ACTION_AUDIO_BECOMING_NOISY -> {
-                    Log.i(TAG, "Audio becoming noisy (headphone unplugged). Pausing playback immediately.")
-                    onPauseRequested()
-                }
-                UsbManager.ACTION_USB_DEVICE_DETACHED -> {
-                    val device = intent.usbDevice()
-                    Log.i(TAG, "USB Device detached: ${device?.productName ?: "unknown"}")
-                    handleUsbDeviceDetached(device)
-                }
-                UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
-                    val device = intent.usbDevice()
-                    Log.i(TAG, "USB Device attached: ${device?.productName ?: "unknown"}")
-                    handleUsbDeviceAttached(device)
-                }
-            }
-        }
-    }
-
     private val usbPermissionReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
             if (intent?.action != ACTION_USB_PERMISSION) return
             val device = intent.usbDevice() ?: return
+            val granted: Boolean
             synchronized(this@AndroidAudioLifecycleManager) {
                 if (pendingUsbDevice != device.deviceName) return
                 pendingUsbDevice = null
-                if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                    tryRegisterUsbDevice(device)
-                }
+                granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+            }
+            if (granted) {
+                onUsbPermissionGranted()
+            } else {
+                Log.w(TAG, "USB audio permission denied by user for ${device.productName}; falling back to AAudio.")
             }
         }
     }
@@ -170,98 +158,124 @@ class AndroidAudioLifecycleManager(
         Log.i(TAG, "abandonAudioFocus completed")
     }
 
-    /** 开始监听硬件热插拔与声音外泄广播 */
+    /** 注册 USB 权限回调（不在初始化时自动抢占 USB 声卡）。 */
     @Synchronized
     fun startListening() {
         if (isReceiverRegistered) return
-        val filter = IntentFilter().apply {
-            addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
-            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
-            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
-        }
         ContextCompat.registerReceiver(
             context, usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(hardwareBroadcastReceiver, filter, Context.RECEIVER_EXPORTED)
-        } else {
-            context.registerReceiver(hardwareBroadcastReceiver, filter)
-        }
         isReceiverRegistered = true
-        Log.i(TAG, "Hardware lifecycle listener registered")
+        Log.i(TAG, "Audio lifecycle listener registered (USB idle until exclusive playback)")
     }
 
-    /** 停止监听 */
+    /** 停止监听并彻底释放音频焦点与 USB 独占句柄。 */
     @Synchronized
     fun stopListening() {
         abandonAudioFocus()
         releaseUsbDevice()
         if (isReceiverRegistered) {
             try {
-                context.unregisterReceiver(hardwareBroadcastReceiver)
                 context.unregisterReceiver(usbPermissionReceiver)
             } catch (_: Throwable) {
             }
             isReceiverRegistered = false
             pendingUsbDevice = null
-            Log.i(TAG, "Hardware lifecycle listener unregistered")
+            permissionRequestedDevices.clear()
+            Log.i(TAG, "Audio lifecycle listener unregistered")
         }
     }
 
-    @Synchronized
-    private fun handleUsbDeviceDetached(device: UsbDevice?) {
-        if (device == null) return
-        if (device.deviceName == pendingUsbDevice) pendingUsbDevice = null
-        if (device.deviceName != registeredDeviceName) return
-        releaseUsbDevice()
-        onPauseRequested()
+    fun hasUsbExclusiveActive(): Boolean = usbConnection != null
+
+    fun hasConnectedUsbAudioDevice(): Boolean {
+        val um = usbManager ?: return false
+        return um.deviceList.values.any(::isUsbAudioDevice)
     }
 
-    private fun releaseUsbDevice() {
-        usbReconnectJob?.cancel()
-        // 熔断 Rust 底层 UAC2 等时传输会话，避免往关闭的描述符写数据引发 Native Crash
+    @Synchronized
+    fun onUsbAudioDetached(deviceName: String?) {
+        if (deviceName != null) {
+            permissionRequestedDevices.remove(deviceName)
+            if (pendingUsbDevice == deviceName) pendingUsbDevice = null
+        } else {
+            permissionRequestedDevices.clear()
+            pendingUsbDevice = null
+        }
+        if (deviceName == null || deviceName == registeredDeviceName) {
+            releaseUsbDevice()
+        }
+    }
+
+    /**
+     * 仅在开启 USB 独占且即将播放时接管 USB DAC。
+     * 无设备、未授权（异步弹窗授权）或打开失败时返回 false，由上层无感回退 AAudio 共享输出。
+     */
+    @Synchronized
+    fun acquireUsbDeviceForPlayback(
+        sampleRate: Int = 48_000,
+        bitDepth: Int = 24,
+        channels: Int = 2,
+        isDop: Boolean = false,
+        isNativeDsd: Boolean = false,
+    ): Boolean {
+        val um = usbManager ?: return false
+        if (!isReceiverRegistered) return false
+        val devices = um.deviceList.values.filter(::isUsbAudioDevice).sortedBy { it.deviceName }
+        if (devices.isEmpty()) {
+            releaseUsbDevice()
+            return false
+        }
+
+        val currentConn = usbConnection
+        val currentName = registeredDeviceName
+        if (currentConn != null && currentName != null) {
+            if (devices.any { it.deviceName == currentName }) {
+                RustEngine.setDirectUsbEnabled(true)
+                RustEngine.setDirectUsbLockEnabled(false)
+                RustEngine.setDirectUsbPlaybackFormat(sampleRate, bitDepth, channels, isDop, isNativeDsd)
+                return true
+            }
+            // 已记录设备实际已经掉线，清理旧句柄后再尝试新设备。
+            releaseUsbDevice()
+        }
+
+        val grantedDevice = devices.firstOrNull { um.hasPermission(it) }
+        if (grantedDevice != null) {
+            return tryRegisterUsbDevice(
+                device = grantedDevice,
+                sampleRate = sampleRate,
+                bitDepth = bitDepth,
+                channels = channels,
+                isDop = isDop,
+                isNativeDsd = isNativeDsd,
+            )
+        }
+
+        devices.firstOrNull { !um.hasPermission(it) && it.deviceName !in permissionRequestedDevices }
+            ?.let(::requestUsbPermission)
+        return false
+    }
+
+    /** 彻底释放 USB DAC：终止等时传输会话、关闭 idle lock、关闭 UsbDeviceConnection 让内核收回声卡。 */
+    @Synchronized
+    fun releaseUsbDevice() {
+        val hadConnection = usbConnection != null
         try {
+            RustEngine.setDirectUsbLockEnabled(false)
+            RustEngine.setDirectUsbEnabled(false)
             RustEngine.clearDirectUsbPlayback()
-            RustEngine.waitDirectUsbSessionStopped(2000)
+            if (hadConnection || RustEngine.isRustDirectUsbSessionActive()) {
+                RustEngine.waitDirectUsbSessionStopped(1500)
+            }
         } catch (e: Throwable) {
-            Log.e(TAG, "Error during USB detach fallback", e)
+            Log.e(TAG, "Error during USB release", e)
         } finally {
-            usbConnection?.close()
+            runCatching { usbConnection?.close() }
             usbConnection = null
             registeredDeviceName = null
         }
-    }
-
-    private fun scheduleUsbReconnect(device: UsbDevice) {
-        usbReconnectJob?.cancel()
-        usbReconnectJob = usbScope.launch {
-            kotlinx.coroutines.delay(USB_RECONNECT_DELAY_MS)
-            if (usbManager?.deviceList?.values?.any { it.deviceName == device.deviceName } == true) {
-                tryRegisterUsbDevice(device)
-            }
-        }
-    }
-
-    @Synchronized
-    private fun handleUsbDeviceAttached(device: UsbDevice?) {
-        if (!isReceiverRegistered || device == null || usbConnection != null) return
-        val um = usbManager ?: return
-        if (!isUsbAudioDevice(device)) return
-        if (um.hasPermission(device)) {
-            scheduleUsbReconnect(device)
-        } else {
-            requestUsbPermission(device)
-        }
-    }
-
-    @Synchronized
-    fun scanForUsbAudioDevices() {
-        val um = usbManager ?: return
-        if (!isReceiverRegistered || usbConnection != null) return
-        val devices = um.deviceList.values.filter(::isUsbAudioDevice).sortedBy { it.deviceName }
-        if (devices.any { um.hasPermission(it) && tryRegisterUsbDevice(it) }) return
-        devices.firstOrNull { !um.hasPermission(it) }?.let(::requestUsbPermission)
     }
 
     private fun requestUsbPermission(device: UsbDevice) {
@@ -275,21 +289,23 @@ class AndroidAudioLifecycleManager(
             flags,
         )
         pendingUsbDevice = device.deviceName
+        permissionRequestedDevices.add(device.deviceName)
         runCatching { usbManager?.requestPermission(device, permissionIntent) }.onFailure {
             pendingUsbDevice = null
             Log.w(TAG, "Unable to request USB audio permission", it)
         }
     }
 
-    private fun isUsbAudioDevice(device: UsbDevice): Boolean =
-        device.deviceClass == UsbConstants.USB_CLASS_AUDIO ||
-            (0 until device.interfaceCount).any {
-                device.getInterface(it).interfaceClass == UsbConstants.USB_CLASS_AUDIO
-            }
-
     /** 尝试将已授权的 USB DAC 注册到底层 Rust 驱动 */
     @Synchronized
-    private fun tryRegisterUsbDevice(device: UsbDevice): Boolean {
+    private fun tryRegisterUsbDevice(
+        device: UsbDevice,
+        sampleRate: Int,
+        bitDepth: Int,
+        channels: Int,
+        isDop: Boolean,
+        isNativeDsd: Boolean,
+    ): Boolean {
         val um = usbManager ?: return false
         if (!isReceiverRegistered || !isUsbAudioDevice(device) || !um.hasPermission(device)) return false
         if (usbConnection != null) return registeredDeviceName == device.deviceName
@@ -300,6 +316,9 @@ class AndroidAudioLifecycleManager(
         }
 
         try {
+            RustEngine.setDirectUsbLockEnabled(false)
+            RustEngine.setDirectUsbEnabled(true)
+            RustEngine.setDirectUsbPlaybackFormat(sampleRate, bitDepth, channels, isDop, isNativeDsd)
             // 先踢掉内核音频驱动再释放 Java claim；libusb 才能独占音频接口。
             for (index in 0 until device.interfaceCount) {
                 val usbInterface = device.getInterface(index)
@@ -323,11 +342,17 @@ class AndroidAudioLifecycleManager(
                 usbConnection = conn
                 registeredDeviceName = device.deviceName
             } else {
+                RustEngine.clearDirectUsbPlayback()
+                RustEngine.setDirectUsbEnabled(false)
                 conn.close()
             }
             Log.i(TAG, "RustEngine.registerDirectUsbDevice result: $ok (fd=$fd, name=${device.productName})")
             return ok
         } catch (error: Throwable) {
+            runCatching {
+                RustEngine.clearDirectUsbPlayback()
+                RustEngine.setDirectUsbEnabled(false)
+            }
             conn.close()
             Log.e(TAG, "Failed to register USB DAC", error)
             return false

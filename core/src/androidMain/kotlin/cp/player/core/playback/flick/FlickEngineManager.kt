@@ -1,18 +1,31 @@
 package cp.player.core.playback.flick
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import androidx.core.content.ContextCompat
 import cp.player.core.license.VipLicenseManager
 import cp.player.core.playback.AudioEffectCapabilities
 import cp.player.core.playback.AudioEffectConfig
 import cp.player.core.playback.AudioFormatInfo
 import cp.player.core.playback.Media3PlatformPlayer
+import cp.player.core.playback.NativeTrackTransition
 import cp.player.core.playback.PlatformPlaybackState
 import cp.player.core.playback.PlatformPlayer
 import cp.player.core.playback.PlaybackMetadata
-import cp.player.core.playback.NativeTrackTransition
 import cp.player.core.playback.PlaybackSessionSettings
 import cp.player.core.playback.SeekFailure
+import cp.player.core.playback.UsbReconnectStateMachine
 import cp.player.core.util.SettingsStorage
 import cp.player.core.util.defaultSettingsStorage
 import cp.player.engine.RustEngine
@@ -21,14 +34,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -39,8 +53,8 @@ enum class AndroidPlayerEngineType {
     STANDARD_MEDIA3,
 
     /**
-     * 高级发烧引擎（基于 Rust Oboe + Symphonia + UAC2 USB 独占 + DSD 软解）。
-     * 适合用于后续「VIP / Hi-Res 专业版」付费特权功能。
+     * 高级发烧引擎（基于 Rust Oboe / AAudio + Symphonia + 按需 UAC2 USB 独占 + DSD 软解）。
+     * 适合用于后续「VIP / 发烧友 Hi-Res 专业版」付费特权功能。
      */
     HIRES_FLICK,
 }
@@ -74,10 +88,21 @@ object FlickEngineManager {
     fun notifyEngineChanged() {
         activeDynamicPlayer?.checkAndSwitchEngine(force = true)
     }
+
+    /** 切换 Android USB 独占模式时通知当前播放器即时重绑或释放 USB 声卡。 */
+    fun notifyUsbExclusiveChanged(enabled: Boolean) {
+        activeDynamicPlayer?.onUsbExclusiveModeChanged(enabled)
+    }
+
+    /** 若当前不在播放中，立即释放 USB 独占（供 Service 退出或划掉任务卡片时兜底调用）。 */
+    fun releaseUsbIfIdle() {
+        activeDynamicPlayer?.releaseUsbIfIdle()
+    }
 }
 
 /**
- * 安卓端动态切换代理播放器：在标准 ExoPlayer 与发烧 FlickEngine 之间无缝热切换。
+ * 安卓端动态切换代理播放器：在标准 ExoPlayer 与发烧 FlickEngine 之间无缝热切换，
+ * 并统一承担「USB 音频断开后 3 秒重连自动恢复播放」（跨引擎、跨 USB 独占开关一致生效）。
  */
 internal class DynamicAndroidPlatformPlayer(
     private val context: Context,
@@ -87,9 +112,13 @@ internal class DynamicAndroidPlatformPlayer(
 
     companion object {
         private const val TAG = "DynamicAndroidPlatformPlayer"
+        private const val USB_RECONNECT_SETTLE_MS = 380L
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val usbReconnectStateMachine = UsbReconnectStateMachine()
+    private var usbAutoResumeJob: Job? = null
 
     private val _state = MutableStateFlow<PlatformPlaybackState>(PlatformPlaybackState.Idle)
     override val state: StateFlow<PlatformPlaybackState> = _state.asStateFlow()
@@ -123,17 +152,68 @@ internal class DynamicAndroidPlatformPlayer(
     private var lastPlaybackSpeed: Float? = null
     private var lastCrossfade: Pair<Boolean, Long>? = null
 
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    private var usbReceiverRegistered = false
+    private var audioDeviceCallbackRegistered = false
+
+    private val usbHardwareReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context?, intent: Intent?) {
+            when (intent?.action) {
+                AudioManager.ACTION_AUDIO_BECOMING_NOISY -> {
+                    usbReconnectStateMachine.onBecomingNoisy()
+                    val current = activePlayer
+                    if (current is FlickPlatformPlayer) {
+                        current.pauseForHardwareDisconnect()
+                    }
+                }
+                UsbManager.ACTION_USB_DEVICE_DETACHED -> {
+                    val device = intent.extractUsbDevice() ?: return
+                    if (AndroidAudioLifecycleManager.isUsbAudioDevice(device)) {
+                        handleUsbAudioDisconnected()
+                    }
+                }
+                UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                    val device = intent.extractUsbDevice() ?: return
+                    if (AndroidAudioLifecycleManager.isUsbAudioDevice(device)) {
+                        handleUsbAudioConnected()
+                    }
+                }
+            }
+        }
+    }
+
+    private val audioDeviceCallback: AudioDeviceCallback? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            object : AudioDeviceCallback() {
+                override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
+                    if (removedDevices?.any(::isUsbAudioDeviceInfo) == true) {
+                        handleUsbAudioDisconnected()
+                    }
+                }
+
+                override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+                    if (addedDevices?.any(::isUsbAudioDeviceInfo) == true) {
+                        handleUsbAudioConnected()
+                    }
+                }
+            }
+        } else {
+            null
+        }
+
     override val supportsPlaybackSpeed: Boolean get() = activePlayer.supportsPlaybackSpeed
     override val playbackSpeed: Float get() = activePlayer.playbackSpeed
     override val supportsNativeCrossfade: Boolean get() = activePlayer.supportsNativeCrossfade
     override val supportsGaplessQueue: Boolean get() = activePlayer.supportsGaplessQueue
-    override val nativeTrackTransitions: StateFlow<NativeTrackTransition?> get() = activePlayer.nativeTrackTransitions
+    private val _nativeTrackTransitions = MutableStateFlow<NativeTrackTransition?>(null)
+    override val nativeTrackTransitions: StateFlow<NativeTrackTransition?> = _nativeTrackTransitions.asStateFlow()
     override val supportsSeekableRemoteStreams: Boolean get() = activePlayer.supportsSeekableRemoteStreams
     /** 即使当前是 Flick，也能在 [loadDrm] 时强制切到 Media3，因此对上游声称可用。 */
     override val supportsDrm: Boolean get() = true
 
     init {
         bindUnderlyingPlayer(activePlayer)
+        registerUsbMonitors()
         scope.launch {
             VipLicenseManager.licenseState.map { it.isActivated }.distinctUntilChanged().collect { active ->
                 if (active) {
@@ -144,6 +224,93 @@ internal class DynamicAndroidPlatformPlayer(
             }
         }
     }
+
+    private fun registerUsbMonitors() {
+        val filter = IntentFilter().apply {
+            addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        }
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(usbHardwareReceiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                ContextCompat.registerReceiver(
+                    context,
+                    usbHardwareReceiver,
+                    filter,
+                    ContextCompat.RECEIVER_EXPORTED,
+                )
+            }
+            usbReceiverRegistered = true
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && audioDeviceCallback != null) {
+            runCatching {
+                audioManager?.registerAudioDeviceCallback(audioDeviceCallback, mainHandler)
+                audioDeviceCallbackRegistered = true
+            }
+        }
+    }
+
+    private fun unregisterUsbMonitors() {
+        if (usbReceiverRegistered) {
+            runCatching { context.unregisterReceiver(usbHardwareReceiver) }
+            usbReceiverRegistered = false
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && audioDeviceCallbackRegistered && audioDeviceCallback != null) {
+            runCatching { audioManager?.unregisterAudioDeviceCallback(audioDeviceCallback) }
+            audioDeviceCallbackRegistered = false
+        }
+    }
+
+    private fun handleUsbAudioDisconnected() {
+        usbAutoResumeJob?.cancel()
+        val autoResumeEnabled = PlaybackSessionSettings.androidUsbAutoResume(storage)
+        val shouldPause = usbReconnectStateMachine.onUsbAudioDisconnected(autoResumeEnabled)
+        val current = activePlayer
+        if (current is FlickPlatformPlayer) {
+            current.onUsbAudioDisconnected(shouldPause)
+        } else if (shouldPause) {
+            current.pause()
+        }
+    }
+
+    private fun handleUsbAudioConnected() {
+        (activePlayer as? FlickPlatformPlayer)?.onUsbAudioRouteChanged()
+        val autoResumeEnabled = PlaybackSessionSettings.androidUsbAutoResume(storage)
+        if (!usbReconnectStateMachine.onUsbAudioConnected(autoResumeEnabled)) return
+
+        usbAutoResumeJob?.cancel()
+        usbAutoResumeJob = scope.launch {
+            delay(USB_RECONNECT_SETTLE_MS)
+            val currentState = _state.value
+            if (currentState != PlatformPlaybackState.Playing &&
+                currentState != PlatformPlaybackState.Buffering
+            ) {
+                Log.i(TAG, "USB audio reconnected within 3s; resuming playback on $currentEngineType")
+                usbReconnectStateMachine.onPlayRequested()
+                activePlayer.play()
+            }
+        }
+    }
+
+    private fun isUsbAudioDeviceInfo(info: AudioDeviceInfo): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false
+        return info.isSink && when (info.type) {
+            AudioDeviceInfo.TYPE_USB_DEVICE,
+            AudioDeviceInfo.TYPE_USB_ACCESSORY,
+            AudioDeviceInfo.TYPE_USB_HEADSET -> true
+            else -> false
+        }
+    }
+
+    private fun Intent.extractUsbDevice(): UsbDevice? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            getParcelableExtra(UsbManager.EXTRA_DEVICE)
+        }
 
     private fun resolveDesiredEngine(): AndroidPlayerEngineType {
         if (drmPinned) return AndroidPlayerEngineType.STANDARD_MEDIA3
@@ -159,9 +326,13 @@ internal class DynamicAndroidPlatformPlayer(
     private fun createUnderlyingPlayer(type: AndroidPlayerEngineType): PlatformPlayer {
         return if (type == AndroidPlayerEngineType.HIRES_FLICK) {
             if (FlickEngineManager.isHiResEngineSupported) {
-                Log.i(TAG, "Active: FlickPlatformPlayer (Rust Oboe / Symphonia / USB DAC)")
+                Log.i(TAG, "Active: FlickPlatformPlayer (Rust Oboe / AAudio / UAC2 USB)")
                 runCatching {
-                    FlickPlatformPlayer(context)
+                    FlickPlatformPlayer(
+                        context = context,
+                        storage = storage,
+                        onExternalFocusLoss = { usbReconnectStateMachine.onUserPauseOrStop(stopped = false) },
+                    )
                 }.getOrElse { err ->
                     Log.w(TAG, "FlickPlatformPlayer creation failed ($err), falling back to ExoPlayer.")
                     Media3PlatformPlayer(context)
@@ -182,8 +353,13 @@ internal class DynamicAndroidPlatformPlayer(
             launch {
                 player.state.collect { st ->
                     _state.value = st
-                    if (st is PlatformPlaybackState.Error && currentEngineType == AndroidPlayerEngineType.HIRES_FLICK) {
-                        Log.w(TAG, "FlickEngine encountered error: ${st.message}. Automatically failing over to ExoPlayer!")
+                    usbReconnectStateMachine.onPlaybackStateChanged(st)
+                    // 仅原生库不可用时才降级回 ExoPlayer；单曲解码错误或焦点占用不静默杀掉用户所选引擎。
+                    if (st is PlatformPlaybackState.Error &&
+                        currentEngineType == AndroidPlayerEngineType.HIRES_FLICK &&
+                        st.message.contains("native library not available", ignoreCase = true)
+                    ) {
+                        Log.w(TAG, "FlickEngine native library unavailable (${st.message}). Failing over to ExoPlayer!")
                         switchEngine(AndroidPlayerEngineType.STANDARD_MEDIA3)
                     }
                 }
@@ -192,6 +368,7 @@ internal class DynamicAndroidPlatformPlayer(
             launch { player.durationMs.collect { _durationMs.value = it } }
             launch { player.formatInfo.collect { _formatInfo.value = it } }
             launch { player.seekFailures.collect { _seekFailures.tryEmit(it) } }
+            launch { player.nativeTrackTransitions.collect { _nativeTrackTransitions.value = it } }
         }
         player.setVolume(lastVolume)
         lastEffectConfig?.let { player.applyAudioEffect(it) }
@@ -202,6 +379,7 @@ internal class DynamicAndroidPlatformPlayer(
     private fun switchEngine(target: AndroidPlayerEngineType) {
         if (target == currentEngineType) return
         Log.i(TAG, "Switching active engine from $currentEngineType to $target")
+        usbAutoResumeJob?.cancel()
         val oldPlayer = activePlayer
         try {
             oldPlayer.release()
@@ -217,6 +395,7 @@ internal class DynamicAndroidPlatformPlayer(
         val desired = resolveDesiredEngine()
         if (desired != currentEngineType || force) {
             Log.i(TAG, "Switching engine from $currentEngineType to $desired")
+            usbAutoResumeJob?.cancel()
             val oldPlayer = activePlayer
             try {
                 oldPlayer.release()
@@ -229,6 +408,14 @@ internal class DynamicAndroidPlatformPlayer(
         }
     }
 
+    fun onUsbExclusiveModeChanged(enabled: Boolean) {
+        (activePlayer as? FlickPlatformPlayer)?.onUsbExclusiveModeChanged(enabled)
+    }
+
+    fun releaseUsbIfIdle() {
+        (activePlayer as? FlickPlatformPlayer)?.releaseUsbIfIdle()
+    }
+
     override suspend fun load(
         url: String,
         startPositionMs: Long,
@@ -236,6 +423,8 @@ internal class DynamicAndroidPlatformPlayer(
         metadata: PlaybackMetadata?,
     ) {
         drmPinned = false
+        usbAutoResumeJob?.cancel()
+        usbReconnectStateMachine.onTrackLoaded()
         checkAndSwitchEngine()
         activePlayer.load(url, startPositionMs, headers, metadata)
     }
@@ -248,6 +437,8 @@ internal class DynamicAndroidPlatformPlayer(
         metadata: PlaybackMetadata?,
     ) {
         drmPinned = true
+        usbAutoResumeJob?.cancel()
+        usbReconnectStateMachine.onTrackLoaded()
         if (currentEngineType != AndroidPlayerEngineType.STANDARD_MEDIA3) {
             switchEngine(AndroidPlayerEngineType.STANDARD_MEDIA3)
         }
@@ -258,15 +449,21 @@ internal class DynamicAndroidPlatformPlayer(
     }
 
     override fun play() {
+        usbAutoResumeJob?.cancel()
+        usbReconnectStateMachine.onPlayRequested()
         checkAndSwitchEngine()
         activePlayer.play()
     }
 
     override fun pause() {
+        usbAutoResumeJob?.cancel()
+        usbReconnectStateMachine.onUserPauseOrStop(stopped = false)
         activePlayer.pause()
     }
 
     override fun stop() {
+        usbAutoResumeJob?.cancel()
+        usbReconnectStateMachine.onUserPauseOrStop(stopped = true)
         activePlayer.stop()
     }
 
@@ -282,6 +479,9 @@ internal class DynamicAndroidPlatformPlayer(
     override fun getVolume(): Float = activePlayer.getVolume()
 
     override fun release() {
+        usbAutoResumeJob?.cancel()
+        usbReconnectStateMachine.reset()
+        unregisterUsbMonitors()
         scope.cancel()
         activePlayer.release()
     }
@@ -308,5 +508,12 @@ internal class DynamicAndroidPlatformPlayer(
     override fun reloadEngine() {
         checkAndSwitchEngine(force = true)
     }
-}
 
+    override fun reloadOutputRouting() {
+        onUsbExclusiveModeChanged(PlaybackSessionSettings.androidUsbExclusive(storage))
+    }
+
+    override fun releaseExclusiveAudioIfIdle() {
+        releaseUsbIfIdle()
+    }
+}

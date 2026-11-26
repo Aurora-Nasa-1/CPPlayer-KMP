@@ -82,6 +82,33 @@ object PlaybackSessionSettings {
         storage.getString(KEY_WASAPI_EXCLUSIVE)?.toBooleanStrictOrNull()
             ?: DEFAULT_WASAPI_EXCLUSIVE
 
+    // ============ Android USB DAC 独占与热插拔恢复 ============
+
+    /**
+     * Android 端 USB 硬件独占（UAC 2.0 直通）开关键。
+     *
+     * 默认 **关（false）**：默认走系统 AAudio 输出，避免抢占 USB 声卡导致其它应用无声；
+     * 开启后仅在 FlickEngine 实际播放期间接管 USB DAC，暂停/停止/退出时立即释放。
+     */
+    const val KEY_ANDROID_USB_EXCLUSIVE = "playback_android_usb_exclusive"
+    const val DEFAULT_ANDROID_USB_EXCLUSIVE = false
+
+    fun androidUsbExclusive(storage: SettingsStorage): Boolean =
+        storage.getString(KEY_ANDROID_USB_EXCLUSIVE)?.toBooleanStrictOrNull()
+            ?: DEFAULT_ANDROID_USB_EXCLUSIVE
+
+    /**
+     * Android 端 USB 音频设备断开后 3 秒内重连自动恢复播放开关。
+     *
+     * 对所有播放引擎（Media3 / FlickEngine）与输出模式（AAudio / USB 独占）均生效。
+     */
+    const val KEY_ANDROID_USB_AUTO_RESUME = "playback_android_usb_auto_resume"
+    const val DEFAULT_ANDROID_USB_AUTO_RESUME = true
+
+    fun androidUsbAutoResume(storage: SettingsStorage): Boolean =
+        storage.getString(KEY_ANDROID_USB_AUTO_RESUME)?.toBooleanStrictOrNull()
+            ?: DEFAULT_ANDROID_USB_AUTO_RESUME
+
     /** 读取开关；缺失或非法值回落到 [DEFAULT_KEEP_LAST_PLAYBACK]。 */
     fun keepLastPlayback(storage: SettingsStorage): Boolean =
         storage.getString(KEY_KEEP_LAST_PLAYBACK)?.toBooleanStrictOrNull()
