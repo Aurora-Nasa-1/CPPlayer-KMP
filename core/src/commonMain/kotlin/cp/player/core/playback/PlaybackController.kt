@@ -37,6 +37,14 @@ interface PlaybackController {
     /** 播放指定曲目列表（替换队列），从 [startIndex] 起。 */
     suspend fun playQueue(mediaIds: List<String>, startIndex: Int = 0, sourceId: String? = null)
 
+    /** Load a transferred queue at its starting position and await the requested playback state. */
+    suspend fun takeOverQueue(
+        mediaIds: List<String>,
+        startIndex: Int,
+        positionMs: Long,
+        playWhenReady: Boolean,
+    ): Boolean = false
+
     /** 设置队列但不立即播放。 */
     suspend fun setQueue(mediaIds: List<String>, startIndex: Int = 0, sourceId: String? = null)
 

@@ -49,6 +49,23 @@ internal class PlaybackMediaLoader(
     private val refreshLyrics: suspend () -> Unit,
     private val persistSession: () -> Unit,
 ) {
+    class HandoffStart(val requestedPositionMs: Long) {
+        var startAtMs: Long = requestedPositionMs
+    }
+
+    private var activeHandoff: HandoffStart? = null
+
+    fun ownsHandoff(handoff: HandoffStart): Boolean = activeHandoff === handoff
+
+    fun finishHandoff(handoff: HandoffStart, completed: Boolean) {
+        if (!ownsHandoff(handoff)) return
+        activeHandoff = null
+        if (!completed) {
+            onCurrentRemoved()
+            platform.stop()
+        }
+    }
+
     private data class PreloadAttempt(
         val mediaId: String,
         val requestedLevel: String,
@@ -136,6 +153,7 @@ internal class PlaybackMediaLoader(
     }
 
     fun onQueueReplaced() {
+        activeHandoff = null
         cancelRetry()
         cancelPreload()
         loadJob?.cancel()
@@ -144,6 +162,7 @@ internal class PlaybackMediaLoader(
     }
 
     fun onQueueCleared() {
+        activeHandoff = null
         cancelRetry()
         cancelPreload()
         loadJob?.cancel()
@@ -158,6 +177,7 @@ internal class PlaybackMediaLoader(
     }
 
     fun onCurrentRemoved() {
+        activeHandoff = null
         cancelRetry()
         cancelPreload()
         loadJob?.cancel()
@@ -169,6 +189,7 @@ internal class PlaybackMediaLoader(
     }
 
     fun onNativeTrackStarted(mediaId: String, summary: TrackSummary?) {
+        activeHandoff = null
         cancelRetry()
         cancelPreload()
         fadeController.onTrackPreparing()
@@ -189,6 +210,7 @@ internal class PlaybackMediaLoader(
     }
 
     fun cancelAll() {
+        activeHandoff = null
         cancelRetry()
         cancelPreload()
         loadJob?.cancel()
@@ -231,7 +253,7 @@ internal class PlaybackMediaLoader(
             ) return@launch
             if (requirePlatformError && platform.state.value !is PlatformPlaybackState.Error) return@launch
             retryJob = null
-            playCurrent()
+            playCurrent(activeHandoff)
         }
         return true
     }
@@ -448,8 +470,9 @@ internal class PlaybackMediaLoader(
         }
     }
 
-    suspend fun playCurrent(advanceNavSeq: () -> Unit = {}) {
+    suspend fun playCurrent(handoff: HandoffStart? = null, advanceNavSeq: () -> Unit = {}) {
         val entry = getCurrentEntry() ?: return
+        activeHandoff = handoff
         val requestedLevel = qualityLevel
         val namespace = cacheNamespaceOf(entry.mediaId)
         val pendingPreload = preloadAttempt?.takeIf {
@@ -674,7 +697,8 @@ internal class PlaybackMediaLoader(
             }
             val resume = restoredResume
             restoredResume = null
-            val startAt = consumeDeferredSeek(mediaId)
+            val startAt = handoff?.let { clampSeek(it.requestedPositionMs).also { start -> it.startAtMs = start } }
+                ?: consumeDeferredSeek(mediaId)
                 ?: resume?.takeIf { it.first == mediaId }?.second
                 ?: 0L
             val cacheKey = cacheKeyOf(mediaId, actualLevel, namespace)
@@ -826,7 +850,7 @@ internal class PlaybackMediaLoader(
             playingFromLocal = false
             platform.load(
                 fallback.url,
-                startPositionMs = 0L,
+                startPositionMs = activeHandoff?.startAtMs ?: 0L,
                 headers = headers,
                 metadata = summary?.let {
                     PlaybackMetadata(
@@ -869,7 +893,7 @@ internal class PlaybackMediaLoader(
     private suspend fun restartIfSourceChanged(mediaId: String, namespace: String, gen: Int): Boolean {
         if (loadGeneration != gen) return true
         if (cacheNamespaceOf(mediaId) == namespace) return false
-        playCurrent()
+        playCurrent(activeHandoff)
         return true
     }
 

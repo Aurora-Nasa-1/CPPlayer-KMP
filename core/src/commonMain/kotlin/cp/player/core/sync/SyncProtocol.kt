@@ -32,6 +32,10 @@ const val SYNC_ROUTE_RECORDS = "$SYNC_HTTP_PREFIX/records"
 /** 无缝转移播放：把「正在播什么、播到哪了」推给目标设备，由它接手。 */
 const val SYNC_ROUTE_HANDOFF = "$SYNC_HTTP_PREFIX/handoff"
 
+// Older senders have a 10-second read timeout. Only newer senders request a longer window.
+private const val HANDOFF_DEFAULT_START_TIMEOUT_MS = 7_000L
+const val HANDOFF_MAX_START_TIMEOUT_MS = 25_000L
+
 /** 单次交换的记录数上限。超限的**丢弃并少收**，而不是撑爆内存 —— 这是对畸形/恶意请求的唯一防线。 */
 const val SYNC_MAX_RECORDS = 20_000
 
@@ -116,7 +120,7 @@ data class HandoffTrack(
  *
  * ⚠️ 载荷刻意**极简**：只有「放哪首、从哪秒开始」+ 可选的整条队列。
  * 不带音量、不带账号 —— 队列只给 mediaId 列表与当前下标，目标端用
- * `playQueue` 原地重建（后台解析 URL，不阻塞应答）；账号凭据**永远**不进网卡。
+ * 原地重建队列，等待引擎就绪后才应答；账号凭据**永远**不进网卡。
  *
  * ### 时序纪律（这是本功能唯一一条铁律）
  * 源端发出请求后**继续播放**，直到收到 `accepted=true` 才暂停自己；
@@ -132,7 +136,7 @@ data class HandoffRequest(
     val mediaId: String,
     val trackName: String = "",
     val artist: String = "",
-    /** 源端捕获请求时的进度。目标端接手后会有一点回退（握手耗时内源端还在走），v1 接受 ≤2s。 */
+    /** 源端捕获请求时的进度，目标端以此作为起播位置。 */
     val positionMs: Long = 0L,
     /** 源端当时是否在播 —— 决定目标端接手后是播还是停在那个位置。 */
     val wasPlaying: Boolean = true,
@@ -144,9 +148,11 @@ data class HandoffRequest(
     val queue: List<HandoffTrack> = emptyList(),
     /** 当前曲目在 [queue] 里的下标；-1 = 无效（目标端忽略队列）。 */
     val queueIndex: Int = -1,
+    /** 源端允许目标端等待起播的时长。缺省时兼容旧源端的读超时。 */
+    val startTimeoutMs: Long = HANDOFF_DEFAULT_START_TIMEOUT_MS,
 )
 
-/** 转移请求的应答。`accepted=true` 的唯一含义是「目标端已经在放了」。 */
+/** 转移请求的应答。`accepted=true` 表示目标端已起播，或已接管原本暂停的播放。 */
 @Serializable
 data class HandoffResult(
     val accepted: Boolean = false,
@@ -183,6 +189,9 @@ object HandoffGuard {
             positionMs = request.positionMs.coerceIn(0L, MAX_POSITION_MS),
             queue = queue,
             queueIndex = index,
+            startTimeoutMs = request.startTimeoutMs.coerceIn(
+                HANDOFF_DEFAULT_START_TIMEOUT_MS, HANDOFF_MAX_START_TIMEOUT_MS,
+            ),
         )
     }
 

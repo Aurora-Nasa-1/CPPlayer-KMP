@@ -11,6 +11,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -327,14 +329,52 @@ class PlaybackControllerImpl(
     // ============ 队列操作 ============
 
     override suspend fun playQueue(mediaIds: List<String>, startIndex: Int, sourceId: String?) {
-        if (mediaIds.isEmpty()) return
+        if (replaceQueueForPlayback(mediaIds, startIndex, sourceId)) playCurrent()
+    }
+
+    private suspend fun replaceQueueForPlayback(mediaIds: List<String>, startIndex: Int, sourceId: String?): Boolean {
+        if (mediaIds.isEmpty()) return false
         mediaLoader.onQueueReplaced()
         navMutex.withLock {
             queueManager.replaceQueue(mediaIds, startIndex, sourceId)
         }
         pushQueueState()
         resolveQueueInBackground(startFrom = queueManager.currentIndex, skipStartEntry = true)
-        playCurrent()
+        return true
+    }
+
+    override suspend fun takeOverQueue(
+        mediaIds: List<String>,
+        startIndex: Int,
+        positionMs: Long,
+        playWhenReady: Boolean,
+    ): Boolean {
+        val mediaId = mediaIds.getOrNull(startIndex) ?: return false
+        if (!replaceQueueForPlayback(mediaIds, startIndex, sourceId = null)) return false
+        val handoff = PlaybackMediaLoader.HandoffStart(positionMs)
+        var completed = false
+        try {
+            mediaLoader.playCurrent(handoff) { navigationSeq += 1 }
+            // 位置流在起始 seek 未落地时会停在目标值。必须看到引擎播放且进度越过它。
+            val started = combine(platform.state, platform.positionMs, state) { engine, position, ui ->
+                when {
+                    !mediaLoader.ownsHandoff(handoff) -> false
+                    mediaLoader.engineReady && engine == PlatformPlaybackState.Playing &&
+                        ui.currentTrack?.id == mediaId && position > handoff.startAtMs -> true
+                    else -> null
+                }
+            }.first { it != null } == true
+            if (!started || !mediaLoader.ownsHandoff(handoff)) return false
+            if (!playWhenReady) {
+                pause()
+                platform.state.first { it == PlatformPlaybackState.Paused || !mediaLoader.ownsHandoff(handoff) }
+                if (!mediaLoader.ownsHandoff(handoff)) return false
+            }
+            completed = true
+            return true
+        } finally {
+            mediaLoader.finishHandoff(handoff, completed)
+        }
     }
 
     override suspend fun setQueue(mediaIds: List<String>, startIndex: Int, sourceId: String?) {

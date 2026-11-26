@@ -181,7 +181,7 @@ object SyncTransport {
      *
      * ⚠️ **调用方在收到 `accepted=true` 之前绝不能停本机播放** —— 目标端是
      * 「真的出声了」才应答的，所以这个调用的返回就是 READY 信号本身。
-     * 读超时给了 10s：目标端要等播放真正启动（起流 + 解码首帧），比普通请求慢。
+     * 读超时比目标端的起播窗口多几秒，给回包留出余量。
      * 返回 null = 设备无响应/超时 —— 调用方应保持本机播放不动并如实提示。
      */
     fun handoff(address: String, request: HandoffRequest): HandoffResult? {
@@ -189,7 +189,8 @@ object SyncTransport {
             "POST",
             "http://$address:$SYNC_HTTP_PORT$SYNC_ROUTE_HANDOFF",
             json.encodeToString(request),
-            readTimeoutMs = 10_000,
+            readTimeoutMs = (request.startTimeoutMs.coerceAtMost(HANDOFF_MAX_START_TIMEOUT_MS) + 5_000)
+                .coerceAtLeast(10_000).toInt(),
         ) ?: return null
         return runCatching { json.decodeFromString(HandoffResult.serializer(), body) }.getOrNull()
     }
