@@ -2,14 +2,9 @@
 
 package cp.player.app.ui.component
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -33,18 +28,9 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.Comment
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
-import androidx.compose.material.icons.rounded.Fullscreen
-import androidx.compose.material.icons.rounded.FullscreenExit
-import androidx.compose.material.icons.rounded.Lyrics
-import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.SmartDisplay
-import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
@@ -65,6 +51,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -102,6 +89,7 @@ internal fun PlayerArtworkStage(
     playingCorner: Dp = 20.dp,
     pausedCorner: Dp = 28.dp,
     showAmbientGlow: Boolean = true,
+    pinTopEdge: Boolean = false,
     overlay: @Composable BoxScope.() -> Unit = {},
 ) {
     val isDark = LocalIsDarkTheme.current
@@ -175,6 +163,7 @@ internal fun PlayerArtworkStage(
                 .size(size)
                 .aspectRatio(1f)
                 .graphicsLayer {
+                    if (pinTopEdge) transformOrigin = TransformOrigin(0.5f, 0f)
                     scaleX = scale
                     scaleY = scale
                 }
@@ -215,6 +204,7 @@ internal fun PlayerTrackInfoBlock(
     onOpenAudioEngine: (() -> Unit)?,
     showMetaChips: Boolean = true,
     touchFriendly: Boolean = false,
+    outlinedQualityBadge: Boolean = false,
     titleModifier: Modifier = Modifier,
     artistModifier: Modifier = Modifier,
     modifier: Modifier = Modifier,
@@ -288,6 +278,7 @@ internal fun PlayerTrackInfoBlock(
             PlayerMetaBadgeRow(
                 state = state,
                 onOpenAudioEngine = onOpenAudioEngine,
+                outlinedQualityBadge = outlinedQualityBadge,
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
             )
         }
@@ -338,6 +329,7 @@ internal fun PlayerMetaBadgeRow(
     state: PlaybackUiState,
     onOpenAudioEngine: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    outlinedQualityBadge: Boolean = false,
 ) {
     val s = cpStrings()
     val colors = MaterialTheme.colorScheme
@@ -367,8 +359,9 @@ internal fun PlayerMetaBadgeRow(
         qualityLabel?.let {
             PlayerBadgePill(
                 text = it,
-                container = cpNestedSurface().copy(alpha = 0.72f),
+                container = if (outlinedQualityBadge) colors.onSurface.copy(alpha = 0.07f) else cpNestedSurface().copy(alpha = 0.72f),
                 content = colors.onSurfaceVariant,
+                outlined = outlinedQualityBadge,
             )
         }
         if (engineChip != null) {
@@ -388,8 +381,9 @@ private fun PlayerBadgePill(
     container: Color,
     content: Color,
     onClick: (() -> Unit)? = null,
+    outlined: Boolean = false,
 ) {
-    val shape = MaterialTheme.shapes.small
+    val shape = if (outlined) CircleShape else MaterialTheme.shapes.small
     val label: @Composable () -> Unit = {
         CpText(
             text = text,
@@ -401,116 +395,11 @@ private fun PlayerBadgePill(
     if (onClick != null) {
         Surface(onClick = onClick, shape = shape, color = container) { label() }
     } else {
-        Surface(shape = shape, color = container) { label() }
-    }
-}
-
-/**
- * 桌面与横屏平板共用的右侧面板顶栏：
- *
- * 左侧为轻量磨砂分段胶囊（选中项展开「图标 + 文字」，未选中项保持紧凑图标+Tooltip），
- * 右侧为独立散落的轻量功能圆钮（翻译 / 纯享 / 迷你模式 / AI DJ / 更多），
- * 彻底取代原先右上角拥挤、带深黑投影且叠压队列搜索与歌词偏移徽标的浮岛。
- */
-@Composable
-internal fun PlayerRightPaneHeader(
-    selectedTab: Int,
-    onTabSelect: (Int) -> Unit,
-    supportsComments: Boolean,
-    showTranslation: Boolean,
-    onToggleTranslation: () -> Unit,
-    isImmersive: Boolean,
-    onToggleImmersive: (() -> Unit)? = null,
-    onOpenMore: () -> Unit,
-    showMiniPlayerAction: Boolean = false,
-    onOpenMiniPlayer: (() -> Unit)? = null,
-    showDjDeskAction: Boolean = false,
-    djDeskActive: Boolean = false,
-    onOpenDjDesk: (() -> Unit)? = null,
-    touchFriendly: Boolean = false,
-    modifier: Modifier = Modifier,
-) {
-    val s = cpStrings()
-    val tabs = remember(supportsComments, s) {
-        buildList {
-            add(Icons.Rounded.Lyrics to s.player.tabLyrics)
-            add(Icons.AutoMirrored.Rounded.QueueMusic to s.player.tabQueue)
-            if (supportsComments) add(Icons.AutoMirrored.Rounded.Comment to s.player.tabComments)
-        }
-    }
-    val toolSize = if (touchFriendly) CpSpacing.touchTarget else 36.dp
-
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.weight(1f)) {
-            PlayerSectionTabs(
-                tabs = tabs,
-                selectedTab = selectedTab,
-                onTabSelect = onTabSelect,
-                touchFriendly = touchFriendly,
-            )
-        }
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            AnimatedVisibility(
-                visible = selectedTab == 0,
-                enter = fadeIn(CpMotion.effectsFast()) + expandHorizontally(CpMotion.spatialFast()),
-                exit = fadeOut(CpMotion.effectsFast()) + shrinkHorizontally(CpMotion.spatialFast()),
-            ) {
-                PlayerHeaderToolButton(
-                    icon = Icons.Rounded.Translate,
-                    label = if (showTranslation) s.player.closeLyricsTranslation else s.player.lyricsTranslation,
-                    active = showTranslation,
-                    size = toolSize,
-                    showTooltip = !touchFriendly,
-                    onClick = onToggleTranslation,
-                )
-            }
-            if (onToggleImmersive != null) {
-                PlayerHeaderToolButton(
-                    icon = if (isImmersive) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
-                    label = if (isImmersive) s.player.exitImmersive else s.player.immersive,
-                    active = isImmersive,
-                    size = toolSize,
-                    showTooltip = !touchFriendly,
-                    onClick = onToggleImmersive,
-                )
-            }
-            if (showMiniPlayerAction && onOpenMiniPlayer != null) {
-                PlayerHeaderToolButton(
-                    icon = Icons.Rounded.PictureInPictureAlt,
-                    label = s.player.miniPlayer,
-                    active = false,
-                    size = toolSize,
-                    showTooltip = !touchFriendly,
-                    onClick = onOpenMiniPlayer,
-                )
-            }
-            if (showDjDeskAction && onOpenDjDesk != null) {
-                PlayerHeaderToolButton(
-                    icon = Icons.Rounded.AutoAwesome,
-                    label = s.ai.djDeskTitle,
-                    active = djDeskActive,
-                    size = toolSize,
-                    showTooltip = !touchFriendly,
-                    onClick = onOpenDjDesk,
-                )
-            }
-            PlayerHeaderToolButton(
-                icon = Icons.Rounded.MoreVert,
-                label = s.player.more,
-                active = false,
-                size = toolSize,
-                showTooltip = !touchFriendly,
-                onClick = onOpenMore,
-            )
-        }
+        Surface(
+            shape = shape,
+            color = container,
+            border = if (outlined) BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)) else null,
+        ) { label() }
     }
 }
 
@@ -578,65 +467,5 @@ internal fun PlayerSectionTabs(
                 }
             }
         }
-    }
-}
-
-@Composable
-internal fun PlayerHeaderToolButton(
-    icon: ImageVector,
-    label: String,
-    active: Boolean,
-    onClick: () -> Unit,
-    size: Dp = 36.dp,
-    showTooltip: Boolean = true,
-) {
-    val isDark = LocalIsDarkTheme.current
-    val colors = MaterialTheme.colorScheme
-    val container by animateColorAsState(
-        targetValue = if (active) {
-            colors.primaryContainer.copy(alpha = if (isDark) 0.92f else 0.96f)
-        } else {
-            colors.onSurface.copy(alpha = if (isDark) 0.08f else 0.06f)
-        },
-        animationSpec = CpMotion.effectsFast(),
-        label = "headerToolContainer",
-    )
-    val contentColor by animateColorAsState(
-        targetValue = if (active) colors.onPrimaryContainer else colors.onSurfaceVariant,
-        animationSpec = CpMotion.effectsFast(),
-        label = "headerToolContent",
-    )
-    val borderColor = if (active) {
-        colors.primary.copy(alpha = 0.25f)
-    } else {
-        colors.outlineVariant.copy(alpha = if (isDark) 0.22f else 0.28f)
-    }
-    val button: @Composable () -> Unit = {
-        Surface(
-            onClick = onClick,
-            modifier = Modifier.size(size).cpPressScale(),
-            shape = CircleShape,
-            color = container,
-            contentColor = contentColor,
-            border = BorderStroke(0.5.dp, borderColor),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    modifier = Modifier.size(if (size >= 44.dp) 21.dp else 18.dp),
-                    tint = contentColor,
-                )
-            }
-        }
-    }
-    if (showTooltip) {
-        TooltipBox(
-            positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Below),
-            tooltip = { PlainTooltip { CpText(label) } },
-            state = rememberTooltipState(),
-        ) { button() }
-    } else {
-        button()
     }
 }

@@ -13,7 +13,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -54,7 +53,7 @@ import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.Lyrics
+import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Repeat
@@ -80,10 +79,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -112,15 +109,13 @@ import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpSeekBar
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.PlayerArtworkStage
-import cp.player.app.ui.component.PlayerHeaderToolButton
+import cp.player.app.ui.component.PlayerInlineActionButton
 import cp.player.app.ui.component.PlayerMoreSheets
-import cp.player.app.ui.component.PlayerRightPaneHeader
+import cp.player.app.ui.component.PlayerSecondarySheet
+import cp.player.app.ui.component.PlayerSheet
 import cp.player.app.ui.component.PlayerTrackInfoBlock
-import cp.player.app.ui.component.ProviderFeatureGate
-import cp.player.app.ui.component.QueueContent
 import cp.player.app.ui.component.cpFluidBackground
 import cp.player.app.ui.component.cpPressScale
-import cp.player.app.ui.component.lyricEdgeFade
 import cp.player.app.ui.component.miniPlayerMouseWheel
 import cp.player.app.ui.component.miniPlayerWheelVolume
 import cp.player.app.ui.component.rememberActiveProviderSupports
@@ -139,7 +134,7 @@ import cp.player.core.provider.ProviderCapability
 import kotlinx.coroutines.flow.Flow
 
 /**
- * 桌面播放页：左侧舞台封面 + 控件，右侧独立顶栏 + 歌词 / 队列 / 评论。
+ * 桌面播放页：左侧封面与播放控件，右侧歌词。队列和评论由独立入口打开。
  *
  * 「更多」入口在右栏顶栏右上；弹层与动作实现由
  * [cp.player.app.ui.component.PlayerMoreSheets] 与移动/平板播放页共享。
@@ -216,7 +211,10 @@ private data class PlayerMetrics(
     val isShort: Boolean,
 )
 
-private fun playerMetrics(maxWidth: Dp, maxHeight: Dp): PlayerMetrics {
+// The desktop columns start below the 24 dp grabber, which sits 8 dp from the top.
+private val DesktopColumnsTopPadding = 36.dp
+
+private fun playerMetrics(maxWidth: Dp, maxHeight: Dp, desktop: Boolean, showVolume: Boolean): PlayerMetrics {
     val isVeryShort = maxHeight < 580.dp
     val isShort = maxHeight < 700.dp
     val isUltraWide = maxWidth >= 2200.dp
@@ -237,7 +235,8 @@ private fun playerMetrics(maxWidth: Dp, maxHeight: Dp): PlayerMetrics {
     }
 
     val availableWidth = (maxWidth - horizontalPadding * 2).coerceAtLeast(300.dp)
-    val availableHeight = (maxHeight - verticalPadding * 2).coerceAtLeast(300.dp)
+    val topPadding = if (desktop) DesktopColumnsTopPadding else verticalPadding
+    val availableHeight = (maxHeight - topPadding - verticalPadding).coerceAtLeast(300.dp)
 
     val contentMaxWidth = when {
         isUltraWide -> 1920.dp
@@ -269,7 +268,8 @@ private fun playerMetrics(maxWidth: Dp, maxHeight: Dp): PlayerMetrics {
     }
 
     val gapsBudget = if (isVeryShort) 24.dp else if (isShort) 34.dp else 48.dp
-    val controlsHeightBudget = 74.dp + 48.dp + (58.dp * transportScale) + 40.dp + gapsBudget
+    val controlsHeightBudget = 74.dp + 48.dp + (62.dp * transportScale) +
+        (if (showVolume) 40.dp else 0.dp) + gapsBudget
     val maxArtByHeight = (availableHeight - controlsHeightBudget).coerceAtLeast(140.dp)
 
     val maxArtworkSize = minOf(leftColumnWidth, maxArtByHeight, if (isWide) 500.dp else 420.dp)
@@ -349,6 +349,7 @@ internal fun DesktopPlayerLayout(
     val track = state.currentTrack ?: return
     val navigator = LocalAppNavigator.current
     val isDark = LocalIsDarkTheme.current
+    val desktop = !cp.player.app.platform.isAndroidPlatform()
     val onArtistClick: ((ArtistSummary) -> Unit)? = remember(navigator) {
         { artist -> navigator.push(AppRoute.UserProfile(artist.id, artist.name, artist.resourceId)) }
     }
@@ -356,13 +357,19 @@ internal fun DesktopPlayerLayout(
         { navigator.push(AppRoute.LyricsPluginSettings) }
     }
     val moreSheets = rememberPlayerMoreSheetState()
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var playerSheet by remember { mutableStateOf<PlayerSheet?>(null) }
     var isZenMode by remember { mutableStateOf(false) }
+    val desktopVolumeVisible by AppModel.desktopPlayerVolumeVisibleFlow.collectAsState()
+    val showVolume = !isZenMode && (!desktop || desktopVolumeVisible)
     val supportsComments = rememberActiveProviderSupports(ProviderCapability.COMMENTS)
-    val effectiveTab = if (selectedTab == 2 && !supportsComments) 0 else selectedTab
 
     val playerConfig by AppModel.mobilePlayerCustomConfigFlow.collectAsState()
     var showTranslation by remember(playerConfig.showTranslation) { mutableStateOf(playerConfig.showTranslation) }
+    val toggleTranslation = {
+        val next = !showTranslation
+        showTranslation = next
+        AppModel.updateMobilePlayerCustomConfig { it.copy(showTranslation = next) }
+    }
     val duration = state.durationMs.coerceAtLeast(0L)
     val seekable = SeekAvailability.isSeekable(duration, state.isLocalizing)
 
@@ -393,10 +400,11 @@ internal fun DesktopPlayerLayout(
             .then(containerModifier),
     ) {
         val effectiveHeight = (maxHeight - topChromeInset).coerceAtLeast(200.dp)
-        val metrics = remember(maxWidth, effectiveHeight) {
-            playerMetrics(maxWidth, effectiveHeight)
+        val metrics = remember(maxWidth, effectiveHeight, desktop, showVolume) {
+            playerMetrics(maxWidth, effectiveHeight, desktop, showVolume)
         }
         val leftColumnWidth = metrics.leftColumnWidth
+        val columnsTopPadding = if (desktop) DesktopColumnsTopPadding else metrics.verticalPadding
 
         val titleStyle = when {
             metrics.isShort -> MaterialTheme.typography.titleLarge
@@ -423,7 +431,6 @@ internal fun DesktopPlayerLayout(
             state.isFavorite,
             state.shuffleEnabled,
             state.repeatMode,
-            effectiveTab,
             showTranslation,
             isZenMode,
             supportsComments,
@@ -485,18 +492,9 @@ internal fun DesktopPlayerLayout(
 
                 add(
                     CpContextMenuItem(
-                        label = s.player.showLyrics,
-                        icon = Icons.Rounded.Lyrics,
-                        isSelected = effectiveTab == 0,
-                        onClick = { selectedTab = 0 },
-                    ),
-                )
-                add(
-                    CpContextMenuItem(
                         label = s.player.showQueue,
                         icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                        isSelected = effectiveTab == 1,
-                        onClick = { selectedTab = 1 },
+                        onClick = { playerSheet = PlayerSheet.Queue },
                     ),
                 )
                 if (supportsComments) {
@@ -504,25 +502,18 @@ internal fun DesktopPlayerLayout(
                         CpContextMenuItem(
                             label = s.player.showComments,
                             icon = Icons.AutoMirrored.Rounded.Comment,
-                            isSelected = effectiveTab == 2,
-                            onClick = { selectedTab = 2 },
+                            onClick = { playerSheet = PlayerSheet.Comments },
                         ),
                     )
                 }
-                if (effectiveTab == 0) {
-                    add(
-                        CpContextMenuItem(
-                            label = if (showTranslation) s.player.hideLyricsTranslation else s.player.showLyricsTranslation,
-                            icon = Icons.Rounded.Translate,
-                            isSelected = showTranslation,
-                            onClick = {
-                                val next = !showTranslation
-                                showTranslation = next
-                                AppModel.updateMobilePlayerCustomConfig { it.copy(showTranslation = next) }
-                            },
-                        ),
-                    )
-                }
+                add(
+                    CpContextMenuItem(
+                        label = if (showTranslation) s.player.hideLyricsTranslation else s.player.showLyricsTranslation,
+                        icon = Icons.Rounded.Translate,
+                        isSelected = showTranslation,
+                        onClick = toggleTranslation,
+                    ),
+                )
                 if (cp.player.app.platform.isAndroidPlatform()) {
                     add(
                         CpContextMenuItem(
@@ -613,8 +604,12 @@ internal fun DesktopPlayerLayout(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = topChromeInset)
-                    .padding(horizontal = metrics.horizontalPadding, vertical = metrics.verticalPadding),
+                    .padding(
+                        top = topChromeInset + columnsTopPadding,
+                        bottom = metrics.verticalPadding,
+                        start = metrics.horizontalPadding,
+                        end = metrics.horizontalPadding,
+                    ),
                 contentAlignment = Alignment.TopCenter,
             ) {
                 Row(
@@ -623,11 +618,11 @@ internal fun DesktopPlayerLayout(
                         .fillMaxHeight(),
                     horizontalArrangement = Arrangement.spacedBy(metrics.columnGap),
                 ) {
-                    // 左列：舞台封面 + 控件（垂直居中，适应任意桌面窗口高度）
+                    // 桌面封面与右栏工具共用同一条顶线。
                     Column(
                         modifier = Modifier.width(leftColumnWidth).fillMaxHeight(),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
+                        verticalArrangement = if (desktop) Arrangement.Top else Arrangement.Center,
                     ) {
                         val artHoverInteraction = remember { MutableInteractionSource() }
                         val artHovered by artHoverInteraction.collectIsHoveredAsState()
@@ -639,6 +634,7 @@ internal fun DesktopPlayerLayout(
                             size = artSize,
                             modifier = Modifier.hoverable(artHoverInteraction),
                             artworkModifier = artworkModifier,
+                            pinTopEdge = desktop,
                             overlay = {
                                 androidx.compose.animation.AnimatedVisibility(
                                     visible = cp.player.app.platform.isAndroidPlatform() && (artHovered || isZenMode),
@@ -695,6 +691,7 @@ internal fun DesktopPlayerLayout(
                                 onOpenAudioEngine = { navigator.push(AppRoute.AudioEngineSettings) },
                                 showMetaChips = metrics.showMetaChips && !isZenMode,
                                 touchFriendly = false,
+                                outlinedQualityBadge = desktop,
                                 titleModifier = titleModifier,
                                 artistModifier = artistModifier,
                             )
@@ -722,10 +719,11 @@ internal fun DesktopPlayerLayout(
                                 onShuffle = onShuffle,
                                 scale = metrics.transportScale,
                                 modifier = Modifier.fillMaxWidth(),
+                                subtle = desktop,
                             )
 
                             AnimatedVisibility(
-                                visible = !isZenMode,
+                                visible = showVolume,
                                 enter = fadeIn(CpMotion.effects()) + expandVertically(CpMotion.spatial()),
                                 exit = fadeOut(CpMotion.effects()) + shrinkVertically(CpMotion.spatial()),
                             ) {
@@ -741,92 +739,59 @@ internal fun DesktopPlayerLayout(
                         }
                     }
 
-                    // 右侧展示区：独立顶栏槽位 + 内容区（无重叠、带边缘渐隐）
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight(),
-                    ) {
+                    // 队列与评论沿用手机端弹层，右栏始终保留当前歌词。
+                    Column(Modifier.weight(1f).fillMaxHeight()) {
                         AnimatedVisibility(
                             visible = !isZenMode,
                             enter = fadeIn(CpMotion.effects()) + expandVertically(CpMotion.spatial()),
                             exit = fadeOut(CpMotion.effects()) + shrinkVertically(CpMotion.spatial()),
                         ) {
-                            PlayerRightPaneHeader(
-                                selectedTab = effectiveTab,
-                                onTabSelect = { selectedTab = it },
-                                supportsComments = supportsComments,
-                                showTranslation = showTranslation,
-                                onToggleTranslation = {
-                                    val next = !showTranslation
-                                    showTranslation = next
-                                    AppModel.updateMobilePlayerCustomConfig { it.copy(showTranslation = next) }
-                                },
-                                isImmersive = isZenMode,
-                                onToggleImmersive = if (cp.player.app.platform.isAndroidPlatform()) {
-                                    { isZenMode = !isZenMode }
-                                } else null,
-                                onOpenMore = { moreSheets.showMoreMenu = true },
-                                showMiniPlayerAction = !cp.player.app.platform.isAndroidPlatform(),
-                                onOpenMiniPlayer = { cp.player.app.ui.util.DesktopShell.isMiniMode = true },
-                                showDjDeskAction = cp.player.app.ui.a2ui.A2UI_ENTRY_ENABLED,
-                                djDeskActive = moreSheets.showDjDesk,
-                                onOpenDjDesk = { moreSheets.showDjDesk = true },
-                                touchFriendly = false,
-                                modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (supportsComments) {
+                                    PlayerInlineActionButton(
+                                        icon = Icons.AutoMirrored.Rounded.Comment,
+                                        label = s.player.songComments,
+                                        onClick = { playerSheet = PlayerSheet.Comments },
+                                    )
+                                }
+                                PlayerInlineActionButton(
+                                    icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                                    label = s.player.queue,
+                                    onClick = { playerSheet = PlayerSheet.Queue },
+                                )
+                                PlayerInlineActionButton(
+                                    icon = Icons.Rounded.MoreHoriz,
+                                    label = s.player.more,
+                                    onClick = { moreSheets.showMoreMenu = true },
+                                )
+                            }
                         }
 
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                        ) {
-                            AnimatedContent(
-                                targetState = effectiveTab,
-                                transitionSpec = {
-                                    fadeIn(tween(220)) togetherWith fadeOut(tween(160))
-                                },
-                                label = "desktopTabContent",
-                                modifier = Modifier.fillMaxSize(),
-                            ) { tabIndex ->
-                                when (tabIndex) {
-                                    0 -> Box(Modifier.fillMaxSize().lyricEdgeFade()) {
-                                        DesktopLyricsContent(
-                                            state = state,
-                                            positionFlow = positionFlow,
-                                            initialPositionMs = initialPositionMs,
-                                            onSeek = onSeek,
-                                            showTranslation = showTranslation,
-                                            onRepeat = onRepeat,
-                                            onLikeClick = onLike,
-                                            onChangeSource = onChangeLyricsSource,
-                                            lineFontSize = lyricFontSize,
-                                            contentPadding = PaddingValues(top = 12.dp, bottom = 36.dp, start = 12.dp, end = 12.dp),
-                                        )
-                                    }
-                                    1 -> QueueContent(
-                                        queue = state.queue,
-                                        currentIndex = state.currentIndex,
-                                        onPlayAt = onPlayAt,
-                                        onRemove = onRemoveQueue,
-                                        onMove = onMove,
-                                        onClear = onClearQueue,
-                                        modifier = Modifier.fillMaxSize(),
-                                    )
-                                    else -> Box(Modifier.fillMaxSize()) {
-                                        ProviderFeatureGate(
-                                            capability = ProviderCapability.COMMENTS,
-                                            fallback = {
-                                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                    CpText(s.player.commentsUnsupported, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                                }
-                                            },
-                                        ) {
-                                            DesktopCommentContent(track.id)
-                                        }
-                                    }
-                                }
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                            DesktopLyricsContent(
+                                state = state,
+                                positionFlow = positionFlow,
+                                initialPositionMs = initialPositionMs,
+                                onSeek = onSeek,
+                                showTranslation = showTranslation,
+                                onRepeat = onRepeat,
+                                onLikeClick = onLike,
+                                onChangeSource = onChangeLyricsSource,
+                                lineFontSize = lyricFontSize,
+                                focusedPaneStyle = desktop,
+                                contentPadding = PaddingValues(top = 12.dp, bottom = 36.dp, start = 12.dp, end = 12.dp),
+                            )
+                            Box(Modifier.align(Alignment.BottomEnd).padding(8.dp)) {
+                                PlayerInlineActionButton(
+                                    icon = Icons.Rounded.Translate,
+                                    label = if (showTranslation) s.player.hideLyricsTranslation else s.player.showLyricsTranslation,
+                                    active = showTranslation,
+                                    onClick = toggleTranslation,
+                                )
                             }
                         }
                     }
@@ -852,18 +817,29 @@ internal fun DesktopPlayerLayout(
                     .align(Alignment.TopEnd)
                     .padding(top = 12.dp + topChromeInset, end = metrics.horizontalPadding),
             ) {
-                PlayerHeaderToolButton(
+                PlayerInlineActionButton(
                     icon = Icons.Rounded.FullscreenExit,
                     label = s.player.exitImmersive,
                     active = true,
                     size = 36.dp,
-                    showTooltip = true,
                     onClick = { isZenMode = false },
                 )
             }
         }
     }
 
+    PlayerSecondarySheet(
+        sheet = playerSheet,
+        state = state,
+        supportsComments = supportsComments,
+        onPlayAt = onPlayAt,
+        onMove = onMove,
+        onRemoveQueue = onRemoveQueue,
+        onClearQueue = onClearQueue,
+        onShuffle = onShuffle,
+        onRepeat = onRepeat,
+        onClose = { playerSheet = null },
+    )
     PlayerMoreSheets(state = state, sheets = moreSheets)
 }
 
@@ -988,6 +964,7 @@ internal fun PlayerTransportRow(
     /** 按键缩放：封面变大时整排跟着变大（见 `PlayerMetrics.transportScale`）。 */
     scale: Float = 1f,
     modifier: Modifier = Modifier,
+    subtle: Boolean = false,
 ) {
     val s = cpStrings()
     Row(
@@ -1001,24 +978,26 @@ internal fun PlayerTransportRow(
             active = state.shuffleEnabled,
             onClick = onShuffle,
             size = 40.dp * scale,
+            subtle = subtle,
         )
         PlayerSkipButton(
             icon = Icons.Rounded.SkipPrevious,
             label = s.player.previousTrack,
             onClick = onSkipPrev,
-            size = 48.dp * scale,
+            size = (if (subtle) 44.dp else 48.dp) * scale,
         )
         PlayerPlayPauseButton(
             isPlaying = state.isPlaying,
             isBuffering = state.isBuffering,
             onClick = onTogglePlay,
             size = 62.dp * scale,
+            subtle = subtle,
         )
         PlayerSkipButton(
             icon = Icons.Rounded.SkipNext,
             label = s.player.nextTrack,
             onClick = onSkipNext,
-            size = 48.dp * scale,
+            size = (if (subtle) 44.dp else 48.dp) * scale,
         )
         PlayerModeButton(
             icon = if (state.repeatMode == RepeatMode.ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
@@ -1030,6 +1009,7 @@ internal fun PlayerTransportRow(
             active = state.repeatMode != RepeatMode.OFF,
             onClick = onRepeat,
             size = 40.dp * scale,
+            subtle = subtle,
         )
     }
 }
@@ -1042,10 +1022,11 @@ private fun PlayerModeButton(
     active: Boolean,
     onClick: () -> Unit,
     size: Dp = 40.dp,
+    subtle: Boolean = false,
 ) {
     // 只保留激活态；hover / press 反馈统一交给 Surface 自带的 M3 ripple。
     val container by animateColorAsState(
-        targetValue = if (active) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+        targetValue = if (active && !subtle) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
         animationSpec = CpMotion.effectsFast(),
         label = "modeButtonContainer",
     )
@@ -1060,8 +1041,11 @@ private fun PlayerModeButton(
                 imageVector = icon,
                 contentDescription = label,
                 modifier = Modifier.size(size * 0.5f),
-                tint = if (active) MaterialTheme.colorScheme.onPrimaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+                tint = when {
+                    active && subtle -> MaterialTheme.colorScheme.primary
+                    active -> MaterialTheme.colorScheme.onPrimaryContainer
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
         }
     }
@@ -1096,8 +1080,11 @@ private fun PlayerPlayPauseButton(
     isBuffering: Boolean,
     onClick: () -> Unit,
     size: Dp = 62.dp,
+    subtle: Boolean = false,
 ) {
     val s = cpStrings()
+    val colors = MaterialTheme.colorScheme
+    val iconColor = if (subtle) colors.onSurface else colors.onPrimary
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val corner by animateDpAsState(
@@ -1114,15 +1101,15 @@ private fun PlayerPlayPauseButton(
         onClick = onClick,
         modifier = Modifier.size(size).cpPressScale(interaction, pressedScale = 0.96f),
         shape = RoundedCornerShape(corner),
-        color = MaterialTheme.colorScheme.primary,
-        contentColor = MaterialTheme.colorScheme.onPrimary,
+        color = if (subtle) colors.onSurface.copy(alpha = 0.09f) else colors.primary,
+        contentColor = iconColor,
         interactionSource = interaction,
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             if (isBuffering) {
                 CpLoadingIndicator(
                     modifier = Modifier.size(size * 0.42f),
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    color = iconColor,
                 )
             } else {
                 AnimatedContent(

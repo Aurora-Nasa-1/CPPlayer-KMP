@@ -14,7 +14,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -22,7 +21,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -45,7 +43,6 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.AccessAlarm
 import androidx.compose.material.icons.rounded.Cast
 import androidx.compose.material.icons.rounded.Fullscreen
-import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lyrics
@@ -54,12 +51,10 @@ import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,7 +66,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -85,6 +79,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cp.player.app.AppModel
@@ -97,19 +92,16 @@ import cp.player.app.ui.component.CpSpacing
 import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.LyricContent
 import cp.player.app.ui.component.PlayerArtworkStage
-import cp.player.app.ui.component.PlayerHeaderToolButton
+import cp.player.app.ui.component.PlayerSecondarySheet
+import cp.player.app.ui.component.PlayerSheet
 import cp.player.app.ui.component.PlayerMoreSheetState
 import cp.player.app.ui.component.PlayerMoreSheets
-import cp.player.app.ui.component.PlayerRightPaneHeader
 import cp.player.app.ui.component.PlayerTimeline
 import cp.player.app.ui.component.PlayerTrackInfoBlock
 import cp.player.app.ui.component.playerDismissDragGesture
-import cp.player.app.ui.component.ProviderFeatureGate
-import cp.player.app.ui.component.QueueContent
 import cp.player.app.ui.component.TrackArtistText
 import cp.player.app.ui.component.cpFluidBackground
 import cp.player.app.ui.component.cpPressScale
-import cp.player.app.ui.component.lyricEdgeFade
 import cp.player.app.ui.component.modernPlayerFallbackColors
 import cp.player.app.ui.component.rememberActiveProviderSupports
 import cp.player.app.ui.component.rememberPlayerMoreSheetState
@@ -117,7 +109,6 @@ import cp.player.app.ui.feedback.CpHaptic
 import cp.player.app.ui.feedback.LocalCpHaptics
 import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.theme.CpMotion
-import cp.player.app.ui.theme.LocalIsDarkTheme
 import cp.player.core.music.ArtistSummary
 import cp.player.core.playback.PlaybackUiState
 import cp.player.core.provider.ProviderCapability
@@ -133,7 +124,7 @@ import kotlinx.coroutines.launch
  * - 补齐系统栏与刘海安全区 (`systemBars union displayCutout`)；
  * - 全部触控目标 >= 48dp，支持顶部/封面下拉关闭；
  * - 横屏以「设备投放 / 睡眠定时 / 相似推荐 / 音效 / 更多」触控快捷行取代桌面常驻音量条；
- * - 独立右栏顶栏区，不叠压队列搜索与歌词偏移徽标。
+ * - 横屏右栏固定显示歌词，评论和队列使用独立弹层。
  */
 @Composable
 fun TabletPlayerScreen(
@@ -223,15 +214,21 @@ internal fun TabletPlayerLayout(
     val supportsComments = rememberActiveProviderSupports(ProviderCapability.COMMENTS)
 
     var showTranslation by remember(config.showTranslation) { mutableStateOf(config.showTranslation) }
-    var portraitPanel by rememberSaveable { mutableStateOf<Int?>(null) }
-    var landscapeTab by rememberSaveable { mutableIntStateOf(0) }
+    var lyricsExpanded by rememberSaveable { mutableStateOf(false) }
+    var playerSheet by rememberSaveable { mutableStateOf<PlayerSheet?>(null) }
     var isImmersiveActive by remember { mutableStateOf(false) }
     var lastInteractionMs by remember { mutableLongStateOf(currentTimeMillis()) }
 
-    val activeLandscapeTab = if (landscapeTab == 2 && !supportsComments) 0 else landscapeTab
-    val activePortraitPanel = portraitPanel?.takeUnless { it == 2 && !supportsComments }
+    val onOpenQueue = {
+        haptics.perform(CpHaptic.Tick)
+        playerSheet = PlayerSheet.Queue
+    }
+    val onOpenComments = {
+        haptics.perform(CpHaptic.Tick)
+        playerSheet = PlayerSheet.Comments
+    }
 
-    val anySheetOpen = moreSheets.showMoreMenu || moreSheets.showSimilarSongs ||
+    val anySheetOpen = playerSheet != null || moreSheets.showMoreMenu || moreSheets.showSimilarSongs ||
         moreSheets.showAddToPlaylist || moreSheets.showSleepTimer ||
         moreSheets.showSongInfo || moreSheets.showDevicePicker ||
         moreSheets.showLyricOffset || moreSheets.showDjDesk
@@ -286,28 +283,6 @@ internal fun TabletPlayerLayout(
                 },
                 onDragCancel = { scope.launch { dragOffset.animateTo(0f, resetMotion) } },
             )
-        }
-    }
-
-    // 竖屏展开歌词时可跟随自动沉浸设置。
-    LaunchedEffect(
-        activePortraitPanel,
-        isImmersiveActive,
-        lastInteractionMs,
-        config.lyricsImmersiveEnabled,
-        config.lyricsImmersiveTimeoutSeconds,
-    ) {
-        if (activePortraitPanel != 0 || !config.lyricsImmersiveEnabled || isImmersiveActive) {
-            return@LaunchedEffect
-        }
-        val timeoutMs = config.lyricsImmersiveTimeoutSeconds.coerceIn(2, 15) * 1000L
-        while (true) {
-            val remaining = timeoutMs - (currentTimeMillis() - lastInteractionMs)
-            if (remaining <= 0L) {
-                isImmersiveActive = true
-                break
-            }
-            delay(remaining.coerceAtLeast(100L))
         }
     }
 
@@ -375,10 +350,23 @@ internal fun TabletPlayerLayout(
                 .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)),
             contentAlignment = Alignment.TopCenter,
         ) {
-            val isLandscapeSplit = maxWidth >= 840.dp
+            val isLandscapeSplit = maxWidth >= 840.dp && maxWidth > maxHeight
 
-            BackHandler(enabled = !isLandscapeSplit && !isImmersive && activePortraitPanel != null) {
-                portraitPanel = null
+            // 只有竖屏主动展开歌词后才启用自动沉浸。
+            LaunchedEffect(
+                isLandscapeSplit, lyricsExpanded, anySheetOpen, isImmersiveActive, lastInteractionMs,
+                config.lyricsImmersiveEnabled, config.lyricsImmersiveTimeoutSeconds,
+            ) {
+                if (isLandscapeSplit || !lyricsExpanded || anySheetOpen || isImmersiveActive ||
+                    !config.lyricsImmersiveEnabled || !isAndroidPlatform()
+                ) return@LaunchedEffect
+                val timeoutMs = config.lyricsImmersiveTimeoutSeconds.coerceIn(2, 15) * 1000L
+                delay((timeoutMs - (currentTimeMillis() - lastInteractionMs)).coerceAtLeast(0L))
+                isImmersiveActive = true
+            }
+
+            BackHandler(enabled = !isLandscapeSplit && !isImmersive && lyricsExpanded && !anySheetOpen) {
+                lyricsExpanded = false
                 isImmersiveActive = false
             }
 
@@ -388,12 +376,9 @@ internal fun TabletPlayerLayout(
                     track = track,
                     positionFlow = positionFlow,
                     initialPositionMs = initialPositionMs,
-                    selectedTab = activeLandscapeTab,
-                    onTabSelect = {
-                        haptics.perform(CpHaptic.Tick)
-                        landscapeTab = it
-                    },
                     supportsComments = supportsComments,
+                    onOpenQueue = onOpenQueue,
+                    onOpenComments = onOpenComments,
                     showTranslation = showTranslation,
                     onToggleTranslation = onToggleTranslation,
                     isImmersive = isImmersive,
@@ -415,10 +400,6 @@ internal fun TabletPlayerLayout(
                     onOpenAudioEngine = { navigator.push(AppRoute.AudioEngineSettings) },
                     onOpenAudioEffects = { navigator.push(AppRoute.AudioEffectSettings) },
                     onChangeLyricsSource = onChangeLyricsSource,
-                    onPlayAt = onPlayAt,
-                    onMove = onMove,
-                    onRemoveQueue = onRemoveQueue,
-                    onClearQueue = onClearQueue,
                     moreSheets = moreSheets,
                     artworkModifier = artworkModifier,
                     titleModifier = titleModifier,
@@ -430,21 +411,23 @@ internal fun TabletPlayerLayout(
                     track = track,
                     positionFlow = positionFlow,
                     initialPositionMs = initialPositionMs,
-                    activePanel = activePortraitPanel,
-                    onSelectPanel = { panel ->
+                    lyricsExpanded = lyricsExpanded,
+                    onToggleLyrics = {
                         haptics.perform(CpHaptic.Tick)
                         lastInteractionMs = currentTimeMillis()
-                        portraitPanel = if (activePortraitPanel == panel) null else panel
-                        if (portraitPanel != 0) isImmersiveActive = false
+                        lyricsExpanded = !lyricsExpanded
+                        if (!lyricsExpanded) isImmersiveActive = false
                     },
-                    onCollapsePanel = {
-                        portraitPanel = null
+                    onCollapseLyrics = {
+                        lyricsExpanded = false
                         isImmersiveActive = false
                     },
                     supportsComments = supportsComments,
+                    onOpenQueue = onOpenQueue,
+                    onOpenComments = onOpenComments,
                     showTranslation = showTranslation,
                     onToggleTranslation = onToggleTranslation,
-                    isImmersive = isImmersive && activePortraitPanel == 0,
+                    isImmersive = isImmersive && lyricsExpanded,
                     onToggleImmersive = {
                         haptics.perform(CpHaptic.Tick)
                         lastInteractionMs = currentTimeMillis()
@@ -463,10 +446,6 @@ internal fun TabletPlayerLayout(
                     onOpenMv = { mvId -> navigator.push(AppRoute.VideoPlayer("netease://mv/$mvId")) },
                     onOpenAudioEngine = { navigator.push(AppRoute.AudioEngineSettings) },
                     onChangeLyricsSource = onChangeLyricsSource,
-                    onPlayAt = onPlayAt,
-                    onMove = onMove,
-                    onRemoveQueue = onRemoveQueue,
-                    onClearQueue = onClearQueue,
                     moreSheets = moreSheets,
                     artworkModifier = artworkModifier,
                     titleModifier = titleModifier,
@@ -475,6 +454,22 @@ internal fun TabletPlayerLayout(
             }
         }
     }
+
+    PlayerSecondarySheet(
+        sheet = playerSheet,
+        state = state,
+        supportsComments = supportsComments,
+        onPlayAt = onPlayAt,
+        onMove = onMove,
+        onRemoveQueue = onRemoveQueue,
+        onClearQueue = onClearQueue,
+        onShuffle = onShuffle,
+        onRepeat = onRepeat,
+        onClose = {
+            playerSheet = null
+            lastInteractionMs = currentTimeMillis()
+        },
+    )
 }
 
 @Composable
@@ -483,9 +478,9 @@ private fun TabletLandscapeContent(
     track: cp.player.core.music.TrackSummary,
     positionFlow: Flow<Long>?,
     initialPositionMs: Long,
-    selectedTab: Int,
-    onTabSelect: (Int) -> Unit,
     supportsComments: Boolean,
+    onOpenQueue: () -> Unit,
+    onOpenComments: () -> Unit,
     showTranslation: Boolean,
     onToggleTranslation: () -> Unit,
     isImmersive: Boolean,
@@ -504,10 +499,6 @@ private fun TabletLandscapeContent(
     onOpenAudioEngine: () -> Unit,
     onOpenAudioEffects: () -> Unit,
     onChangeLyricsSource: (() -> Unit)?,
-    onPlayAt: (Int) -> Unit,
-    onMove: (Int, Int) -> Unit,
-    onRemoveQueue: (Int) -> Unit,
-    onClearQueue: () -> Unit,
     moreSheets: PlayerMoreSheetState,
     artworkModifier: Modifier,
     titleModifier: Modifier,
@@ -515,24 +506,24 @@ private fun TabletLandscapeContent(
 ) {
     val s = cpStrings()
     val colors = MaterialTheme.colorScheme
-    val isDark = LocalIsDarkTheme.current
 
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .padding(horizontal = 28.dp, vertical = 12.dp),
+            .padding(horizontal = CpSpacing.pageHorizontal, vertical = 8.dp),
         contentAlignment = Alignment.TopCenter,
     ) {
         val contentWidth = minOf(maxWidth, 1360.dp)
-        val columnGap = if (contentWidth >= 1040.dp) 36.dp else 24.dp
-        val leftWidth = (contentWidth * 0.41f).coerceIn(290.dp, 420.dp)
-        val bodyHeight = (maxHeight - 48.dp).coerceAtLeast(240.dp)
-        val showMetaChips = bodyHeight >= 560.dp
-        val showQuickDock = !isImmersive && bodyHeight >= 500.dp
-        val controlsBudget = 56.dp + (if (showMetaChips) 30.dp else 0.dp) + 46.dp + 68.dp +
-            (if (showQuickDock) 56.dp else 0.dp) + 54.dp
-        val artSize = minOf(leftWidth - 12.dp, (bodyHeight - controlsBudget).coerceAtLeast(156.dp), 380.dp)
+        val columnGap = if (contentWidth >= 1040.dp) 32.dp else 20.dp
+        val leftWidth = (contentWidth * 0.40f).coerceIn(280.dp, 420.dp)
+        val bodyHeight = maxHeight - (if (isImmersive) 0.dp else CpSpacing.touchTarget)
+        val showMetaChips = !isImmersive && bodyHeight >= 540.dp
+        val showQuickDock = !isImmersive && bodyHeight >= 460.dp
         val transportScale = (leftWidth / 380.dp).coerceIn(0.90f, 1.08f)
+        val artGap = if (bodyHeight < 460.dp) 8.dp else 16.dp
+        val controlsBudget = 124.dp + 62.dp * transportScale + artGap +
+            (if (showMetaChips) 28.dp else 0.dp) + (if (showQuickDock) 56.dp else 0.dp)
+        val artSize = minOf(leftWidth, (bodyHeight - controlsBudget).coerceAtLeast(72.dp), 400.dp)
 
         Column(Modifier.width(contentWidth).fillMaxHeight()) {
             // 顶部触控折叠区（支持点按与下拉关闭）
@@ -544,7 +535,7 @@ private fun TabletLandscapeContent(
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
+                        .height(CpSpacing.touchTarget)
                         .then(dismissGesture),
                 ) {
                     IconButton(
@@ -582,22 +573,23 @@ private fun TabletLandscapeContent(
             Row(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(columnGap),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
             ) {
                 // 左栏：舞台封面 + 信息 + 进度 + 走带 + 触控快捷坞
                 Column(
                     modifier = Modifier.width(leftWidth).fillMaxHeight(),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
+                    verticalArrangement = Arrangement.Top,
                 ) {
                     PlayerArtworkStage(
                         track = track,
                         isPlaying = state.isPlaying,
                         size = artSize,
                         artworkModifier = artworkModifier.then(dismissGesture),
+                        pinTopEdge = true,
                     )
 
-                    Spacer(Modifier.height(if (bodyHeight < 560.dp) 10.dp else 16.dp))
+                    Spacer(Modifier.height(artGap))
 
                     Column(
                         modifier = Modifier.fillMaxWidth(),
@@ -614,6 +606,7 @@ private fun TabletLandscapeContent(
                             onOpenAudioEngine = onOpenAudioEngine,
                             showMetaChips = showMetaChips,
                             touchFriendly = true,
+                            outlinedQualityBadge = true,
                             titleModifier = titleModifier,
                             artistModifier = artistModifier,
                         )
@@ -637,121 +630,79 @@ private fun TabletLandscapeContent(
                             onRepeat = onRepeat,
                             onShuffle = onShuffle,
                             scale = transportScale,
+                            subtle = true,
                             modifier = Modifier.fillMaxWidth(),
                         )
 
                         if (showQuickDock) {
-                            Spacer(Modifier.height(10.dp))
-                            Surface(
-                                shape = CircleShape,
-                                color = colors.onSurface.copy(alpha = if (isDark) 0.07f else 0.05f),
-                                border = BorderStroke(
-                                    0.5.dp,
-                                    colors.outlineVariant.copy(alpha = if (isDark) 0.20f else 0.26f),
-                                ),
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    TabletDockIconButton(
-                                        icon = Icons.Rounded.Cast,
-                                        label = s.player.audioOutputDevice,
-                                        onClick = { moreSheets.showDevicePicker = true },
-                                    )
-                                    TabletDockIconButton(
-                                        icon = Icons.Rounded.AccessAlarm,
-                                        label = s.player.sleepTimer,
-                                        active = (state.sleepTimerRemainingMs ?: 0L) > 0L || state.sleepAfterTrack,
-                                        onClick = { moreSheets.showSleepTimer = true },
-                                    )
-                                    TabletDockIconButton(
-                                        icon = Icons.Rounded.GraphicEq,
-                                        label = s.audioEffect.screenTitle,
-                                        onClick = onOpenAudioEffects,
-                                    )
-                                }
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                TabletDockIconButton(
+                                    icon = Icons.Rounded.Cast,
+                                    label = s.player.audioOutputDevice,
+                                    onClick = { moreSheets.showDevicePicker = true },
+                                )
+                                TabletDockIconButton(
+                                    icon = Icons.Rounded.AccessAlarm,
+                                    label = s.player.sleepTimer,
+                                    active = (state.sleepTimerRemainingMs ?: 0L) > 0L || state.sleepAfterTrack,
+                                    onClick = { moreSheets.showSleepTimer = true },
+                                )
+                                TabletDockIconButton(
+                                    icon = Icons.Rounded.GraphicEq,
+                                    label = s.audioEffect.screenTitle,
+                                    onClick = onOpenAudioEffects,
+                                )
                             }
                         }
                     }
                 }
 
-                // 右栏：独立顶栏 + 展示内容（无叠压）
                 Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                     AnimatedVisibility(
                         visible = !isImmersive,
                         enter = fadeIn(CpMotion.effects()) + expandVertically(CpMotion.spatial()),
                         exit = fadeOut(CpMotion.effects()) + shrinkVertically(CpMotion.spatial()),
                     ) {
-                        PlayerRightPaneHeader(
-                            selectedTab = selectedTab,
-                            onTabSelect = onTabSelect,
-                            supportsComments = supportsComments,
-                            showTranslation = showTranslation,
-                            onToggleTranslation = onToggleTranslation,
-                            isImmersive = isImmersive,
-                            onToggleImmersive = onToggleImmersive.takeIf { isAndroidPlatform() },
-                            onOpenMore = { moreSheets.showMoreMenu = true },
-                            showMiniPlayerAction = false,
-                            showDjDeskAction = cp.player.app.ui.a2ui.A2UI_ENTRY_ENABLED,
-                            djDeskActive = moreSheets.showDjDesk,
-                            onOpenDjDesk = { moreSheets.showDjDesk = true },
-                            touchFriendly = true,
-                            modifier = Modifier.padding(bottom = 12.dp),
-                        )
-                    }
-
-                    val paneEnterSpec = CpMotion.effects<Float>()
-                    val paneExitSpec = CpMotion.effectsFast<Float>()
-                    Box(Modifier.weight(1f).fillMaxWidth()) {
-                        AnimatedContent(
-                            targetState = selectedTab,
-                            transitionSpec = { fadeIn(paneEnterSpec) togetherWith fadeOut(paneExitSpec) },
-                            label = "tabletLandscapePane",
-                            modifier = Modifier.fillMaxSize(),
-                        ) { tabIndex ->
-                            when (tabIndex) {
-                                0 -> Box(Modifier.fillMaxSize().lyricEdgeFade()) {
-                                    LyricContent(
-                                        state = state,
-                                        positionFlow = positionFlow,
-                                        initialPositionMs = initialPositionMs,
-                                        showTranslation = showTranslation,
-                                        onSeek = onSeek,
-                                        lineFontSize = if (contentWidth >= 1100.dp) 32.sp else 28.sp,
-                                        onChangeSource = onChangeLyricsSource,
-                                        contentPadding = PaddingValues(top = 12.dp, bottom = 36.dp, start = 8.dp, end = 8.dp),
-                                        modifier = Modifier.fillMaxSize(),
-                                    )
-                                }
-                                1 -> QueueContent(
-                                    queue = state.queue,
-                                    currentIndex = state.currentIndex,
-                                    onPlayAt = onPlayAt,
-                                    onRemove = onRemoveQueue,
-                                    onMove = onMove,
-                                    onClear = onClearQueue,
-                                    modifier = Modifier.fillMaxSize(),
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (isAndroidPlatform()) {
+                                TabletDockIconButton(
+                                    icon = Icons.Rounded.Fullscreen,
+                                    label = s.player.immersive,
+                                    onClick = onToggleImmersive,
                                 )
-                                else -> ProviderFeatureGate(
-                                    capability = ProviderCapability.COMMENTS,
-                                    fallback = {
-                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                            CpText(s.player.commentsUnsupported, color = colors.onSurfaceVariant)
-                                        }
-                                    },
-                                ) {
-                                    DesktopCommentContent(track.id)
-                                }
                             }
+                            if (supportsComments) {
+                                TabletDockIconButton(Icons.AutoMirrored.Rounded.Comment, s.player.songComments, onOpenComments)
+                            }
+                            TabletDockIconButton(Icons.AutoMirrored.Rounded.QueueMusic, s.player.queue, onOpenQueue)
+                            TabletDockIconButton(Icons.Rounded.MoreHoriz, s.player.more, { moreSheets.showMoreMenu = true })
                         }
                     }
+
+                    TabletLyricsPane(
+                        state = state,
+                        positionFlow = positionFlow,
+                        initialPositionMs = initialPositionMs,
+                        showTranslation = showTranslation,
+                        onToggleTranslation = onToggleTranslation,
+                        onSeek = onSeek,
+                        lineFontSize = if (contentWidth >= 1100.dp) 32.sp else 28.sp,
+                        onChangeSource = onChangeLyricsSource,
+                        isImmersive = isImmersive,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
                 }
             }
         }
     }
 }
+
+private val TabletPortraitControlsWidth = 440.dp
 
 @Composable
 private fun TabletPortraitContent(
@@ -759,10 +710,12 @@ private fun TabletPortraitContent(
     track: cp.player.core.music.TrackSummary,
     positionFlow: Flow<Long>?,
     initialPositionMs: Long,
-    activePanel: Int?,
-    onSelectPanel: (Int) -> Unit,
-    onCollapsePanel: () -> Unit,
+    lyricsExpanded: Boolean,
+    onToggleLyrics: () -> Unit,
+    onCollapseLyrics: () -> Unit,
     supportsComments: Boolean,
+    onOpenQueue: () -> Unit,
+    onOpenComments: () -> Unit,
     showTranslation: Boolean,
     onToggleTranslation: () -> Unit,
     isImmersive: Boolean,
@@ -780,10 +733,6 @@ private fun TabletPortraitContent(
     onOpenMv: (Long) -> Unit,
     onOpenAudioEngine: () -> Unit,
     onChangeLyricsSource: (() -> Unit)?,
-    onPlayAt: (Int) -> Unit,
-    onMove: (Int, Int) -> Unit,
-    onRemoveQueue: (Int) -> Unit,
-    onClearQueue: () -> Unit,
     moreSheets: PlayerMoreSheetState,
     artworkModifier: Modifier,
     titleModifier: Modifier,
@@ -791,13 +740,12 @@ private fun TabletPortraitContent(
 ) {
     val s = cpStrings()
     val colors = MaterialTheme.colorScheme
-    val isDark = LocalIsDarkTheme.current
 
     Column(
         modifier = Modifier
-            .widthIn(max = 580.dp)
+            .widthIn(max = 600.dp)
             .fillMaxSize()
-            .padding(horizontal = 28.dp),
+            .padding(horizontal = CpSpacing.pageHorizontal),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         AnimatedVisibility(
@@ -808,7 +756,7 @@ private fun TabletPortraitContent(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
+                    .height(CpSpacing.touchTarget)
                     .then(dismissGesture),
             ) {
                 Box(
@@ -842,11 +790,11 @@ private fun TabletPortraitContent(
         val exitScaleSpec = CpMotion.spatialFast<Float>()
 
         AnimatedContent(
-            targetState = activePanel,
+            targetState = lyricsExpanded,
             modifier = Modifier.weight(1f).fillMaxWidth(),
             transitionSpec = {
-                val expanding = targetState != null && initialState == null
-                val collapsing = targetState == null && initialState != null
+                val expanding = targetState && !initialState
+                val collapsing = !targetState && initialState
                 if (expanding || collapsing) {
                     val enter = fadeIn(enterFadeSpec) +
                         slideInVertically(enterSlideSpec) { h -> if (expanding) h / 5 else -h / 5 } +
@@ -870,15 +818,15 @@ private fun TabletPortraitContent(
                 }
             },
             label = "tabletPortraitFocus",
-        ) { panel ->
-            if (panel == null) {
+        ) { expanded ->
+            if (!expanded) {
                 BoxWithConstraints(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    val artSize = minOf(maxWidth - 16.dp, (maxHeight - 148.dp).coerceAtLeast(160.dp), 380.dp)
+                    val artSize = minOf(maxWidth, (maxHeight - 124.dp).coerceAtLeast(72.dp), 420.dp)
                     Column(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.widthIn(max = TabletPortraitControlsWidth).fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         PlayerArtworkStage(
@@ -887,7 +835,7 @@ private fun TabletPortraitContent(
                             size = artSize,
                             artworkModifier = artworkModifier.then(dismissGesture),
                         )
-                        Spacer(Modifier.height(20.dp))
+                        Spacer(Modifier.height(16.dp))
                         PlayerTrackInfoBlock(
                             state = state,
                             track = track,
@@ -899,6 +847,7 @@ private fun TabletPortraitContent(
                             onOpenAudioEngine = onOpenAudioEngine,
                             showMetaChips = true,
                             touchFriendly = true,
+                            outlinedQualityBadge = true,
                             titleModifier = titleModifier,
                             artistModifier = artistModifier,
                         )
@@ -912,27 +861,27 @@ private fun TabletPortraitContent(
                         exit = fadeOut(CpMotion.effects()) + shrinkVertically(CpMotion.spatial()),
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 12.dp),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             PlayerArtworkStage(
                                 track = track,
                                 isPlaying = state.isPlaying,
-                                size = 54.dp,
+                                size = CpSpacing.touchTarget,
                                 playingCorner = 12.dp,
                                 pausedCorner = 14.dp,
                                 showAmbientGlow = false,
                                 modifier = Modifier.clickable(
                                     role = Role.Button,
                                     onClickLabel = s.player.backToPlayer,
-                                    onClick = onCollapsePanel,
+                                    onClick = onCollapseLyrics,
                                 ),
                             )
-                            Spacer(Modifier.width(12.dp))
+                            Spacer(Modifier.width(10.dp))
                             Column(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .clickable(onClick = onCollapsePanel),
+                                    .clickable(onClick = onCollapseLyrics),
                             ) {
                                 CpText(
                                     text = track.name,
@@ -950,79 +899,40 @@ private fun TabletPortraitContent(
                                     maxLines = 1,
                                 )
                             }
-                            if (panel == 0) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    PlayerHeaderToolButton(
-                                        icon = Icons.Rounded.Translate,
-                                        label = s.player.translation,
-                                        active = showTranslation,
-                                        size = CpSpacing.touchTarget,
-                                        showTooltip = false,
-                                        onClick = onToggleTranslation,
-                                    )
-                                    if (isAndroidPlatform()) {
-                                        PlayerHeaderToolButton(
-                                            icon = if (isImmersive) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
-                                            label = if (isImmersive) s.player.exitImmersive else s.player.immersive,
-                                            active = isImmersive,
-                                            size = CpSpacing.touchTarget,
-                                            showTooltip = false,
-                                            onClick = onToggleImmersive,
-                                        )
-                                    }
-                                }
+                            if (isAndroidPlatform()) {
+                                TabletDockIconButton(
+                                    icon = Icons.Rounded.Fullscreen,
+                                    label = s.player.immersive,
+                                    onClick = onToggleImmersive,
+                                )
                             }
                         }
                     }
 
-                    Box(Modifier.weight(1f).fillMaxWidth()) {
-                        when (panel) {
-                            0 -> Box(Modifier.fillMaxSize().lyricEdgeFade()) {
-                                LyricContent(
-                                    state = state,
-                                    positionFlow = positionFlow,
-                                    initialPositionMs = initialPositionMs,
-                                    showTranslation = showTranslation,
-                                    onSeek = onSeek,
-                                    lineFontSize = 30.sp,
-                                    onChangeSource = onChangeLyricsSource,
-                                    contentPadding = PaddingValues(vertical = 28.dp, horizontal = 8.dp),
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            }
-                            1 -> QueueContent(
-                                queue = state.queue,
-                                currentIndex = state.currentIndex,
-                                onPlayAt = onPlayAt,
-                                onRemove = onRemoveQueue,
-                                onMove = onMove,
-                                onClear = onClearQueue,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                            else -> ProviderFeatureGate(
-                                capability = ProviderCapability.COMMENTS,
-                                fallback = {
-                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        CpText(s.player.commentsUnsupported, color = colors.onSurfaceVariant)
-                                    }
-                                },
-                            ) {
-                                DesktopCommentContent(track.id)
-                            }
-                        }
-                    }
+                    TabletLyricsPane(
+                        state = state,
+                        positionFlow = positionFlow,
+                        initialPositionMs = initialPositionMs,
+                        showTranslation = showTranslation,
+                        onToggleTranslation = onToggleTranslation,
+                        onSeek = onSeek,
+                        lineFontSize = 30.sp,
+                        onChangeSource = onChangeLyricsSource,
+                        isImmersive = isImmersive,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
                 }
             }
         }
 
-        // 底部稳态控制区：进度条 + 5 键走带 + 触控胶囊坞
+        // 底部稳态控制区：进度条、走带与独立快捷操作。
         AnimatedVisibility(
             visible = !isImmersive,
             enter = fadeIn(CpMotion.effects()) + expandVertically(CpMotion.spatial()),
             exit = fadeOut(CpMotion.effects()) + shrinkVertically(CpMotion.spatial()),
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                modifier = Modifier.widthIn(max = TabletPortraitControlsWidth).fillMaxWidth().padding(bottom = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 PlayerTimeline(
@@ -1040,54 +950,71 @@ private fun TabletPortraitContent(
                     onRepeat = onRepeat,
                     onShuffle = onShuffle,
                     scale = 1.06f,
+                    subtle = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.height(14.dp))
-                Surface(
-                    shape = CircleShape,
-                    color = colors.onSurface.copy(alpha = if (isDark) 0.08f else 0.06f),
-                    border = BorderStroke(
-                        0.5.dp,
-                        colors.outlineVariant.copy(alpha = if (isDark) 0.22f else 0.28f),
-                    ),
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        TabletDockIconButton(
-                            icon = Icons.Rounded.Lyrics,
-                            label = s.player.tabLyrics,
-                            active = activePanel == 0,
-                            onClick = { onSelectPanel(0) },
-                        )
-                        TabletDockIconButton(
-                            icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                            label = s.player.tabQueue,
-                            active = activePanel == 1,
-                            onClick = { onSelectPanel(1) },
-                        )
-                        if (supportsComments) {
-                            TabletDockIconButton(
-                                icon = Icons.AutoMirrored.Rounded.Comment,
-                                label = s.player.tabComments,
-                                active = activePanel == 2,
-                                onClick = { onSelectPanel(2) },
-                            )
-                        }
-                        TabletDockIconButton(
-                            icon = Icons.Rounded.Cast,
-                            label = s.player.audioOutputDevice,
-                            onClick = { moreSheets.showDevicePicker = true },
-                        )
-                        TabletDockIconButton(
-                            icon = Icons.Rounded.MoreHoriz,
-                            label = s.player.more,
-                            onClick = { moreSheets.showMoreMenu = true },
-                        )
+                    TabletDockIconButton(
+                        icon = Icons.Rounded.Lyrics,
+                        label = if (lyricsExpanded) s.player.lyricsCollapse else s.player.lyricsExpand,
+                        active = lyricsExpanded,
+                        onClick = onToggleLyrics,
+                    )
+                    if (supportsComments) {
+                        TabletDockIconButton(Icons.AutoMirrored.Rounded.Comment, s.player.songComments, onOpenComments)
                     }
+                    TabletDockIconButton(
+                        icon = Icons.Rounded.Cast,
+                        label = s.player.audioOutputDevice,
+                        onClick = { moreSheets.showDevicePicker = true },
+                    )
+                    TabletDockIconButton(Icons.AutoMirrored.Rounded.QueueMusic, s.player.queue, onOpenQueue)
+                    TabletDockIconButton(Icons.Rounded.MoreHoriz, s.player.more, { moreSheets.showMoreMenu = true })
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TabletLyricsPane(
+    state: PlaybackUiState,
+    positionFlow: Flow<Long>?,
+    initialPositionMs: Long,
+    showTranslation: Boolean,
+    onToggleTranslation: () -> Unit,
+    onSeek: (Long) -> Unit,
+    lineFontSize: TextUnit,
+    onChangeSource: (() -> Unit)?,
+    isImmersive: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val s = cpStrings()
+    Box(modifier) {
+        LyricContent(
+            state = state,
+            positionFlow = positionFlow,
+            initialPositionMs = initialPositionMs,
+            showTranslation = showTranslation,
+            onSeek = onSeek,
+            lineFontSize = lineFontSize,
+            onChangeSource = onChangeSource,
+            focusedPaneStyle = true,
+            modifier = Modifier.fillMaxSize(),
+        )
+        if (!isImmersive) {
+            Box(Modifier.align(Alignment.BottomEnd).padding(bottom = 4.dp)) {
+                TabletDockIconButton(
+                    icon = Icons.Rounded.Translate,
+                    label = if (showTranslation) s.player.hideLyricsTranslation else s.player.showLyricsTranslation,
+                    active = showTranslation,
+                    onClick = onToggleTranslation,
+                )
             }
         }
     }
@@ -1098,38 +1025,26 @@ private fun TabletDockIconButton(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
-    active: Boolean = false,
+    active: Boolean? = null,
 ) {
     val colors = MaterialTheme.colorScheme
-    val isDark = LocalIsDarkTheme.current
-    val container by animateColorAsState(
-        targetValue = if (active) {
-            colors.primaryContainer.copy(alpha = if (isDark) 0.92f else 0.96f)
-        } else Color.Transparent,
-        animationSpec = CpMotion.effectsFast(),
-        label = "tabletDockBg",
-    )
     val tint by animateColorAsState(
-        targetValue = if (active) colors.onPrimaryContainer else colors.onSurfaceVariant,
+        targetValue = if (active == true) colors.primary else colors.onSurface,
         animationSpec = CpMotion.effectsFast(),
-        label = "tabletDockTint",
+        label = "tabletActionTint",
     )
-    Surface(
+    IconButton(
         onClick = onClick,
         modifier = Modifier
             .size(CpSpacing.touchTarget)
-            .semantics { selected = active }
+            .then(if (active == null) Modifier else Modifier.semantics { selected = active })
             .cpPressScale(),
-        shape = CircleShape,
-        color = container,
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                modifier = Modifier.size(22.dp),
-                tint = tint,
-            )
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            modifier = Modifier.size(22.dp),
+            tint = tint,
+        )
     }
 }
