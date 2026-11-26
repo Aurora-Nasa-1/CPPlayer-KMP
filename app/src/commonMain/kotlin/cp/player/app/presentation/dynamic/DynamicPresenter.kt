@@ -9,6 +9,7 @@ import cp.player.core.provider.BackendProvider
 import cp.player.app.repository.DynamicPage
 import cp.player.core.BackendResult
 import cp.player.core.music.Comment
+import cp.player.core.music.CPMediaId
 import cp.player.core.music.MusicResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -24,6 +25,7 @@ import kotlinx.coroutines.launch
 sealed interface DynamicFilter {
     data object Following : DynamicFilter
     data class User(val userId: String, val nickname: String) : DynamicFilter
+    data class Search(val keyword: String) : DynamicFilter
 }
 
 data class DynamicUiState(
@@ -70,6 +72,7 @@ interface DynamicContract : UiPresenter<DynamicUiState> {
     fun toggleLike(postId: String)
     fun forward(postId: String, text: String)
     fun delete(postId: String)
+    suspend fun publish(text: String, song: CPMediaId?): String?
     fun openComments(post: DynamicPost)
     fun closeComments()
     fun setCommentDraft(text: String)
@@ -97,6 +100,8 @@ class DynamicPresenter(
 
     private var loadJob: Job? = null
     private var loadGen = 0
+    private var commentsJob: Job? = null
+    private var commentsGeneration = 0
     private data class Session(val provider: BackendProvider?, val generation: Int, val uid: Long?)
     private fun currentSession() = Session(
         AppModel.activeProviderFlow.value, AppModel.sourceGeneration.value, AppModel.userProfileFlow.value?.uid,
@@ -120,6 +125,8 @@ class DynamicPresenter(
         session = next
         ++loadGen
         loadJob?.cancel()
+        ++commentsGeneration
+        commentsJob?.cancel()
         val filter = _state.value.filter
         _state.value = DynamicUiState(
             filter = if (next.provider !== previous.provider || next.generation != previous.generation ||
@@ -133,6 +140,7 @@ class DynamicPresenter(
     override fun setFilter(filter: DynamicFilter) {
         syncSession()
         if (_state.value.filter == filter) return
+        closeComments()
         _state.update {
             it.copy(
                 filter = filter,
@@ -163,7 +171,11 @@ class DynamicPresenter(
         val gen = ++loadGen
         val current = _state.value
         val requestSession = session
-        val feature = if (current.filter is DynamicFilter.User) SocialFeature.UserFeed else SocialFeature.Feed
+        val feature = when (current.filter) {
+            DynamicFilter.Following -> SocialFeature.Feed
+            is DynamicFilter.User -> SocialFeature.UserFeed
+            is DynamicFilter.Search -> SocialFeature.SearchFeed
+        }
         if (AppModel.socialAvailability(feature) != SocialAvailability.Available ||
             (current.filter is DynamicFilter.Following && requestSession.uid == null)
         ) return
@@ -231,8 +243,8 @@ class DynamicPresenter(
         val cursor = s.cursor ?: return
         val gen = loadGen
         val requestSession = session
-        _state.update { it.copy(loadingMore = true) }
-        scope.launch {
+        _state.update { it.copy(loadingMore = true, error = null) }
+        loadJob = scope.launch {
             val result = fetchPage(s.filter, cursor = cursor)
             if (gen != loadGen || requestSession != currentSession()) return@launch
             when (result) {
@@ -242,7 +254,7 @@ class DynamicPresenter(
                         it.copy(
                             posts = (it.posts + page.items).distinctBy { post -> post.id },
                             loadingMore = false,
-                            hasMore = page.hasMore,
+                            hasMore = page.hasMore && page.cursor != cursor,
                             cursor = page.cursor,
                         )
                     }
@@ -265,26 +277,42 @@ class DynamicPresenter(
                     userId = filter.userId,
                     cursor = cursor,
                 )
+                is DynamicFilter.Search -> AppModel.socialRepository.searchFeed(filter.keyword, cursor)
             }
         }.getOrElse { error ->
             if (error is CancellationException) throw error
             BackendResult.Error(error.message ?: "无法加载动态")
         }
 
-    /** 在关注流与「我的动态」之间切换。 */
+    /** 切换到「我的动态」。 */
     override fun showOwnPosts() {
         val selfId = AppModel.userProfileFlow.value?.uid?.toString().orEmpty()
         if (selfId.isBlank()) {
             notify("请先登录后再查看自己的动态")
             return
         }
-        // 从「关注」或「TA 的动态」点进来都应落到自己的动态；只有已经在自己动态时
-        // 再点一次才切回关注。否则在用户主页点「我的动态」会意外回到关注流。
-        val current = _state.value.filter
-        if (current is DynamicFilter.User && current.userId == selfId) {
-            setFilter(DynamicFilter.Following)
-        } else {
-            setFilter(DynamicFilter.User(selfId, "我的动态"))
+        setFilter(DynamicFilter.User(selfId, "我的动态"))
+    }
+
+    override suspend fun publish(text: String, song: CPMediaId?): String? {
+        val requestSession = currentSession()
+        val feature = if (song == null) SocialFeature.PublishFeed else SocialFeature.ShareFeed
+        if (requestSession.uid == null || AppModel.socialAvailability(feature) != SocialAvailability.Available ||
+            (song != null && song.providerId != requestSession.provider?.id)
+        ) return "当前账号或音源无法发布"
+        val result = AppModel.socialRepository.publish(text, song?.resourceId)
+        if (requestSession != currentSession()) return "账号或音源已切换，请查看原账号的动态确认发布结果"
+        return when (result) {
+            is BackendResult.Success -> {
+                val filter = _state.value.filter
+                if (filter is DynamicFilter.Following ||
+                    (filter is DynamicFilter.User && filter.userId == requestSession.uid.toString())
+                ) refresh()
+                notify("动态已发布")
+                null
+            }
+            is BackendResult.Unsupported -> "当前音源不支持此类动态"
+            is BackendResult.Error -> result.message
         }
     }
 
@@ -387,6 +415,7 @@ class DynamicPresenter(
 
     /** 打开某条动态的评论面板并拉第一页。 */
     override fun openComments(post: DynamicPost) {
+        closeComments()
         _state.update {
             it.copy(
                 commentTarget = post,
@@ -401,10 +430,14 @@ class DynamicPresenter(
     }
 
     override fun closeComments() {
+        ++commentsGeneration
+        commentsJob?.cancel()
         _state.update {
             it.copy(
                 commentTarget = null,
                 comments = emptyList(),
+                commentsLoading = false,
+                commentSending = false,
                 commentsError = null,
                 commentDraft = "",
             )
@@ -421,7 +454,9 @@ class DynamicPresenter(
         if (!reset && !_state.value.commentsHasMore) return
         val cursor = if (reset) "" else _state.value.commentsCursor
         _state.update { it.copy(commentsLoading = true, commentsError = null) }
-        scope.launch {
+        val generation = commentsGeneration
+        val requestSession = currentSession()
+        commentsJob = scope.launch {
             val result = runCatching {
                 AppModel.musicRepository.getComments(
                     rawId = target.id,
@@ -433,6 +468,7 @@ class DynamicPresenter(
                 if (error is CancellationException) throw error
                 BackendResult.Error(error.message ?: "无法加载评论")
             }
+            if (generation != commentsGeneration || requestSession != currentSession()) return@launch
             when (result) {
                 is BackendResult.Success -> {
                     val page = result.data
@@ -461,6 +497,8 @@ class DynamicPresenter(
         val target = s.commentTarget ?: return
         val text = s.commentDraft.trim()
         if (text.isBlank() || s.commentSending) return
+        val generation = commentsGeneration
+        val requestSession = currentSession()
         _state.update { it.copy(commentSending = true) }
         scope.launch {
             val result = runCatching {
@@ -473,6 +511,7 @@ class DynamicPresenter(
                 if (error is CancellationException) throw error
                 BackendResult.Error(error.message ?: "评论发送失败")
             }
+            if (generation != commentsGeneration || requestSession != currentSession()) return@launch
             when (result) {
                 is BackendResult.Success -> {
                     _state.update {

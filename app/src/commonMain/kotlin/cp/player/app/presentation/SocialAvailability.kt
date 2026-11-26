@@ -19,6 +19,9 @@ internal data class SocialCapabilities(
 internal enum class SocialFeature(vararg val operations: String) {
     Feed(ExtendedCapability.GETEVENTS),
     UserFeed(ExtendedCapability.GETUSEREVENTS),
+    SearchFeed(ExtendedCapability.SEARCHEVENTS),
+    PublishFeed(ExtendedCapability.PUBLISHEVENT),
+    ShareFeed(ExtendedCapability.SHARERESOURCE),
     Inbox(ExtendedCapability.GETPRIVATEMESSAGES, ExtendedCapability.GETRECENTCONTACTS),
     Unread(ExtendedCapability.GETUNREADCOUNT),
     History(ExtendedCapability.GETMESSAGEHISTORY);

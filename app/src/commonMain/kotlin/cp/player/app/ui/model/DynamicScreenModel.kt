@@ -1,12 +1,13 @@
 package cp.player.app.ui.model
 
-import cafe.adriel.voyager.core.model.ScreenModel
-import cafe.adriel.voyager.core.model.screenModelScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import cp.player.app.model.DynamicPost
 import cp.player.app.presentation.dynamic.DynamicContract
 import cp.player.app.presentation.dynamic.DynamicFilter
 import cp.player.app.presentation.dynamic.DynamicPresenter
 import cp.player.app.ui.util.UiEvents
+import cp.player.core.music.CPMediaId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
 
@@ -18,10 +19,10 @@ typealias DynamicUiState = cp.player.app.presentation.dynamic.DynamicUiState
  *
  * 全部状态机与业务逻辑位于框架中立的 [DynamicPresenter]。
  */
-class DynamicScreenModel : ScreenModel, DynamicContract {
+class DynamicScreenModel : ViewModel(), DynamicContract {
 
     private val presenter = DynamicPresenter(
-        scope = screenModelScope,
+        scope = viewModelScope,
         notify = UiEvents::notify,
     )
 
@@ -43,6 +44,7 @@ class DynamicScreenModel : ScreenModel, DynamicContract {
     override fun forward(postId: String, text: String) = presenter.forward(postId, text)
 
     override fun delete(postId: String) = presenter.delete(postId)
+    override suspend fun publish(text: String, song: CPMediaId?) = presenter.publish(text, song)
 
     override fun openComments(post: DynamicPost) = presenter.openComments(post)
 

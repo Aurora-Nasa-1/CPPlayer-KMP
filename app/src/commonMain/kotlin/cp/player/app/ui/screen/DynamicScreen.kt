@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DynamicFeed
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.LocationOn
@@ -36,8 +37,10 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Button
 import cp.player.app.ui.component.CpAlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -65,8 +68,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import cafe.adriel.voyager.core.model.rememberScreenModel
-import cafe.adriel.voyager.core.screen.Screen
+import cp.player.app.ui.navigation.pageModel
+import cp.player.app.ui.navigation.RoutePage
+import cp.player.app.ui.navigation.LocalDisplayedRoutePage
 import coil3.compose.AsyncImage
 import cp.player.app.AppModel
 import cp.player.app.model.DynamicOrigin
@@ -77,7 +81,7 @@ import cp.player.app.ui.component.ContentState
 import cp.player.app.ui.component.CpConfirmHost
 import cp.player.app.ui.component.CpCoverPlaceholder
 import cp.player.app.ui.component.CpExpandableText
-import cp.player.app.ui.component.CpLinearProgress
+import cp.player.app.ui.component.CpLinearProgressIndeterminate
 import cp.player.app.ui.component.CpLoadingIndicator
 import cp.player.app.ui.component.CpRouteScaffold
 import cp.player.app.ui.component.CpShimmerBox
@@ -86,7 +90,6 @@ import cp.player.app.ui.component.CpText
 import cp.player.app.ui.component.CpToggleChip
 import cp.player.app.ui.component.LazyScrollColumn
 import cp.player.app.ui.component.LegacyModalBottomSheet
-import cp.player.app.ui.component.PageHeader
 import cp.player.app.ui.component.StateSurface
 import cp.player.app.ui.component.rememberConfirmState
 import cp.player.app.presentation.dynamic.DynamicFilter
@@ -106,12 +109,14 @@ import cp.player.core.music.CPMediaId
 import cp.player.core.music.COMMENT_MAX_LENGTH
 import cp.player.core.music.Comment
 import cp.player.core.music.PlaylistSummary
+import cp.player.core.music.TrackSummary
 import cp.player.core.music.commentCodePointLength
 import cp.player.app.presentation.SocialAvailability
 import cp.player.app.presentation.SocialFeature
 import cp.player.app.ui.navigation.statusText
 import cp.player.app.ui.navigation.socialFeatureAvailability
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
@@ -121,29 +126,30 @@ import kotlinx.coroutines.launch
  * - 主 tab（设置里允许它替代搜索）；
  * - 顶栏 / 侧栏动作位（未占 tab 时的路由页）；
  * - 用户主页 / 转发卡片里的「只看 TA」（[userId] 非空）。
- *
- * ⚠️ 模型必须按实例分槽（`modelTag`）：Voyager 的 ScreenModel 默认按类名键控，
- * 常驻的动态 tab 与路由页会撞进同一份模型，后者的初始过滤器会被静默丢弃。
  */
 class DynamicScreen(
     private val userId: String? = null,
     private val userName: String? = null,
-) : Screen {
-
-    private val modelTag = "dynamic-${hashCode()}"
+) : RoutePage {
 
     @Composable
     override fun Content() {
-        val model = rememberScreenModel(tag = modelTag) { DynamicScreenModel() }
+        val model = pageModel { DynamicScreenModel() }
         val state by model.state.collectAsState()
         val navigator = LocalAppNavigator.current
-        val isRoutePage = navigator.currentKey == key
+        val isRoutePage = LocalDisplayedRoutePage.current === this
         val provider by AppModel.activeProviderFlow.collectAsState()
         val providerId = provider?.id ?: AppModel.activeProviderId()
         val following = socialFeatureAvailability(provider, SocialFeature.Feed)
         val userFeed = socialFeatureAvailability(provider, SocialFeature.UserFeed)
-        val availability = if (state.filter is DynamicFilter.User ||
-            (!state.initialized && !userId.isNullOrBlank())) userFeed else following
+        val searchFeed = socialFeatureAvailability(provider, SocialFeature.SearchFeed)
+        val canPublish = socialFeatureAvailability(provider, SocialFeature.PublishFeed) == SocialAvailability.Available
+        val canShare = socialFeatureAvailability(provider, SocialFeature.ShareFeed) == SocialAvailability.Available
+        val availability = when {
+            state.filter is DynamicFilter.Search -> searchFeed
+            state.filter is DynamicFilter.User || (!state.initialized && !userId.isNullOrBlank()) -> userFeed
+            else -> following
+        }
         val profile by AppModel.userProfileFlow.collectAsState()
         val selfId = profile?.uid?.toString().orEmpty()
         val scope = rememberCoroutineScope()
@@ -162,6 +168,10 @@ class DynamicScreen(
         val confirm = rememberConfirmState()
         var previewUrl by remember { mutableStateOf<String?>(null) }
         var forwardTarget by remember { mutableStateOf<DynamicPost?>(null) }
+        val generation by AppModel.sourceGeneration.collectAsState()
+        var searching by remember(provider, generation, selfId) { mutableStateOf(false) }
+        var composing by remember(provider, generation, selfId) { mutableStateOf(false) }
+        var shareTrack by remember(provider, generation, selfId) { mutableStateOf<TrackSummary?>(null) }
 
         val body: @Composable (Modifier) -> Unit = { modifier ->
             DynamicContent(
@@ -170,7 +180,7 @@ class DynamicScreen(
                 availability = availability,
                 supportsFollowing = following == SocialAvailability.Available,
                 supportsUserFeed = userFeed == SocialAvailability.Available,
-                requiresLogin = userId.isNullOrBlank() && selfId.isBlank(),
+                requiresLogin = state.filter is DynamicFilter.Following && userId.isNullOrBlank() && selfId.isBlank(),
                 selfId = selfId,
                 modifier = modifier,
                 onRefresh = model::refresh,
@@ -198,6 +208,11 @@ class DynamicScreen(
                     }
                 },
                 onPreviewImage = { previewUrl = it },
+                onSearch = if (searchFeed == SocialAvailability.Available) ({ searching = true }) else null,
+                onCompose = if (selfId.isNotBlank() && (canPublish || canShare)) ({
+                    shareTrack = if (canShare) AppModel.playback.state.value.currentTrack else null
+                    composing = true
+                }) else null,
             )
         }
 
@@ -237,6 +252,30 @@ class DynamicScreen(
             ImagePreviewDialog(url = url, onDismiss = { previewUrl = null })
         }
 
+        if (searching) {
+            DynamicSearchDialog(
+                initialKeyword = (state.filter as? DynamicFilter.Search)?.keyword.orEmpty(),
+                onDismiss = { searching = false },
+                onSearch = {
+                    val filter = DynamicFilter.Search(it)
+                    if (state.filter == filter) model.refresh() else model.setFilter(filter)
+                    searching = false
+                },
+            )
+        }
+        if (composing) {
+            val track = shareTrack
+            val song = CPMediaId.parseOrNull(track?.id)?.takeIf {
+                canShare && it.providerId == providerId && it.resourceType == CPMediaId.RESOURCE_SONG
+            }
+            DynamicComposer(
+                canPublishText = canPublish,
+                songTitle = track?.name?.takeIf { song != null },
+                onDismiss = { composing = false },
+                onPublish = { text, attach -> model.publish(text, song.takeIf { attach }) },
+            )
+        }
+
         CpConfirmHost(confirm)
     }
 }
@@ -265,13 +304,18 @@ internal fun DynamicContent(
     onOpenOrigin: (DynamicOrigin) -> Unit,
     onOpenUser: (String, String) -> Unit,
     onPreviewImage: (String) -> Unit,
+    onSearch: (() -> Unit)? = null,
+    onCompose: (() -> Unit)? = null,
 ) {
-    Column(modifier.fillMaxSize()) {
+    val userFilter = state.filter as? DynamicFilter.User
+    val searchFilter = state.filter as? DynamicFilter.Search
+    val viewingOtherUser = userFilter != null && userFilter.userId != selfId
+    Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
         AnimatedVisibility(visible = state.refreshing, enter = fadeIn(), exit = fadeOut()) {
-            CpLinearProgress(progress = 0.38f, animated = false, modifier = Modifier.fillMaxWidth())
+            CpLinearProgressIndeterminate(modifier = Modifier.fillMaxWidth())
         }
         LazyScrollColumn(
-            modifier = Modifier.widthIn(max = CpSpacing.pageMaxWidth).fillMaxSize(),
+            modifier = Modifier.widthIn(max = 840.dp).fillMaxSize(),
             contentPadding = PaddingValues(
                 start = CpSpacing.pageHorizontal,
                 end = CpSpacing.pageHorizontal,
@@ -281,26 +325,27 @@ internal fun DynamicContent(
             verticalArrangement = Arrangement.spacedBy(CpSpacing.listRowGap),
         ) {
             item {
-                PageHeader(
-                    title = "动态",
-                    subtitle = "关注的人与自己的最新分享",
-                    modifier = Modifier.padding(bottom = 8.dp),
-                    action = {
-                        if (supportsFeed && !state.unsupported && !requiresLogin) {
-                            FilledTonalButton(onClick = onRefresh) {
-                                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                CpText("刷新")
-                            }
-                        }
+                DynamicFeedHeader(
+                    title = when {
+                        searchFilter != null -> "搜索动态"
+                        viewingOtherUser -> userFilter.nickname
+                        userFilter != null -> "我的动态"
+                        else -> "音乐动态"
                     },
+                    subtitle = when {
+                        searchFilter != null -> "关键词：${searchFilter.keyword}"
+                        viewingOtherUser -> "TA 的音乐分享与近况"
+                        userFilter != null -> "你发布和转发的分享"
+                        else -> "看看关注的人在听什么，分享你的音乐"
+                    },
+                    onRefresh = onRefresh.takeIf { supportsFeed && !state.unsupported && !requiresLogin },
+                    onSearch = onSearch,
+                    onCompose = onCompose,
                 )
             }
             item {
-                val userFilter = state.filter as? DynamicFilter.User
-                val viewingOtherUser = userFilter != null && userFilter.userId != selfId
                 Row(
-                    Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -312,16 +357,16 @@ internal fun DynamicContent(
                         enabled = supportsFollowing && !requiresLogin,
                     )
                     CpToggleChip(
-                        checked = userFilter != null,
+                        checked = userFilter != null && !viewingOtherUser,
                         onCheckedChange = { if (it) onSelectOwn() },
-                        label = if (viewingOtherUser) "TA 的动态" else "我的动态",
+                        label = "我的动态",
                         icon = Icons.Filled.Person,
                         enabled = supportsUserFeed && selfId.isNotBlank(),
                     )
                     Spacer(Modifier.weight(1f))
                     if (state.posts.isNotEmpty()) {
                         CpText(
-                            "${state.posts.size} 条",
+                            "已加载 ${state.posts.size} 条",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -376,11 +421,15 @@ internal fun DynamicContent(
                 state.showEmpty -> item {
                     StateSurface(Modifier.padding(top = 12.dp)) {
                         ContentState(
-                            title = if (state.filter is DynamicFilter.User) "还没有发过动态" else "关注流还是空的",
-                            message = if (state.filter is DynamicFilter.User) {
-                                "发一条动态，或者去关注页看看别人在听什么。"
-                            } else {
-                                "关注一些朋友后，他们的分享会出现在这里。"
+                            title = when (state.filter) {
+                                is DynamicFilter.Search -> "没有找到相关动态"
+                                is DynamicFilter.User -> "还没有发过动态"
+                                DynamicFilter.Following -> "关注流还是空的"
+                            },
+                            message = when (state.filter) {
+                                is DynamicFilter.Search -> "试试其他关键词。"
+                                is DynamicFilter.User -> null
+                                DynamicFilter.Following -> "关注一些朋友后，他们的分享会出现在这里。"
                             },
                             modifier = Modifier.padding(vertical = 12.dp),
                         )
@@ -409,6 +458,59 @@ internal fun DynamicContent(
                             onLoadMore = onLoadMore,
                             onRetry = onRefresh,
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DynamicFeedHeader(
+    title: String,
+    subtitle: String,
+    onRefresh: (() -> Unit)?,
+    onSearch: (() -> Unit)?,
+    onCompose: (() -> Unit)?,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primary) {
+                    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.DynamicFeed, contentDescription = null)
+                    }
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    CpText(title, style = MaterialTheme.typography.headlineSmall, maxLines = 2)
+                    CpText(subtitle, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+                }
+            }
+            if (onCompose != null || onSearch != null || onRefresh != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (onCompose != null) {
+                        Button(onClick = onCompose) {
+                            Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            CpText("发动态", maxLines = 1)
+                        }
+                    }
+                    if (onSearch != null) {
+                        FilledTonalButton(onClick = onSearch) {
+                            Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            CpText("搜索", maxLines = 1)
+                        }
+                    }
+                    if (onRefresh != null) {
+                        IconButton(onClick = onRefresh) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "刷新动态")
+                        }
                     }
                 }
             }
@@ -495,7 +597,7 @@ private fun DynamicPostCard(
                 CpExpandableText(
                     text = post.text,
                     collapsedMaxLines = 6,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(top = 12.dp),
                     expandLabel = "展开全文",
                     collapseLabel = "收起",
@@ -1055,6 +1157,104 @@ private fun DynamicCommentRow(comment: Comment) {
 }
 
 // ============================================================ 弹层
+
+@Composable
+private fun DynamicSearchDialog(
+    initialKeyword: String,
+    onDismiss: () -> Unit,
+    onSearch: (String) -> Unit,
+) {
+    var keyword by remember { mutableStateOf(initialKeyword) }
+    CpAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { CpText("搜索动态") },
+        text = {
+            OutlinedTextField(
+                value = keyword,
+                onValueChange = { if (it.length <= 128) keyword = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { CpText("关键词") },
+                singleLine = true,
+                shape = MaterialTheme.shapes.large,
+            )
+        },
+        confirmButton = {
+            Button(onClick = { onSearch(keyword.trim()) }, enabled = keyword.isNotBlank()) { CpText("搜索") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { CpText("取消") } },
+    )
+}
+
+@Composable
+private fun DynamicComposer(
+    canPublishText: Boolean,
+    songTitle: String?,
+    onDismiss: () -> Unit,
+    onPublish: suspend (String, Boolean) -> String?,
+) {
+    val scope = rememberCoroutineScope()
+    var text by remember { mutableStateOf("") }
+    var attach by remember { mutableStateOf(!canPublishText && songTitle != null) }
+    var pending by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val length = commentCodePointLength(text)
+    val hasAttachment = attach && songTitle != null
+    CpAlertDialog(
+        onDismissRequest = { if (!pending) onDismiss() },
+        title = { CpText("发布动态") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it; error = null },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !pending,
+                    label = { CpText("说点什么") },
+                    minLines = 3,
+                    maxLines = 5,
+                    isError = length > 140,
+                    supportingText = { CpText("$length/140") },
+                    shape = MaterialTheme.shapes.large,
+                )
+                if (songTitle != null) {
+                    CpToggleChip(
+                        checked = hasAttachment,
+                        onCheckedChange = { attach = it },
+                        label = "附上当前歌曲",
+                        icon = Icons.Filled.MusicNote,
+                        enabled = !pending && canPublishText,
+                    )
+                    if (hasAttachment) CpText(songTitle, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+                } else if (!canPublishText) {
+                    CpText("先播放一首当前音源的歌曲，即可分享到动态。")
+                }
+                error?.let { CpText(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = !pending && length <= 140 && (hasAttachment || (canPublishText && text.isNotBlank())),
+                onClick = {
+                    pending = true
+                    error = null
+                    scope.launch {
+                        try {
+                            error = onPublish(text.trim(), hasAttachment)
+                            if (error == null) onDismiss()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            error = e.message ?: "发布失败，请先查看动态确认发布结果"
+                        } finally {
+                            pending = false
+                        }
+                    }
+                },
+            ) { CpText(if (pending) "发布中…" else "发布") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !pending) { CpText("取消") } },
+    )
+}
 
 @Composable
 private fun ForwardDialog(
