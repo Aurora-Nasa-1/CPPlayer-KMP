@@ -81,6 +81,7 @@ class AppearanceSettingsScreen(
         val predictiveBackEnabled by AppModel.predictiveBackEnabledFlow.collectAsState()
         val coverFlightAnimation by AppModel.coverFlightAnimationFlow.collectAsState()
         val fluidBackground by AppModel.fluidBackgroundFlow.collectAsState()
+        val fluidBackgroundDarkOverlay by AppModel.fluidBackgroundDarkOverlayFlow.collectAsState()
         val fluidBackgroundFps by AppModel.fluidBackgroundFpsFlow.collectAsState()
         val fluidFpsOptions = listOf(15, 30, 60)
         val showSongAlbum by AppModel.showSongAlbumFlow.collectAsState()
@@ -162,7 +163,7 @@ class AppearanceSettingsScreen(
                 // 3. 界面与交互动效
                 SettingsSection(s.appearance.sectionMotion) {
                     val isAndroid = cp.player.app.platform.isAndroidPlatform()
-                    val motionTotal = if (isAndroid) 5 else 4
+                    val motionTotal = if (isAndroid) 6 else 5
                     SettingsSwitchItem(
                         title = s.appearance.coverFlight,
                         modifier = Modifier.settingsSearchTarget("appearance_cover_flight", targetSettingId),
@@ -195,12 +196,22 @@ class AppearanceSettingsScreen(
                         total = motionTotal,
                     )
                     SettingsSwitchItem(
+                        title = s.appearance.fluidBackgroundDarkOverlay,
+                        modifier = Modifier.settingsSearchTarget("appearance_fluid_background_dark_overlay", targetSettingId),
+                        subtitle = s.appearance.fluidBackgroundDarkOverlayNote,
+                        checked = fluidBackgroundDarkOverlay,
+                        onCheckedChange = AppModel::setFluidBackgroundDarkOverlay,
+                        enabled = fluidBackground,
+                        index = 3,
+                        total = motionTotal,
+                    )
+                    SettingsSwitchItem(
                         title = s.appearance.autoHideBottomBar,
                         modifier = Modifier.settingsSearchTarget("appearance_auto_hide_bottom_bar", targetSettingId),
                         subtitle = s.appearance.autoHideBottomBarNote,
                         checked = bottomBarAutoHide,
                         onCheckedChange = AppModel::setBottomBarAutoHide,
-                        index = 3,
+                        index = 4,
                         total = motionTotal,
                     )
                     if (isAndroid) {
@@ -210,7 +221,7 @@ class AppearanceSettingsScreen(
                             subtitle = s.appearance.predictiveBackNote,
                             checked = predictiveBackEnabled,
                             onCheckedChange = AppModel::setPredictiveBackEnabled,
-                            index = 4,
+                            index = 5,
                             total = motionTotal,
                         )
                     }
@@ -259,6 +270,18 @@ class AppearanceSettingsScreen(
                         )
                     }
                 } else {
+                    val desktopPlayerVolumeVisible by AppModel.desktopPlayerVolumeVisibleFlow.collectAsState()
+                    SettingsSection(s.appearance.desktopPlayerControls) {
+                        SettingsSwitchItem(
+                            title = s.appearance.desktopPlayerVolume,
+                            subtitle = s.appearance.desktopPlayerVolumeNote,
+                            checked = desktopPlayerVolumeVisible,
+                            onCheckedChange = AppModel::setDesktopPlayerVolumeVisible,
+                            modifier = Modifier.settingsSearchTarget("appearance_desktop_player_volume", targetSettingId),
+                            index = 0,
+                            total = 1,
+                        )
+                    }
                     PlayerLyricsPresentationSection(
                         targetSettingId = targetSettingId,
                         onNavigateLyricsPlugin = { navigator.push(AppRoute.LyricsPluginSettings) },

@@ -204,9 +204,14 @@ object CpStringsZh : CpStrings {
 
         override val fluidBackground = "流体背景"
         override val fluidBackgroundNote = "播放页流动渐变背景，关闭可省电"
+        override val fluidBackgroundDarkOverlay = "深色模式流体背景遮罩"
+        override val fluidBackgroundDarkOverlayNote = "深色模式下压暗播放页的流体背景（Android 13 为 15%，其余平台和版本为 20%）"
 
         override val fluidBackgroundFps = "流体背景帧率"
         override val fluidBackgroundFpsNote = "流体动画最高帧率，越高越流畅"
+        override val desktopPlayerControls = "桌面播放界面"
+        override val desktopPlayerVolume = "显示音量控制条"
+        override val desktopPlayerVolumeNote = "在桌面播放页的播放按钮下方显示音量控制条"
 
         override val showSongAlbum = "显示歌曲专辑名"
         override val showSongAlbumNote = "在歌曲列表显示所属专辑"

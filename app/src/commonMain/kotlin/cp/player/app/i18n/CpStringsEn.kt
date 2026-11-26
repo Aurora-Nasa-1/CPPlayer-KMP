@@ -210,6 +210,11 @@ object CpStringsEn : CpStrings {
                 "current theme and artwork palette. Turn it off to save power."
 
         override val fluidBackgroundFps = "Fluid background frame rate"
+        override val fluidBackgroundDarkOverlay = "Dim fluid backgrounds in dark mode"
+        override val fluidBackgroundDarkOverlayNote = "Dim playback fluid backgrounds in dark mode (15% on Android 13, 20% elsewhere)"
+        override val desktopPlayerControls = "Desktop player"
+        override val desktopPlayerVolume = "Show volume slider"
+        override val desktopPlayerVolumeNote = "Show the volume slider below the desktop playback controls"
         override val fluidBackgroundFpsNote =
             "Sets the maximum animation rate. Higher rates look smoother but use more power."
 

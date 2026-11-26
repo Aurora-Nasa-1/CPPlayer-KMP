@@ -227,6 +227,13 @@ private fun generalEntries(): List<SettingsEntry> = listOfNotNull(
                 sectionOf = { "界面动效与视觉表现" },
             ),
             SettingsSubItem(
+                id = "appearance_fluid_background_dark_overlay",
+                titleOf = { it.appearance.fluidBackgroundDarkOverlay },
+                subtitleOf = { it.appearance.fluidBackgroundDarkOverlayNote },
+                keywords = listOf("流体", "暗色", "深色", "遮罩", "fluid", "dark", "overlay"),
+                sectionOf = { it.appearance.sectionMotion },
+            ),
+            SettingsSubItem(
                 id = "appearance_fluid_background_fps",
                 titleOf = { it.appearance.fluidBackgroundFps },
                 subtitleOf = { it.appearance.fluidBackgroundFpsNote },
@@ -270,6 +277,14 @@ private fun generalEntries(): List<SettingsEntry> = listOfNotNull(
                 keywords = listOf("播放界面", "歌词翻译", "沉浸歌词", "恢复默认", "播放器"),
                 sectionOf = { it.appearance.sectionMobile },
                 androidOnly = true,
+            ),
+            SettingsSubItem(
+                id = "appearance_desktop_player_volume",
+                titleOf = { it.appearance.desktopPlayerVolume },
+                subtitleOf = { it.appearance.desktopPlayerVolumeNote },
+                keywords = listOf("音量", "控制条", "桌面", "volume", "slider", "desktop"),
+                sectionOf = { it.appearance.desktopPlayerControls },
+                desktopOnly = true,
             ),
             SettingsSubItem(
                 id = "mobile_player_lyrics_mini",

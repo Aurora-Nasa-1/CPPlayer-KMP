@@ -370,8 +370,13 @@ interface AppearanceStrings {
 
     val fluidBackground: String
     val fluidBackgroundNote: String
+    val fluidBackgroundDarkOverlay: String
+    val fluidBackgroundDarkOverlayNote: String
     val fluidBackgroundFps: String
     val fluidBackgroundFpsNote: String
+    val desktopPlayerControls: String
+    val desktopPlayerVolume: String
+    val desktopPlayerVolumeNote: String
 
     val showSongAlbum: String
     val showSongAlbumNote: String

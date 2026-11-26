@@ -467,6 +467,8 @@ object AppModel {
     private val KEY_PURE_BLACK = "pure_black"
     private val KEY_FLUID_BACKGROUND = "fluid_background"
     private val KEY_FLUID_BACKGROUND_FPS = "fluid_background_fps"
+    private val KEY_FLUID_BACKGROUND_DARK_OVERLAY = "fluid_background_dark_overlay"
+    private val KEY_DESKTOP_PLAYER_VOLUME_VISIBLE = "desktop_player_volume_visible"
     private val KEY_PLAYBACK_QUALITY = "playback_quality"
     private val KEY_METERED_PLAYBACK_QUALITY = "playback_quality_metered"
     private val KEY_LISTEN_TOGETHER_ADD_NEXT = "listen_together_add_next"
@@ -598,6 +600,26 @@ object AppModel {
     fun setFluidBackground(enabled: Boolean) {
         settings.putString(KEY_FLUID_BACKGROUND, enabled.toString())
         _fluidBackground.value = enabled
+    }
+
+    private val _fluidBackgroundDarkOverlay = MutableStateFlow(
+        settings.getString(KEY_FLUID_BACKGROUND_DARK_OVERLAY)?.toBooleanStrictOrNull() ?: true,
+    )
+    val fluidBackgroundDarkOverlayFlow = _fluidBackgroundDarkOverlay.asStateFlow()
+
+    fun setFluidBackgroundDarkOverlay(enabled: Boolean) {
+        settings.putString(KEY_FLUID_BACKGROUND_DARK_OVERLAY, enabled.toString())
+        _fluidBackgroundDarkOverlay.value = enabled
+    }
+
+    private val _desktopPlayerVolumeVisible = MutableStateFlow(
+        settings.getString(KEY_DESKTOP_PLAYER_VOLUME_VISIBLE)?.toBooleanStrictOrNull() ?: true,
+    )
+    val desktopPlayerVolumeVisibleFlow = _desktopPlayerVolumeVisible.asStateFlow()
+
+    fun setDesktopPlayerVolumeVisible(visible: Boolean) {
+        settings.putString(KEY_DESKTOP_PLAYER_VOLUME_VISIBLE, visible.toString())
+        _desktopPlayerVolumeVisible.value = visible
     }
 
     private val _fluidBackgroundFps = MutableStateFlow(fluidBackgroundFps())
