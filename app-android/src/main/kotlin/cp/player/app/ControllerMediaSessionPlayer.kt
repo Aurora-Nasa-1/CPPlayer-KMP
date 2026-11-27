@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -65,6 +66,31 @@ internal class ControllerMediaSessionPlayer(
     private var lastSyncedWallMs: Long = 0L
     private var observeJob: Job? = null
 
+    /**
+     * 用户/系统的「播放 / 暂停」意图，在控制器状态追上之前由它接管 [getState] 的
+     * `playWhenReady`。
+     *
+     * ### 为什么必须有这一层
+     * [handleSetPlayWhenReady] 只能**发起**动作：`PlaybackController.resume()` → `platform.play()`
+     * → 引擎线程 → StateFlow，翻成 `isPlaying = true` 是异步的（Flick 至少要等一次引擎事件）。
+     * 而 media3 的 `SimpleBasePlayer` 在每次 `invalidateState()` 时都用 [getState] 的返回值
+     * 整体覆盖内部状态：控制器还没翻过来的那一刻，[getState] 会报 `playWhenReady = false`，
+     * 刚按下的「播放」被自己覆盖回去 —— 通知栏/蓝牙耳机要按**第二次**才真正恢复，
+     * 表现就是「只能暂停、恢复要点两下」。
+     *
+     * 状态追上（`isPlaying` 与意图一致 / 已进入缓冲）或出错、换曲时清掉，交由真实状态说话。
+     */
+    private var pendingPlayWhenReady: Boolean? = null
+
+    /**
+     * [pendingPlayWhenReady] 的兜底定时器。
+     *
+     * 有些「播放」请求本来就不会让状态变化：队列已播完时 [PlaybackController.resume] 只是
+     * 对已结束的引擎再 `play()` 一次，什么都不发生，也没有新的状态发射把乐观值撤掉。
+     * 不设超时，通知栏会一直显示「正在播放」。
+     */
+    private var pendingWatchdog: Job? = null
+
     fun startObserving() {
         if (observeJob?.isActive == true) return
         val controller = runCatching { controllerProvider() }.getOrNull() ?: return
@@ -80,6 +106,7 @@ internal class ControllerMediaSessionPlayer(
     fun stopObserving() {
         observeJob?.cancel()
         observeJob = null
+        settlePending()
     }
 
     fun setLyricOverlay(title: String?, subtitle: String?, extras: Map<String, String>) {
@@ -128,11 +155,48 @@ internal class ControllerMediaSessionPlayer(
         }
         val posJumped = abs(ui.positionMs - expectedPosMs) > POSITION_SYNC_THRESHOLD_MS
 
-        if (key != lastSnapshotKey || posJumped) {
+        // 控制器状态追上用户的播放/暂停意图后，撤掉乐观值；撤下的这一帧必须重绘，
+        // 否则通知栏会停在「按意图画出来的那个图标」上。
+        val pendingCleared = clearSettledPending()
+
+        if (key != lastSnapshotKey || posJumped || pendingCleared) {
             lastSnapshotKey = key
             lastSyncedPositionMs = ui.positionMs.coerceAtLeast(0L)
             lastSyncedWallMs = nowMs
             invalidateOnMain()
+        }
+    }
+
+    /** 真实状态是否已经能替 [pendingPlayWhenReady] 说话了：能就清掉并返回 true。 */
+    private fun clearSettledPending(): Boolean {
+        val pending = pendingPlayWhenReady ?: return false
+        val ui = latestUiState
+        val settled = if (pending) {
+            ui.isPlaying || ui.isBuffering
+        } else {
+            !ui.isPlaying && !ui.isBuffering
+        }
+        if (!settled && ui.error == null && ui.currentTrack != null) return false
+        settlePending()
+        return true
+    }
+
+    /** 撤掉乐观播放意图（含兜底定时器）。 */
+    private fun settlePending() {
+        pendingPlayWhenReady = null
+        pendingWatchdog?.cancel()
+        pendingWatchdog = null
+    }
+
+    private fun markPendingPlayWhenReady(playWhenReady: Boolean) {
+        pendingPlayWhenReady = playWhenReady
+        pendingWatchdog?.cancel()
+        pendingWatchdog = scope.launch(Dispatchers.Main.immediate) {
+            delay(PENDING_PLAY_INTENT_TIMEOUT_MS)
+            if (pendingPlayWhenReady != null) {
+                settlePending()
+                invalidateState()
+            }
         }
     }
 
@@ -192,7 +256,7 @@ internal class ControllerMediaSessionPlayer(
             ui.isBuffering -> Player.STATE_BUFFERING
             else -> Player.STATE_READY
         }
-        val playWhenReady = ui.isPlaying || (ui.isBuffering && track != null)
+        val playWhenReady = pendingPlayWhenReady ?: (ui.isPlaying || (ui.isBuffering && track != null))
         val repeat = when (ui.repeatMode) {
             RepeatMode.OFF -> Player.REPEAT_MODE_OFF
             RepeatMode.ONE -> Player.REPEAT_MODE_ONE
@@ -252,18 +316,28 @@ internal class ControllerMediaSessionPlayer(
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
         val c = controllerProvider()
         if (c != null) {
+            // 先记意图再发起：恢复是异步的，期间 getState 必须按意图报，见 pendingPlayWhenReady。
+            markPendingPlayWhenReady(playWhenReady)
             if (playWhenReady) c.resume() else c.pause()
         }
         return Futures.immediateVoidFuture()
     }
 
     override fun handlePrepare(): ListenableFuture<*> {
-        controllerProvider()?.resume()
+        val c = controllerProvider()
+        if (c != null) {
+            markPendingPlayWhenReady(true)
+            c.resume()
+        }
         return Futures.immediateVoidFuture()
     }
 
     override fun handleStop(): ListenableFuture<*> {
-        controllerProvider()?.pause()
+        val c = controllerProvider()
+        if (c != null) {
+            markPendingPlayWhenReady(false)
+            c.pause()
+        }
         return Futures.immediateVoidFuture()
     }
 
@@ -323,5 +397,8 @@ internal class ControllerMediaSessionPlayer(
 
     private companion object {
         const val POSITION_SYNC_THRESHOLD_MS = 1200L
+
+        /** 乐观播放意图的最长存活时间：再久说明这次「播放/暂停」本来就不会有状态变化。 */
+        const val PENDING_PLAY_INTENT_TIMEOUT_MS = 2000L
     }
 }

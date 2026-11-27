@@ -34,9 +34,17 @@ internal class PlaybackFadeController(
      * 宿主再补一次 fade-in 只会把它压掉。所以这里不是「优先级」而是**互斥**：
      * native 模式下 3. 的曲末淡出、切歌淡入全部 no-op，音量始终等于 [userVolume]。
      *
-     * 用 getter 而不是构造时快照：引擎可能在设置页读能力位之后才完成 init。
+     * ⚠️ 判据是 [PlatformPlayer.nativeCrossfadeReady] 而不是静态能力位
+     * [PlatformPlayer.supportsNativeCrossfade]：
+     * 引擎的真交叉淡化要求「本曲剩余时长 ≤ 淡化时长」，而剩余时长来自引擎自报的总长。
+     * 总长拿不到（`n_frames` 缺失的网络流）或下一首没排进引擎时，引擎那套**一次都不会触发**；
+     * 此时若还让位，就等于「开关开着、两套机制都不跑」—— 用户看到的就是完全不生效。
+     * 这种情况下退回宿主的单播放器斜坡，至少听感上是对的（见 [FadeConfig] 的 KDoc）。
+     *
+     * 用 getter 而不是构造时快照：引擎可能在设置页读能力位之后才完成 init/拿到总长。
      */
-    private val useNativeCrossfade: Boolean get() = platform.supportsNativeCrossfade
+    private val useNativeCrossfade: Boolean
+        get() = platform.supportsNativeCrossfade && platform.nativeCrossfadeReady
 
     private val fadeRunner: FadeRunner = FadeRunner(
         scope = scope,
@@ -54,13 +62,19 @@ internal class PlaybackFadeController(
     fun setFade(config: FadeConfig) {
         fadeConfig = config
         fadeSettings?.let { FadeSettings.write(it, config) }
-        if (useNativeCrossfade) {
-            // 把配置整体转交引擎（含关闭），宿主不再碰音量。
-            fadeRunner.cancel()
+        // 配置**始终**下发给引擎（含关闭），即便此刻它不会生效。
+        // 能否生效是逐曲变化的（见 useNativeCrossfade）：本曲拿不到总长时宿主在自己跑斜坡，
+        // 下一首拿到了就该由引擎接手 —— 那时用户不会再动这个开关，补发就来不及了。
+        if (platform.supportsNativeCrossfade) {
             platform.setNativeCrossfade(config.enabled, config.durationMsClamped.toLong())
-            return
         }
         if (!config.enabled) {
+            fadeRunner.cancel()
+            platform.setVolume(userVolume)
+            return
+        }
+        if (useNativeCrossfade) {
+            // 引擎接管：音量必须恒等于用户音量，宿主不再碰（可能刚从中断的斜坡里退出）。
             fadeRunner.cancel()
             platform.setVolume(userVolume)
         }

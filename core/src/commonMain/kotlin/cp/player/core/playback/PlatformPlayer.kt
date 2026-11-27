@@ -96,6 +96,20 @@ interface PlatformMediaPlayer {
     val supportsNativeCrossfade: Boolean get() = false
 
     /**
+     * 原生交叉淡化**此刻**是否真的会触发（静态能力位之外的运行时前提）。
+     *
+     * 引擎侧实现靠「本曲剩余时长 ≤ 淡化时长」起手，而剩余时长 = 总长 − 已播：
+     * - 引擎拿不到总长（容器的 `n_frames` 缺失，网络流很常见）⇒ 剩余恒为 0 ⇒ **永不触发**；
+     * - 没把下一首排进引擎 ⇒ 没有第二路源可混 ⇒ **永不触发**。
+     *
+     * 这两种情况下宿主若仍按 [supportsNativeCrossfade] 让位，结果就是「开关开着但什么都没发生」。
+     * 所以宿主用本属性决定「让位给引擎」还是「自己跑音量斜坡」。
+     *
+     * 默认跟随 [supportsNativeCrossfade]：不支持原生淡化的平台本就没有这层区分。
+     */
+    val nativeCrossfadeReady: Boolean get() = supportsNativeCrossfade
+
+    /**
      * 配置引擎侧交叉淡化。开启后宿主**必须**停用 FadeRunner 的音量斜坡，
      * 否则两套机制会同时改音量，听感是「淡出两次」。
      */

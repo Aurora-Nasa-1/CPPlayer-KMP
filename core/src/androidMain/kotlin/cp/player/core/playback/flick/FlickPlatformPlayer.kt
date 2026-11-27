@@ -96,7 +96,26 @@ internal class FlickPlatformPlayer(
     override val supportsPlaybackSpeed: Boolean get() = true
     override val playbackSpeed: Float get() = RustEngine.getPlaybackSpeed()
     override val supportsNativeCrossfade: Boolean get() = true
+
+    /**
+     * 引擎的交叉淡化只在「本曲剩余 ≤ 淡化时长」时起手，而剩余时长来自引擎自报的总长：
+     * `SourceInfo.total_samples` 由容器的 `n_frames` 推出，网络流/无 Xing 头的 MP3
+     * 经常拿不到 ⇒ `remaining_secs()` 恒为 0 ⇒ **一次都不会触发**。
+     * 另外没有下一首排进引擎时也没有第二路源可混。
+     *
+     * 两者都满足（引擎知道总长 + 确实排过下一首）才让宿主让位，否则退回宿主音量斜坡。
+     * 详见 `PlatformPlayer.nativeCrossfadeReady` 与 `PlaybackFadeController.useNativeCrossfade`。
+     */
+    override val nativeCrossfadeReady: Boolean
+        get() = engineKnownDurationMs > 0L && hasQueuedNext
+
     override val supportsGaplessQueue: Boolean get() = true
+
+    /** 引擎自报的总时长（只由 Progress 写入，不被曲目元信息污染）；0 = 引擎不知道。 */
+    @Volatile private var engineKnownDurationMs = 0L
+
+    /** 本曲是否已成功把下一首排进引擎队列（原生换源后清掉，等下一条 preload 再置位）。 */
+    @Volatile private var hasQueuedNext = false
 
     private val _nativeTrackTransitions = MutableStateFlow<NativeTrackTransition?>(null)
     override val nativeTrackTransitions: StateFlow<NativeTrackTransition?> = _nativeTrackTransitions.asStateFlow()
@@ -112,7 +131,7 @@ internal class FlickPlatformPlayer(
             } else {
                 RustEngine.queueNext(source)
             }
-            if (!ok) Log.w(TAG, "Unable to queue next source for native transition")
+            if (!ok) Log.w(TAG, "Unable to queue next source for native transition") else hasQueuedNext = true
         }
     }
 
@@ -266,6 +285,8 @@ internal class FlickPlatformPlayer(
         if (durMs > 0 && _durationMs.value != durMs) {
             _durationMs.value = durMs
         }
+        // 引擎自报的总长是原生交叉淡化能否起手的唯一依据（见 nativeCrossfadeReady）。
+        if (durMs > 0) engineKnownDurationMs = durMs
 
         lastReportedEnginePositionMs = actualPosMs
         val isReady = _state.value == PlatformPlaybackState.Playing || _state.value == PlatformPlaybackState.Paused
@@ -329,6 +350,9 @@ internal class FlickPlatformPlayer(
             ?: queuedMediaIds.values.singleOrNull()
             ?: return
         seekTracker.cancel()
+        // 排队的下一首已被引擎提升为当前曲：这个标记随之作废，等新的 preload 再置位。
+        hasQueuedNext = false
+        engineKnownDurationMs = 0L
         val previous = currentMediaId
         currentMediaId = mediaId
         _positionMs.value = 0L
@@ -360,6 +384,9 @@ internal class FlickPlatformPlayer(
     ) {
         settledEndReleaseJob?.cancel()
         queuedMediaIds.clear()
+        // 换曲即失效：总长与「已排下一首」都属于上一首的事实，必须等新的 Progress / preload。
+        engineKnownDurationMs = 0L
+        hasQueuedNext = false
         currentMediaId = metadata?.id
         currentUrl = url
         needsReloadOnPlay = false

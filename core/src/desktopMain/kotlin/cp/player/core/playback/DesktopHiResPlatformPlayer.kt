@@ -112,7 +112,7 @@ class DesktopHiResPlatformPlayer(
             } else {
                 DesktopHiResEngine.queueNext(source)
             }
-            if (!ok) logger.fine("queueNext rejected: $source")
+            if (!ok) logger.fine("queueNext rejected: $source") else hasQueuedNext = true
         }
     }
 
@@ -123,6 +123,22 @@ class DesktopHiResPlatformPlayer(
 
     override val supportsNativeCrossfade: Boolean
         get() = DesktopHiResEngine.supportsExtendedFeatures
+
+    /**
+     * 引擎的真交叉淡化靠「本曲剩余 ≤ 淡化时长」起手，剩余时长来自引擎自报的总长
+     * （`SourceInfo.total_samples`，由容器的 `n_frames` 推出）。网络流经常拿不到总长
+     * ⇒ 剩余恒为 0 ⇒ 一次都不会触发；同理没排下一首时也没有第二路源可混。
+     *
+     * 两者都满足才让宿主让位，否则退回宿主的音量斜坡 —— 与 Android 侧同一套判据。
+     */
+    override val nativeCrossfadeReady: Boolean
+        get() = DesktopHiResEngine.supportsExtendedFeatures && engineKnownDurationMs > 0L && hasQueuedNext
+
+    /** 引擎自报的总时长（只由 Progress 写入，不被曲目元信息污染）；0 = 引擎不知道。 */
+    @Volatile private var engineKnownDurationMs = 0L
+
+    /** 本曲是否已成功把下一首排进引擎队列（原生换源后清掉，等下一条 preload 再置位）。 */
+    @Volatile private var hasQueuedNext = false
 
     @Volatile private var lastCrossfadeConfig: Pair<Boolean, Long>? = null
     @Volatile private var lastPlaybackSpeed: Float? = null
@@ -229,6 +245,8 @@ class DesktopHiResPlatformPlayer(
         if (durMs > 0 && _durationMs.value != durMs) {
             _durationMs.value = durMs
         }
+        // 引擎自报的总长，是原生交叉淡化能否起手的唯一依据（见 nativeCrossfadeReady）。
+        if (durMs > 0) engineKnownDurationMs = durMs
 
         lastReportedEnginePositionMs = actualPosMs
         val isReady = _state.value == PlatformPlaybackState.Playing || _state.value == PlatformPlaybackState.Paused
@@ -275,6 +293,9 @@ class DesktopHiResPlatformPlayer(
             ?: queuedMediaIds.values.singleOrNull()
             ?: return
         seekTracker.cancel()
+        // 排队的下一首已被引擎提升为当前曲：总长与排队标记都属于上一首，必须作废。
+        hasQueuedNext = false
+        engineKnownDurationMs = 0L
         val previous = currentMediaId
         currentMediaId = mediaId
         _positionMs.value = 0L
@@ -301,6 +322,9 @@ class DesktopHiResPlatformPlayer(
         metadata: PlaybackMetadata?,
     ) {
         queuedMediaIds.clear()
+        // 换曲即失效：等新的 Progress / preload 再置位。
+        engineKnownDurationMs = 0L
+        hasQueuedNext = false
         currentMediaId = metadata?.id
         lastLoadRequest = LoadRequest(url, startPositionMs, headers, metadata)
         seekTracker.cancel()

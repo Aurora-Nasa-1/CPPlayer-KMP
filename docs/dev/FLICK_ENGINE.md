@@ -237,6 +237,31 @@ Rust 侧 `HttpMediaSource` 实现 Symphonia 的 `MediaSource`（`Read + Seek + S
 
 回归：`DesktopQueueNextUrlRegressionTest`（真实本地 HTTP 流 + 真实引擎，播放 1.2 秒后排队，断言 `getProgress()` 仍可用且进度继续前进）。
 
+### 5.2 交叉淡化的起手条件（「开关没反应」的头号原因）
+
+引擎的自动淡化只在 `command_processing_loop` 里满足**全部**条件时 `crossfader.start()`：
+
+| 条件 | 不满足时 |
+|---|---|
+| `crossfader.is_enabled()`（宿主下发过 `set_crossfade`） | 什么都没发生 |
+| `sources.has_next()`（下一首真的排进了引擎） | 没有第二路源可混 |
+| `!is_passthrough() && !is_dop()`（非位完美 / 非 DSD 直通） | 直接走无淡化的旁路 |
+| `0 < current.remaining_secs() <= duration_secs()` | 永不触发 |
+
+`remaining_secs()` 原来是 `total_samples − position`，而 `total_samples` 由容器的 `n_frames` 推出。
+网络流、无 Xing 头的 MP3、ADTS AAC 常常没有 `n_frames` ⇒ `total_samples = 0` ⇒ 剩余恒为 0 ⇒
+**交叉淡化一次都不会触发**。2026-11-27 起 `remaining_secs()` 在总长未知时退回「解码器已写完 +
+ring buffer 剩余量」（EOF 之后剩余时长本来就等于缓冲里还剩多少），仍未写完则返回 `INFINITY`。
+
+| 宿主侧配套 | 内容 |
+|---|---|
+| `PlatformMediaPlayer.nativeCrossfadeReady` | 运行时判据：引擎自报总长 > 0 且确实排过下一首 |
+| `PlaybackFadeController` | 只有 ready 才让位；否则退回宿主的单播放器音量斜坡（否则两套机制一起失效） |
+| `setFade` | 配置**始终**下发引擎，因为「能否生效」是逐曲变化的 |
+
+诊断：真机 logcat 里应有 `[crossfade] TRIGGERING!` 与 `[crossfade] DONE`。一条都没有，就说明上面
+四条里有一条没满足，别去查淡入淡出的宿主代码。
+
 ## 6. 验证
 
 | 改动在哪 | 怎么验证 |

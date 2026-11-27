@@ -204,6 +204,7 @@ internal class DynamicAndroidPlatformPlayer(
     override val supportsPlaybackSpeed: Boolean get() = activePlayer.supportsPlaybackSpeed
     override val playbackSpeed: Float get() = activePlayer.playbackSpeed
     override val supportsNativeCrossfade: Boolean get() = activePlayer.supportsNativeCrossfade
+    override val nativeCrossfadeReady: Boolean get() = activePlayer.nativeCrossfadeReady
     override val supportsGaplessQueue: Boolean get() = activePlayer.supportsGaplessQueue
     private val _nativeTrackTransitions = MutableStateFlow<NativeTrackTransition?>(null)
     override val nativeTrackTransitions: StateFlow<NativeTrackTransition?> = _nativeTrackTransitions.asStateFlow()
