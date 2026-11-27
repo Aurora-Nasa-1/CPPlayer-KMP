@@ -192,6 +192,19 @@ fun SharedTransitionScope.MiniPlayer(
         label = "miniPlayerInnerHorizontalPadding",
     )
 
+    // 底部进度条水平留白：底栏停靠态取 12dp；平板悬浮态取 16dp；
+    // 手机端底栏隐藏缩小为悬浮胶囊态时略微收窄进度条长度（增大至 20dp），避开更大的底部圆角。
+    val targetProgressHorizontalPadding = when {
+        isTabletFloating -> 16.dp
+        !desktop && !isDocked -> 20.dp
+        else -> 12.dp
+    }
+    val animatedProgressHorizontalPadding by animateDpAsState(
+        targetValue = targetProgressHorizontalPadding,
+        animationSpec = CpMotion.spatial(),
+        label = "miniPlayerProgressHorizontalPadding",
+    )
+
     // 手机端在底栏收缩隐藏或无底栏页面时，过渡到与屏幕同心的精致悬浮胶囊圆角；
     // 平板端采用右下角精致小窗形态，取 22dp 柔和圆角与 44dp 封面形成协调比例。
     val screenCorner = rememberScreenCornerRadius()
@@ -263,11 +276,17 @@ fun SharedTransitionScope.MiniPlayer(
                     }
                 }
             }
-            .sharedBounds(
-                sharedContentState = rememberSharedContentState(key = "player-container"),
-                animatedVisibilityScope = animatedVisibilityScope,
-                zIndexInOverlay = 0f,
-                clipInOverlayDuringTransition = OverlayClip(currentShape),
+            .then(
+                if (desktop || isTablet) {
+                    Modifier.sharedBounds(
+                        sharedContentState = rememberSharedContentState(key = "player-container"),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        zIndexInOverlay = 0f,
+                        clipInOverlayDuringTransition = OverlayClip(currentShape),
+                    )
+                } else {
+                    Modifier
+                },
             ),
         color = if (isTabletFloating) cpElevatedSurface() else cpCardSurface(),
         tonalElevation = 0.dp,
@@ -457,7 +476,7 @@ fun SharedTransitionScope.MiniPlayer(
                         progress = progress,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = if (isTabletFloating) 16.dp else 12.dp)
+                            .padding(horizontal = animatedProgressHorizontalPadding.coerceAtLeast(0.dp))
                             .padding(bottom = 8.dp),
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isDark) 0.12f else 0.08f),

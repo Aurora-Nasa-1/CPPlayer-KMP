@@ -10,7 +10,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,9 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -56,7 +52,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -400,72 +395,5 @@ private fun PlayerBadgePill(
             color = container,
             border = if (outlined) BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)) else null,
         ) { label() }
-    }
-}
-
-@Composable
-internal fun PlayerSectionTabs(
-    tabs: List<Pair<ImageVector, String>>,
-    selectedTab: Int,
-    onTabSelect: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-    touchFriendly: Boolean = false,
-) {
-    val colors = MaterialTheme.colorScheme
-    val tabHeight = if (touchFriendly) CpSpacing.touchTarget else 36.dp
-    BoxWithConstraints(modifier.widthIn(max = (tabs.size * 106 + 8).dp)) {
-        val showLabels = maxWidth >= (tabs.size * 94 + 8).dp
-        Surface(
-            modifier = if (showLabels) Modifier.fillMaxWidth() else Modifier.widthIn(max = (tabs.size * 52 + 8).dp),
-            shape = MaterialTheme.shapes.large,
-            color = cpNestedSurface(),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().selectableGroup().padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                tabs.forEachIndexed { index, (icon, title) ->
-                    val selected = index == selectedTab
-                    val container by animateColorAsState(
-                        if (selected) colors.primaryContainer else Color.Transparent,
-                        CpMotion.effectsFast(),
-                        label = "playerTabContainer",
-                    )
-                    val content by animateColorAsState(
-                        if (selected) colors.onPrimaryContainer else colors.onSurfaceVariant,
-                        CpMotion.effectsFast(),
-                        label = "playerTabContent",
-                    )
-                    Box(Modifier.weight(1f)) {
-                        val tab: @Composable () -> Unit = {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().height(tabHeight)
-                                    .clip(MaterialTheme.shapes.medium)
-                                    .background(container)
-                                    .selectable(selected = selected, role = Role.Tab, onClick = { onTabSelect(index) })
-                                    .padding(horizontal = 4.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(icon, if (showLabels) null else title, Modifier.size(18.dp), tint = content)
-                                if (showLabels) {
-                                    Spacer(Modifier.width(6.dp))
-                                    CpText(title, style = MaterialTheme.typography.labelLarge, color = content, maxLines = 1)
-                                }
-                            }
-                        }
-                        if (!showLabels && !touchFriendly) {
-                            TooltipBox(
-                                positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Below),
-                                tooltip = { PlainTooltip { CpText(title) } },
-                                state = rememberTooltipState(),
-                            ) { tab() }
-                        } else {
-                            tab()
-                        }
-                    }
-                }
-            }
-        }
     }
 }
