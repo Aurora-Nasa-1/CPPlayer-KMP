@@ -47,6 +47,9 @@ class ProviderHost(
     private val scope = CoroutineScope(dispatcher + sessionJob)
     private val permits: Semaphore
     private val closeMutex = Mutex()
+    private val capabilitiesMutex = Mutex()
+    @Volatile
+    private var cachedCapabilities: Capabilities? = null
     private val cacheLock = Any()
     private val readCache = LinkedHashMap<ReadKey, CachedReadEntry>(48, 0.75f, true)
     private val inflightReads = HashMap<ReadKey, InflightRead>()
@@ -55,6 +58,7 @@ class ProviderHost(
     init { require(timeoutMs > 0); require(maxConcurrency in 1..MAX_CONCURRENCY); permits = Semaphore(maxConcurrency) }
 
     fun invalidate() {
+        cachedCapabilities = null
         clearReadCache()
         sessionJob.cancel(CancellationException("Provider session retired"))
     }
@@ -107,14 +111,22 @@ class ProviderHost(
         return try { task.await().also { fence() } }
         finally { withContext(NonCancellable) { task.cancelAndJoin() } }
     }
-    suspend fun capabilities(): Capabilities = call {
-        adapter.capabilities().also {
-            require(it.supported.size <= MAX_CAPABILITIES && it.supported.all { c -> c.isNotBlank() && c.length <= 128 })
+    private suspend fun resolvedCapabilities(): Capabilities {
+        cachedCapabilities?.let { return it }
+        return capabilitiesMutex.withLock {
+            cachedCapabilities?.let { return@withLock it }
+            adapter.capabilities().also {
+                require(it.supported.size <= MAX_CAPABILITIES && it.supported.all { c -> c.isNotBlank() && c.length <= 128 })
+                cachedCapabilities = it
+            }
         }
     }
+
+    suspend fun capabilities(): Capabilities = call {
+        resolvedCapabilities()
+    }
     private suspend fun requireCapability(capability: String) {
-        val supported = adapter.capabilities().supported
-        require(supported.size <= MAX_CAPABILITIES && supported.all { it.isNotBlank() && it.length <= 128 })
+        val supported = resolvedCapabilities().supported
         if (capability !in supported && !(capability == Capability.BATCH && Capability.GET in supported)) unsupported()
     }
     internal suspend fun <T> callExtended(capability: String, action: suspend (MusicProvider) -> T): T = call {

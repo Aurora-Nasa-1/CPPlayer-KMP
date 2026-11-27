@@ -39,6 +39,49 @@ import kotlin.test.assertTrue
 class ProviderSwitchingResilienceTest {
 
     @Test
+    fun `verifyCredential probes unpersisted candidate credentials through ProviderManager without mutating active session`() = runBlocking {
+        val settings = SdkMemorySettings()
+        val cookies = ProviderCookieStorage(settings)
+        cookies.saveCookie("verify-test", "old-cookie")
+        val manager = ProviderManager(settings, cookies)
+        val sdk = SdkBackendProvider(
+            id = "verify-test",
+            name = "Verify Test",
+            version = "1.0.0",
+            type = ProviderType.SCRIPT,
+            factory = { ctx ->
+                object : MusicProvider {
+                    override suspend fun capabilities() = Capabilities(listOf(Capability.ACCOUNT_SESSION))
+                    override suspend fun getCurrentAccount(request: cp.player.sdk.Bytes): cp.player.sdk.AccountSession =
+                        when (ctx.credential) {
+                            "new-cookie" -> cp.player.sdk.AccountSession(loggedIn = true, userId = "42", nickname = "Alice")
+                            "old-cookie" -> cp.player.sdk.AccountSession(loggedIn = true, userId = "1", nickname = "Old")
+                            else -> cp.player.sdk.AccountSession(loggedIn = false)
+                        }
+                }
+            },
+        )
+        try {
+            assertTrue(manager.switchProvider(sdk))
+            val activeBefore = assertNotNull(manager.sdkSessions.current())
+            assertEquals("1", activeBefore.getCurrentAccount().userId)
+
+            val probed = manager.sdkSessions.verifyCredential("verify-test", "new-cookie")
+            assertTrue(probed.loggedIn)
+            assertEquals("42", probed.userId)
+            assertEquals("Alice", probed.nickname)
+
+            // Probing must not overwrite the stored credential or retire the active host.
+            assertEquals("old-cookie", cookies.getCookie("verify-test"))
+            val activeAfter = assertNotNull(manager.sdkSessions.current())
+            assertEquals("1", activeAfter.getCurrentAccount().userId)
+        } finally {
+            manager.close()
+            sdk.close()
+        }
+    }
+
+    @Test
     fun `switching to null immediately closes retired SDK host without waiting for another current call`() = runBlocking {
         val settings = SdkMemorySettings()
         val manager = ProviderManager(settings, ProviderCookieStorage(settings))

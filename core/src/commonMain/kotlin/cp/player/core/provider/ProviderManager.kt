@@ -6,6 +6,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+internal interface CandidateCredentialProvider : BackendProvider {
+    fun createCandidateSdkProvider(context: cp.player.sdk.ProviderContext): cp.player.sdk.MusicProvider?
+}
+
 /**
  * 提供商管理器（KMP 版，实例化、依赖注入）。
  *
@@ -129,15 +133,16 @@ class ProviderManager(
             unsubscribeRetirement = {}
             runCatching { previousProvider?.retireSessions() }
             sessionProvider = provider?.let { descriptor ->
-                object : BackendProvider by descriptor {
+                object : BackendProvider by descriptor, CandidateCredentialProvider {
                     override fun createSdkProvider(context: cp.player.sdk.ProviderContext): cp.player.sdk.MusicProvider? {
                         // Cookie and epoch are read separately by the session owner. Reject a torn snapshot.
                         if (context.credential != cookieStorage.getCookie(descriptor.id, context.accountId))
                             throw kotlinx.coroutines.CancellationException("Credentials changed during session creation")
-                        if (context.settings != descriptor.getCustomSettings())
-                            throw kotlinx.coroutines.CancellationException("Settings changed during session creation")
-                        return descriptor.createSdkProvider(context)?.let { cp.player.sdk.SessionMusicProvider(it) }
+                        return createSessionProvider(descriptor, context)
                     }
+
+                    override fun createCandidateSdkProvider(context: cp.player.sdk.ProviderContext): cp.player.sdk.MusicProvider? =
+                        createSessionProvider(descriptor, context)
                 }
             }
             currentProvider = provider
@@ -162,6 +167,15 @@ class ProviderManager(
     fun switchProviderById(providerId: String, providers: Collection<BackendProvider>, context: PlatformContext? = null): Boolean {
         val provider = providers.find { it.id == providerId } ?: return false
         return switchProvider(provider, context)
+    }
+
+    private fun createSessionProvider(
+        descriptor: BackendProvider,
+        context: cp.player.sdk.ProviderContext,
+    ): cp.player.sdk.MusicProvider? {
+        if (context.settings != descriptor.getCustomSettings())
+            throw kotlinx.coroutines.CancellationException("Settings changed during session creation")
+        return descriptor.createSdkProvider(context)?.let { cp.player.sdk.SessionMusicProvider(it) }
     }
 
     /** 尝试恢复上次保存的 Provider。 */

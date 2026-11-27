@@ -189,7 +189,9 @@ class ProviderSdkSessions private constructor(
                 }
                 if (!isCurrent(provider, key, epoch)) throw CancellationException("Session changed before credential check")
                 val context = ProviderCallContext(key, provider.getCustomSettings().orEmpty(), credential, epoch)
-                val (probe) = openHost(provider, context, cacheScopeKey = null) { isCurrent(provider, key, epoch) }
+                val (probe) = openHost(provider, context, cacheScopeKey = null, verifyCandidate = true) {
+                    isCurrent(provider, key, epoch)
+                }
                 try {
                     synchronized(this@ProviderSdkSessions) {
                         if (!isCurrent(provider, key, epoch)) throw CancellationException("Session changed during credential check")
@@ -217,6 +219,7 @@ class ProviderSdkSessions private constructor(
         provider: BackendProvider,
         context: ProviderCallContext,
         cacheScopeKey: String?,
+        verifyCandidate: Boolean = false,
         isCurrent: () -> Boolean,
     ): Pair<ProviderHost, MusicProvider> {
         val runtime = runtimeFactory.create(provider.sdkAllowedOrigins, cacheScopeKey)
@@ -243,8 +246,11 @@ class ProviderSdkSessions private constructor(
         }
         try {
             val sdkContext = ProviderContext(provider.id, context.session.accountId, context.settings, context.credential, runtime)
-            val sessionProvider = provider.createSdkProvider(sdkContext)
-                ?: error("SDK provider has no session factory")
+            val sessionProvider = if (verifyCandidate && provider is cp.player.core.provider.CandidateCredentialProvider) {
+                provider.createCandidateSdkProvider(sdkContext)
+            } else {
+                provider.createSdkProvider(sdkContext)
+            } ?: error("SDK provider has no session factory")
             implementation = sessionProvider
             val adapter = object : MusicProvider by sessionProvider {
                 override suspend fun close() = closeResources()
