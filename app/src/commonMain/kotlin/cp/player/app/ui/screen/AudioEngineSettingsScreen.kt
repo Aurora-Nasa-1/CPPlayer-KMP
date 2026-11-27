@@ -392,25 +392,30 @@ internal fun AudioEngineSettingsContent(
             // ---------------- 硬件输出与解码选项 ----------------
             //
             // 只保留真正控制硬件路由 / 解码格式的选项（不再展示与音效页、播放控制页重复的开关）：
-            // - Android：USB 独占开关（默认关闭走 AAudio，不播时立刻释放）、USB 断连 3 秒恢复、DSD 模式；
+            // - Android：USB 独占开关（仅开启 FlickEngine 时显示，默认关闭走 AAudio，不播时立刻释放）、USB 断连 3 秒恢复、DSD 模式；
             // - 桌面：DSD 输出模式（PCM 抽取 / DoP / Native / 自动）。
             SettingsSection(engine.sectionToggles) {
                 if (isAndroid) {
-                    SettingsSwitchItem(
-                        title = engine.androidUsbExclusiveTitle,
-                        subtitle = engine.androidUsbExclusiveNote,
-                        checked = state.androidUsbExclusive,
-                        onCheckedChange = onToggleAndroidUsbExclusive,
-                        index = 0,
-                        total = 3,
-                    )
+                    val showAndroidUsbExclusive = state.flickEngineActive
+                    val total = if (showAndroidUsbExclusive) 3 else 2
+                    var rowIndex = 0
+                    if (showAndroidUsbExclusive) {
+                        SettingsSwitchItem(
+                            title = engine.androidUsbExclusiveTitle,
+                            subtitle = engine.androidUsbExclusiveNote,
+                            checked = state.androidUsbExclusive,
+                            onCheckedChange = onToggleAndroidUsbExclusive,
+                            index = rowIndex++,
+                            total = total,
+                        )
+                    }
                     SettingsSwitchItem(
                         title = engine.androidUsbAutoResumeTitle,
                         subtitle = engine.androidUsbAutoResumeNote,
                         checked = state.androidUsbAutoResume,
                         onCheckedChange = onToggleAndroidUsbAutoResume,
-                        index = 1,
-                        total = 3,
+                        index = rowIndex++,
+                        total = total,
                     )
                     SettingsDropdownItem(
                         title = engine.dsdModeTitle,
@@ -422,8 +427,8 @@ internal fun AudioEngineSettingsContent(
                         ),
                         selectedIndex = state.flickDsdMode.coerceIn(0, 3),
                         onSelect = onSelectDsdMode,
-                        index = 2,
-                        total = 3,
+                        index = rowIndex++,
+                        total = total,
                     )
                 } else {
                     SettingsDropdownItem(

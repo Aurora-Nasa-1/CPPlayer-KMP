@@ -174,7 +174,9 @@ class PlaybackSettingsScreen(
                     } else {
                         if (exclusiveActive) 1 else 0
                     }
-                    val kernelTotal = if (isAndroid) 5 else 3
+                    val showAndroidUsbExclusive = isAndroid && flickEngineActive
+                    val kernelTotal = (if (isAndroid) 4 else 3) + (if (showAndroidUsbExclusive) 1 else 0)
+                    var kernelIndex = 0
                     SettingsSegmentedItem(
                         title = if (isAndroid) s.playback.activeKernel else s.playback.wasapiMode,
                         modifier = Modifier.settingsSearchTarget("playback_audio_engine", targetSettingId),
@@ -219,10 +221,10 @@ class PlaybackSettingsScreen(
                                 }
                             }
                         },
-                        index = 0,
+                        index = kernelIndex++,
                         total = kernelTotal,
                     )
-                    if (isAndroid) {
+                    if (showAndroidUsbExclusive) {
                         SettingsSwitchItem(
                             title = s.engine.androidUsbExclusiveTitle,
                             modifier = Modifier.settingsSearchTarget("playback_android_usb_exclusive", targetSettingId),
@@ -236,16 +238,18 @@ class PlaybackSettingsScreen(
                                     AppModel.setAndroidUsbExclusive(enabled)
                                 }
                             },
-                            index = 1,
+                            index = kernelIndex++,
                             total = kernelTotal,
                         )
+                    }
+                    if (isAndroid) {
                         SettingsSwitchItem(
                             title = s.engine.androidUsbAutoResumeTitle,
                             modifier = Modifier.settingsSearchTarget("playback_android_usb_auto_resume", targetSettingId),
                             subtitle = s.engine.androidUsbAutoResumeNote,
                             checked = androidUsbAutoResume,
                             onCheckedChange = AppModel::setAndroidUsbAutoResume,
-                            index = 2,
+                            index = kernelIndex++,
                             total = kernelTotal,
                         )
                     }
@@ -263,7 +267,7 @@ class PlaybackSettingsScreen(
                         } else {
                             s.playback.engineDetailDesktopNote
                         },
-                        index = if (isAndroid) 3 else 1,
+                        index = kernelIndex++,
                         total = kernelTotal,
                         onClick = { navigator.push(AppRoute.AudioEngineSettings) },
                         trailingContent = {
@@ -280,7 +284,7 @@ class PlaybackSettingsScreen(
                         // 不是真正的环绕声。见 docs/dev/FLICK_ENGINE.md §2 能力矩阵。
                         subtitle = s.playback.dspNote,
                         icon = Icons.Filled.Equalizer,
-                        index = if (isAndroid) 4 else 2,
+                        index = kernelIndex++,
                         total = kernelTotal,
                         onClick = { navigator.push(AppRoute.AudioEffectSettings) },
                         trailingContent = {
