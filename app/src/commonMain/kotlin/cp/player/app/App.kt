@@ -6,20 +6,14 @@ import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import kotlin.math.roundToInt
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Transition
 import androidx.compose.animation.core.animateDpAsState
@@ -350,7 +344,9 @@ fun App(
                                 ) {
                                     val isDesktopExpanded = cp.player.app.ui.component.LocalIsExpanded.current
                                     val isDesktop = isDesktopExpanded || titleBar != null
-                                    val predictiveBackEnabled by AppModel.predictiveBackEnabledFlow.collectAsState()
+                                    val predictiveBackSetting by AppModel.predictiveBackEnabledFlow.collectAsState()
+                                    val predictiveBackEnabled =
+                                        cp.player.app.platform.isPredictiveBackSupported() && predictiveBackSetting
                                     val overlayCoverageState = remember { mutableFloatStateOf(0f) }
                                     val desktopPlayerMotion = isDesktopExpanded && !cp.player.app.platform.isAndroidPlatform()
                                     val playerTransition = cp.player.app.ui.navigation.rememberPlayerOverlayTransition(
@@ -437,25 +433,7 @@ fun App(
                                                             }
                                                         },
                                                         predictiveTransition = { _, _, swipeEdge ->
-                                                            val edgeSign = if (swipeEdge == androidx.navigationevent.NavigationEvent.EDGE_RIGHT) -1f else 1f
-                                                            val enter = scaleIn(
-                                                                animationSpec = tween(260, easing = FastOutSlowInEasing),
-                                                                initialScale = 0.96f,
-                                                            ) + slideInHorizontally(
-                                                                animationSpec = tween(260, easing = FastOutSlowInEasing),
-                                                            ) { -(it * 0.06f * edgeSign).roundToInt() } +
-                                                                fadeIn(tween(260, easing = FastOutSlowInEasing), initialAlpha = 0.72f)
-                                                            val exit = scaleOut(
-                                                                animationSpec = tween(260, easing = FastOutSlowInEasing),
-                                                                targetScale = 0.90f,
-                                                                transformOrigin = if (edgeSign > 0f) TransformOrigin(0.82f, 0.5f) else TransformOrigin(0.18f, 0.5f),
-                                                            ) + slideOutHorizontally(
-                                                                animationSpec = tween(260, easing = FastOutSlowInEasing),
-                                                            ) { (it * 0.14f * edgeSign).roundToInt() } +
-                                                                fadeOut(tween(260, easing = FastOutSlowInEasing), targetAlpha = 0.35f)
-                                                            (enter togetherWith exit).apply {
-                                                                targetContentZIndex = -1f
-                                                            }
+                                                            cp.player.app.ui.navigation.cpPredictivePopTransition(swipeEdge)
                                                         },
                                                         content = { screen ->
                                                             CompositionLocalProvider(

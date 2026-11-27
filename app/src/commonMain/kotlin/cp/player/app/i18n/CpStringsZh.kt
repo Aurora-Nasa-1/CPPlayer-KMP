@@ -199,6 +199,8 @@ object CpStringsZh : CpStrings {
         override val autoHideBottomBarNote = "上滑收起底栏，下滑恢复"
         override val predictiveBack = "预测性手势返回"
         override val predictiveBackNote = "从屏幕边缘侧滑返回时实时预览上一级界面"
+        override val predictiveBackUnsupportedNote =
+            "需要 Android 14 及以上系统才支持应用内侧滑实时预览（Android 13 仅系统「开发者选项 → 预测性返回动画」对返回桌面生效）"
         override val coverFlight = "封面飞行动画"
         override val coverFlightNote = "封面飞入播放页的转场动画"
 

@@ -588,6 +588,8 @@ actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
     androidx.activity.compose.BackHandler(enabled = enabled, onBack = onBack)
 }
 
+actual fun isPredictiveBackSupported(): Boolean = Build.VERSION.SDK_INT >= 34
+
 @Composable
 actual fun PlatformRenderTuningContent() {
     // Android 的渲染完全交给系统（SurfaceFlinger / HWUI），没有可切换的 Skiko 后端，

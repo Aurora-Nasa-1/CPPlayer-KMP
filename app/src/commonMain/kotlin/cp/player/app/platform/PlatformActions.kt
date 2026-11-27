@@ -235,6 +235,16 @@ expect fun networkMeteredChanges(): Flow<Boolean>
 expect fun BackHandler(enabled: Boolean = true, onBack: () -> Unit)
 
 /**
+ * 当前运行环境是否支持应用内「预测性手势返回」实时预览。
+ *
+ * Android 14（API 34）起系统才提供 `OnBackAnimationCallback`（`onBackStarted` /
+ * `onBackProgressed` / `onBackCancelled`）；Android 13（API 33）仅有
+ * `OnBackInvokedCallback.onBackInvoked()`，无法向应用内回传跟手进度。
+ * 桌面端无对应手势，恒为 false。
+ */
+expect fun isPredictiveBackSupported(): Boolean
+
+/**
  * 「渲染后端」设置页正文。
  *
  * 仅桌面端有意义：Compose Desktop 的绘制由 Skiko 承担，而 Skiko 在 Windows 默认走

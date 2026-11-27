@@ -199,6 +199,8 @@ object CpStringsEn : CpStrings {
         override val predictiveBack = "Predictive back gesture"
         override val predictiveBackNote =
             "Preview the previous screen in real time while swiping back from the screen edge"
+        override val predictiveBackUnsupportedNote =
+            "In-app predictive back preview requires Android 14+ (Android 13 only supports back-to-home via Developer options)"
         override val coverFlight = "Cover flight animation"
         override val coverFlightNote =
             "Transition that flies the artwork into the player or detail page when you tap a track or " +

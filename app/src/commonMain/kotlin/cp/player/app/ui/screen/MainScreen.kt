@@ -897,12 +897,14 @@ class MainScreen : RoutePage {
                                 animationSpec = cp.player.app.ui.theme.CpMotion.spatial(),
                                 label = "navBarExitFraction",
                             )
-                            val effectiveHideFraction = maxOf(bottomBarHide.fraction, navBarExitFraction).coerceIn(0f, 1f)
+                            // 页面 push/pop 时仅做纯图形层下沉淡出，不动 Scaffold 底栏布局高度，
+                            // 避免转场期间每一帧都迫使 TabContent 整棵列表重新测量布局。
                             AppNavigationBar(
                                 tabs,
                                 selectedTabKey,
                                 selectTab,
-                                hideFraction = effectiveHideFraction,
+                                hideFraction = bottomBarHide.fraction.coerceIn(0f, 1f),
+                                exitFraction = navBarExitFraction.coerceIn(0f, 1f),
                                 onHeightChanged = { height ->
                                     bottomBarHide.barHeightPx = height.toFloat()
                                     cp.player.app.ui.util.DesktopShell.miniPlayerBottomBarVisiblePx =
@@ -1108,28 +1110,14 @@ private fun AppTopBar(
             colors = colors,
         )
     } else {
-        val sharedScope = cp.player.app.ui.anim.LocalSharedTransitionScope.current
-        val navScope = cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope.current
-        val topBarModifier = if (sharedScope != null && navScope != null && !cp.player.app.ui.component.LocalWindowChromeActive.current) {
-            with(sharedScope) {
-                Modifier.sharedBounds(
-                    sharedContentState = rememberSharedContentState(key = "universal_app_scaffold_topbar"),
-                    animatedVisibilityScope = navScope,
-                )
-            }
-        } else {
-            Modifier
-        }
-        Box(topBarModifier) {
-            androidx.compose.material3.LargeTopAppBar(
-                navigationIcon = navigationIcon,
-                title = titleBar,
-                actions = actions,
-                scrollBehavior = scrollBehavior,
-                windowInsets = topBarInsets,
-                colors = colors,
-            )
-        }
+        androidx.compose.material3.LargeTopAppBar(
+            navigationIcon = navigationIcon,
+            title = titleBar,
+            actions = actions,
+            scrollBehavior = scrollBehavior,
+            windowInsets = topBarInsets,
+            colors = colors,
+        )
     }
 }
 
@@ -1306,6 +1294,7 @@ private fun AppNavigationBar(
     selectedTabKey: String,
     onSelect: (String) -> Unit,
     hideFraction: Float = 0f,
+    exitFraction: Float = 0f,
     onHeightChanged: (Int) -> Unit = {},
 ) {
     val s = cpStrings()
@@ -1318,6 +1307,13 @@ private fun AppNavigationBar(
         // 越过下界的部分才会真的被裁掉。
         Modifier
             .clipToBounds()
+            .graphicsLayer {
+                val exit = exitFraction.coerceIn(0f, 1f)
+                if (exit > 0f) {
+                    translationY = size.height * exit
+                    alpha = 1f - exit
+                }
+            }
             .layout { measurable, constraints ->
                 val placeable = measurable.measure(constraints)
                 val visible = (placeable.height * (1f - hideFraction.coerceIn(0f, 1f)))
@@ -2127,15 +2123,22 @@ private fun EmbeddedContentNavigator(
             rootNavigator = LocalRootNavigator.current ?: nav,
         ) {
             val pageTransitions = cp.player.app.ui.theme.rememberCpPageTransitions()
+            val predictiveBackSetting by AppModel.predictiveBackEnabledFlow.collectAsState()
+            val predictiveBackEnabled =
+                cp.player.app.platform.isPredictiveBackSupported() && predictiveBackSetting
             RouteDisplay(
                 stack = nav,
                 backEnabled = backEnabled,
+                predictiveBackEnabled = predictiveBackEnabled,
                 transition = { _, to, isPop ->
                     if (to == PageMotion.Playlist) {
                         fadeIn(tween(300)) togetherWith fadeOut(tween(220))
                     } else {
                         pageTransitions.sharedAxisX(isPop = isPop)
                     }
+                },
+                predictiveTransition = { _, _, swipeEdge ->
+                    cp.player.app.ui.navigation.cpPredictivePopTransition(swipeEdge)
                 },
             )
         }

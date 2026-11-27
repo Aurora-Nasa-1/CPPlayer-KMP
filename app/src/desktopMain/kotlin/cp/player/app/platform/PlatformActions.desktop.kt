@@ -303,6 +303,8 @@ actual fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
     }
 }
 
+actual fun isPredictiveBackSupported(): Boolean = false
+
 /**
  * 桌面端「关闭窗口时的行为」。
  *

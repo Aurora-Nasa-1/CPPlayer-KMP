@@ -4,6 +4,14 @@ import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -12,6 +20,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.ViewModelStoreProvider
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
@@ -22,6 +31,7 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import androidx.navigation3.ui.NavDisplay
+import androidx.navigationevent.NavigationEvent
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.NavigationBackHandler
@@ -32,6 +42,7 @@ import cp.player.app.ui.screen.HomeGeneratedPlaylistScreen
 import cp.player.app.ui.screen.MainScreen
 import cp.player.app.ui.screen.PlayerScreen
 import cp.player.app.ui.screen.PlaylistDetailScreen
+import kotlin.math.roundToInt
 
 /** A window or content pane owns one stack. Every visit has a distinct saveable key. */
 class PageStack(start: RoutePage) {
@@ -114,6 +125,28 @@ private fun RoutePage.motion(): PageMotion = when (this) {
     else -> PageMotion.Default
 }
 
+internal fun cpPredictivePopTransition(swipeEdge: Int): ContentTransform {
+    val edgeSign = if (swipeEdge == NavigationEvent.EDGE_RIGHT) -1f else 1f
+    val enter = scaleIn(
+        animationSpec = tween(260, easing = LinearEasing),
+        initialScale = 0.96f,
+    ) + slideInHorizontally(
+        animationSpec = tween(260, easing = LinearEasing),
+    ) { -(it * 0.06f * edgeSign).roundToInt() } +
+        fadeIn(tween(260, easing = LinearEasing), initialAlpha = 0.72f)
+    val exit = scaleOut(
+        animationSpec = tween(260, easing = LinearEasing),
+        targetScale = 0.90f,
+        transformOrigin = if (edgeSign > 0f) TransformOrigin(0.82f, 0.5f) else TransformOrigin(0.18f, 0.5f),
+    ) + slideOutHorizontally(
+        animationSpec = tween(260, easing = LinearEasing),
+    ) { (it * 0.14f * edgeSign).roundToInt() } +
+        fadeOut(tween(260, easing = LinearEasing), targetAlpha = 0.35f)
+    return (enter togetherWith exit).apply {
+        targetContentZIndex = -1f
+    }
+}
+
 @Composable
 internal fun RouteDisplay(
     stack: PageStack,
@@ -125,9 +158,25 @@ internal fun RouteDisplay(
     content: @Composable AnimatedContentScope.(RoutePage) -> Unit = { it.Content() },
 ) {
     val render = rememberUpdatedState(content)
-    val entryProvider = remember {
+    val backEnabledState = rememberUpdatedState(backEnabled)
+    val predictiveEnabledState = rememberUpdatedState(predictiveBackEnabled)
+    val entryProvider = remember(stack) {
         { entry: PageEntry ->
             NavEntry(entry, contentKey = entry.id, metadata = motionMetadata.getValue(entry.page.motion())) {
+                // 预测性返回关闭时在 NavDisplay 与页面内部 BackHandler 之间插一层非预测性拦截器：
+                // 既跳过 NavDisplay 的跟手进度缩放，又不盖掉页面自身的多选/搜索 BackHandler。
+                val isActiveTop = !predictiveEnabledState.value &&
+                    backEnabledState.value &&
+                    stack.size > 1 &&
+                    stack.entries.lastOrNull()?.id == it.id
+                if (isActiveTop) {
+                    val nonPredictiveState = rememberNavigationEventState(NavigationEventInfo.None)
+                    NavigationBackHandler(
+                        state = nonPredictiveState,
+                        isBackEnabled = true,
+                        onBackCompleted = { stack.pop() },
+                    )
+                }
                 CompositionLocalProvider(LocalDisplayedRoutePage provides it.page) {
                     render.value(LocalNavAnimatedContentScope.current, it.page)
                 }
@@ -160,15 +209,5 @@ internal fun RouteDisplay(
             },
             entryProvider = entryProvider,
         )
-        // 预测性返回关闭时用后置拦截器接管边缘侧滑完成事件，跳过 NavDisplay 的跟手进度缩放，
-        // 确认返回后再触发常规 popTransitionSpec。
-        if (!predictiveBackEnabled && backEnabled && stack.size > 1) {
-            val nonPredictiveState = rememberNavigationEventState(NavigationEventInfo.None)
-            NavigationBackHandler(
-                state = nonPredictiveState,
-                isBackEnabled = true,
-                onBackCompleted = { stack.pop() },
-            )
-        }
     }
 }

@@ -1,6 +1,5 @@
 package cp.player.app.ui.component
 
-import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
@@ -55,7 +54,7 @@ fun CpTopBarActionButton(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppScaffold(
     title: @Composable () -> Unit,
@@ -83,60 +82,47 @@ fun AppScaffold(
         else -> MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0f)
     }
 
-    val sharedScope = cp.player.app.ui.anim.LocalSharedTransitionScope.current
-    val navScope = cp.player.app.ui.anim.LocalNavAnimatedVisibilityScope.current
-    val topBarModifier = if (sharedScope != null && navScope != null && !LocalWindowChromeActive.current) {
-        with(sharedScope) {
-            Modifier.sharedBounds(
-                sharedContentState = rememberSharedContentState(key = "universal_app_scaffold_topbar"),
-                animatedVisibilityScope = navScope,
-            )
-        }
-    } else {
-        Modifier
-    }
-
     Scaffold(
         modifier = Modifier.nestedScroll(actualScrollBehavior.nestedScrollConnection),
         containerColor = containerColor,
         bottomBar = bottomBar,
         floatingActionButton = floatingActionButton,
         topBar = {
-            Box(topBarModifier) {
-                LargeTopAppBar(
-                    title = title,
-                    navigationIcon = navigationIcon ?: {
-                        // 桌面端（窗口 chrome 接管时）**不自绘返回键**：返回入口统一由自绘标题栏
-                        // 承担（见 `DesktopTitleBar` 与 `DesktopShell`），否则同一屏会出现两个返回键
-                        // —— 一个在 44dp 标题栏里、一个在页面顶栏里，位置和外观都不一样。
-                        // 判据是 `LocalWindowChromeActive`（槽位是否被注入）而不是平台，理由见它的 KDoc。
-                        if (onBackPressed != null && !LocalWindowChromeActive.current) {
-                            CpBackButton(
-                                onClick = onBackPressed,
-                                modifier = Modifier.padding(start = 8.dp),
-                            )
-                        }
+            // 普通页转场由 NavDisplay 的 sharedAxisX 承担，不再对顶栏挂全局 sharedBounds，
+            // 避免每次 push/pop 都触发全树 SharedTransitionLayout Lookahead 两遍测量导致首帧卡顿。
+            LargeTopAppBar(
+                title = title,
+                navigationIcon = navigationIcon ?: {
+                    // 桌面端（窗口 chrome 接管时）**不自绘返回键**：返回入口统一由自绘标题栏
+                    // 承担（见 `DesktopTitleBar` 与 `DesktopShell`），否则同一屏会出现两个返回键
+                    // —— 一个在 44dp 标题栏里、一个在页面顶栏里，位置和外观都不一样。
+                    // 判据是 `LocalWindowChromeActive`（槽位是否被注入）而不是平台，理由见它的 KDoc。
+                    if (onBackPressed != null && !LocalWindowChromeActive.current) {
+                        CpBackButton(
+                            onClick = onBackPressed,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                },
+                actions = actions ?: {
+                    topBarActions.forEachIndexed { index, action ->
+                        if (index > 0) Spacer(Modifier.width(4.dp))
+                        CpTopBarActionButton(action)
+                    }
+                    if (topBarActions.isNotEmpty()) {
+                        Spacer(Modifier.width(8.dp))
+                    }
+                },
+                scrollBehavior = actualScrollBehavior,
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = actualTopBarContainerColor,
+                    scrolledContainerColor = if (LocalIsDarkTheme.current) {
+                        MaterialTheme.colorScheme.surfaceContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerLowest
                     },
-                    actions = actions ?: {
-                        topBarActions.forEachIndexed { index, action ->
-                            if (index > 0) Spacer(Modifier.width(4.dp))
-                            CpTopBarActionButton(action)
-                        }
-                        if (topBarActions.isNotEmpty()) {
-                            Spacer(Modifier.width(8.dp))
-                        }
-                    },
-                    scrollBehavior = actualScrollBehavior,
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = actualTopBarContainerColor,
-                        scrolledContainerColor = if (LocalIsDarkTheme.current) {
-                            MaterialTheme.colorScheme.surfaceContainer
-                        } else {
-                            MaterialTheme.colorScheme.surfaceContainerLowest
-                        },
-                    )
                 )
-            }
+            )
         }
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {

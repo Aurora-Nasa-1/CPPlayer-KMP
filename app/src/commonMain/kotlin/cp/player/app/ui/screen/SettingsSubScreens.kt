@@ -215,11 +215,17 @@ class AppearanceSettingsScreen(
                         total = motionTotal,
                     )
                     if (isAndroid) {
+                        val predictiveBackSupported = cp.player.app.platform.isPredictiveBackSupported()
                         SettingsSwitchItem(
                             title = s.appearance.predictiveBack,
                             modifier = Modifier.settingsSearchTarget("appearance_predictive_back", targetSettingId),
-                            subtitle = s.appearance.predictiveBackNote,
-                            checked = predictiveBackEnabled,
+                            subtitle = if (predictiveBackSupported) {
+                                s.appearance.predictiveBackNote
+                            } else {
+                                s.appearance.predictiveBackUnsupportedNote
+                            },
+                            checked = predictiveBackEnabled && predictiveBackSupported,
+                            enabled = predictiveBackSupported,
                             onCheckedChange = AppModel::setPredictiveBackEnabled,
                             index = 5,
                             total = motionTotal,
