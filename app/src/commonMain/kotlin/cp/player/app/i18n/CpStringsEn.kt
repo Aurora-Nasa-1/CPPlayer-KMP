@@ -222,6 +222,10 @@ object CpStringsEn : CpStrings {
         override val showSongAlbumNote =
             "Display the album name in track list items; off by default for a cleaner look"
 
+        override val songSwipeActions = "Swipe songs for queue actions"
+        override val songSwipeActionsNote =
+            "Swipe right to play next, swipe left to add to queue"
+
         override val fontRoundness = "Font roundness"
         override val fontRoundnessRounded = "Rounded"
         override val fontRoundnessSquare = "Square"

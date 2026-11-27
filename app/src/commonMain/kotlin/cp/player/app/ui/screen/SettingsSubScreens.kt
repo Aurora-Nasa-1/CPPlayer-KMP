@@ -229,6 +229,10 @@ class AppearanceSettingsScreen(
 
                 // 3. 内容与列表呈现
                 SettingsSection(s.appearance.sectionContent) {
+                    val songSwipeActions by AppModel.songItemSwipeActionsFlow.collectAsState()
+                    val showSwipeSetting = cp.player.app.platform.isAndroidPlatform() ||
+                        cp.player.app.ui.util.DesktopShell.isMobileMode
+                    val contentTotal = if (showSwipeSetting) 2 else 1
                     SettingsSwitchItem(
                         title = s.appearance.showSongAlbum,
                         modifier = Modifier.settingsSearchTarget("appearance_show_song_album", targetSettingId),
@@ -236,8 +240,19 @@ class AppearanceSettingsScreen(
                         checked = showSongAlbum,
                         onCheckedChange = AppModel::setShowSongAlbum,
                         index = 0,
-                        total = 1,
+                        total = contentTotal,
                     )
+                    if (showSwipeSetting) {
+                        SettingsSwitchItem(
+                            title = s.appearance.songSwipeActions,
+                            modifier = Modifier.settingsSearchTarget("appearance_song_swipe_actions", targetSettingId),
+                            subtitle = s.appearance.songSwipeActionsNote,
+                            checked = songSwipeActions,
+                            onCheckedChange = AppModel::setSongItemSwipeActions,
+                            index = 1,
+                            total = contentTotal,
+                        )
+                    }
                 }
 
                 // 4. 播放界面与歌词选项（Android 端展示手机播放器样式与偏好，桌面端展示桌面端可调整的歌词选项）

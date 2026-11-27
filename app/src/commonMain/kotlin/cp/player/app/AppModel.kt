@@ -1241,6 +1241,28 @@ object AppModel {
         _showSongAlbum.value = enabled
     }
 
+    // ============ 歌曲列表左右滑动快捷操作（持久化，仅限平板 / 安卓） ============
+
+    private const val KEY_SONG_ITEM_SWIPE_ACTIONS = "song_item_swipe_actions"
+
+    private val _songItemSwipeActions = MutableStateFlow(
+        settings.getString(KEY_SONG_ITEM_SWIPE_ACTIONS)?.toBooleanStrictOrNull() ?: true
+    )
+
+    /**
+     * 歌曲列表项是否启用左右滑动快捷操作（默认开启，仅在 Android / 平板布局生效）。
+     *
+     * 向右滑动触发「下一首播放」，向左滑动触发「添加到队列」。
+     */
+    val songItemSwipeActionsFlow: StateFlow<Boolean> = _songItemSwipeActions.asStateFlow()
+
+    fun songItemSwipeActions(): Boolean = _songItemSwipeActions.value
+
+    fun setSongItemSwipeActions(enabled: Boolean) {
+        settings.putString(KEY_SONG_ITEM_SWIPE_ACTIONS, enabled.toString())
+        _songItemSwipeActions.value = enabled
+    }
+
     // ============ 底部迷你播放器歌词显示（持久化） ============
 
     private const val KEY_SHOW_MINI_PLAYER_LYRICS = "show_mini_player_lyrics"

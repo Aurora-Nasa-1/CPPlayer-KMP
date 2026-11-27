@@ -1,20 +1,30 @@
 package cp.player.app.ui.component
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.Checkbox
@@ -23,32 +33,54 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import cp.player.app.AppModel
 import cp.player.app.i18n.cpStrings
+import cp.player.app.platform.isAndroidPlatform
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import cp.player.app.presentation.navigation.AppRoute
 import cp.player.app.ui.anim.CoverFlight
 import cp.player.app.ui.anim.coverFlightSource
+import cp.player.app.ui.feedback.CpHaptic
+import cp.player.app.ui.feedback.LocalCpHaptics
 import cp.player.app.ui.navigation.LocalAppNavigator
 import cp.player.app.ui.theme.CpMotion
-import cp.player.app.ui.theme.LocalIsDarkTheme
+import cp.player.app.ui.theme.CpShapes
+import cp.player.app.ui.theme.cpCardSurface
+import cp.player.app.ui.theme.cpNestedSurface
+import cp.player.app.ui.util.DesktopShell
+import cp.player.app.ui.util.UiEvents
 import cp.player.app.ui.util.rememberCoverImageRequest
-import cp.player.app.ui.util.resized
 import cp.player.core.music.TrackSummary
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.exp
+
+private val SongSwipeThresholdDp = 76.dp
+private val SongSwipeOvershootDp = 44.dp
 
 /**
  * M3 Expressive 风格歌曲列表项。
@@ -56,6 +88,7 @@ import kotlinx.coroutines.flow.map
  * 封面 52dp + 歌名/歌手 + 右侧 MoreVert 圆形按钮。
  * 点击主体区域触发 [onClick]，点击 MoreVert 触发 [onOptionsClick]。
  * [selectionMode] 为 true 时以 Checkbox 替代封面、隐藏 MoreVert，用于多选场景。
+ * 在 Android 与平板界面下（非桌面端）且全局开关开启时，支持向右滑动「下一首播放」、向左滑动「添加到队列」。
  */
 @Composable
 fun SongItem(
@@ -92,6 +125,12 @@ fun SongItem(
      */
     supportingBadge: String? = null,
     supportingBadgeAlert: Boolean = false,
+    /** 向右滑动触发「下一首播放」；为 null 时默认将本曲插入当前曲目之后。 */
+    onPlayNext: (() -> Unit)? = null,
+    /** 向左滑动触发「添加到队列」；为 null 时默认将本曲追加到队列末尾。 */
+    onAddToQueue: (() -> Unit)? = null,
+    /** 是否允许本行响应左右滑动快捷操作（内部还会叠加平台与全局设置开关）。 */
+    swipeEnabled: Boolean = true,
 ) {
     val s = cpStrings()
     val globalShowAlbum by AppModel.showSongAlbumFlow.collectAsState()
@@ -134,7 +173,7 @@ fun SongItem(
         isCurrent -> MaterialTheme.colorScheme.secondaryContainer
         // 行是「页面上的卡片」，统一走卡片层 —— 深浅两套层级是反的，
         // 分散写角色名会在「用户显式选深色、系统是浅色」时取错色板（见 cpCardSurface）。
-        else -> cp.player.app.ui.theme.cpCardSurface()
+        else -> cpCardSurface()
     }
     val rowPrimaryTextColor = when {
         selectionMode && isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
@@ -160,7 +199,7 @@ fun SongItem(
     )
     val coverShape = remember(coverCorner) { RoundedCornerShape(coverCorner) }
 
-    val row: @Composable (Modifier) -> Unit = { rowModifier ->
+    val row: @Composable (Modifier, Boolean) -> Unit = { rowModifier, swiping ->
         LegacyListItem(
             index = index.coerceAtLeast(0),
             total = total.coerceAtLeast(1),
@@ -168,6 +207,7 @@ fun SongItem(
             onLongClick = onLongClick,
             modifier = rowModifier,
             emphasized = isCurrent,
+            swiping = swiping,
             containerColor = animatedContainerColor,
             leadingContent = {
                 if (selectionMode) {
@@ -187,7 +227,7 @@ fun SongItem(
                         }
                         Box(
                             Modifier.size(52.dp).aspectRatio(1f).clip(coverShape)
-                                .background(cp.player.app.ui.theme.cpNestedSurface())
+                                .background(cpNestedSurface())
                                 .coverFlightSource(CoverFlight.trackKey(track.id), coverCorner),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -283,7 +323,7 @@ fun SongItem(
                             color = if (supportingBadgeAlert) {
                                 MaterialTheme.colorScheme.errorContainer
                             } else {
-                                cp.player.app.ui.theme.cpNestedSurface()
+                                cpNestedSurface()
                             },
                         ) {
                             CpText(
@@ -316,7 +356,7 @@ fun SongItem(
                         if (useAnchoredMenu) menuExpanded = true else onOptionsClick?.invoke()
                     },
                     colors = androidx.compose.material3.IconButtonDefaults.iconButtonColors(
-                        containerColor = cp.player.app.ui.theme.cpNestedSurface(),
+                        containerColor = cpNestedSurface(),
                     ),
                     modifier = Modifier.size(40.dp),
                 ) {
@@ -332,12 +372,331 @@ fun SongItem(
         )
     }
 
+    val swipeSettingEnabled by AppModel.songItemSwipeActionsFlow.collectAsState()
+    val actualSwipeEnabled = swipeEnabled && !selectionMode &&
+        (isAndroidPlatform() || DesktopShell.isMobileMode) &&
+        swipeSettingEnabled
+
+    val resolvedOnPlayNext: () -> Unit = onPlayNext ?: {
+        if (AppModel.initialized.value) {
+            AppModel.modelScope.launch {
+                runCatching { AppModel.playback.addNextToQueue(AppModel.toMediaId(track.id)) }
+            }
+        }
+        UiEvents.notify(s.library.playNext)
+    }
+    val resolvedOnAddToQueue: () -> Unit = onAddToQueue ?: {
+        if (AppModel.initialized.value) {
+            AppModel.modelScope.launch {
+                runCatching { AppModel.playback.addToQueue(AppModel.toMediaId(track.id)) }
+            }
+        }
+        UiEvents.notify(s.library.queuedToPlay)
+    }
+
+    val rowContent: @Composable (Modifier) -> Unit = { contentModifier ->
+        if (actualSwipeEnabled) {
+            SwipeableSongRow(
+                trackId = track.id,
+                index = index,
+                total = total,
+                playNextLabel = s.contextMenu.playNext,
+                addToQueueLabel = s.contextMenu.addToQueue,
+                onPlayNext = resolvedOnPlayNext,
+                onAddToQueue = resolvedOnAddToQueue,
+                modifier = contentModifier,
+            ) { swiping ->
+                row(Modifier, swiping)
+            }
+        } else {
+            row(contentModifier, false)
+        }
+    }
+
     // 桌面右键菜单：非多选且传入了菜单项时才生效（见参数 KDoc）。
     if (contextMenu != null && !selectionMode) {
         CpContextMenu(items = contextMenu, modifier = modifier) {
-            row(Modifier)
+            rowContent(Modifier)
         }
     } else {
-        row(modifier)
+        rowContent(modifier)
     }
+}
+
+/**
+ * M3 Expressive 跟手左右滑动容器：
+ * - 右滑触发「下一首播放」（`primaryContainer` / `primary`）；
+ * - 左滑触发「添加到队列」（`tertiaryContainer` / `tertiary`）；
+ * - 未达阈值时 C1 连续阻尼跟随并在松手后按 `CpMotion.spatial()` 回弹，不抢占点击、长按与纵向滚动。
+ */
+@Composable
+private fun SwipeableSongRow(
+    trackId: String,
+    index: Int,
+    total: Int,
+    playNextLabel: String,
+    addToQueueLabel: String,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable (swiping: Boolean) -> Unit,
+) {
+    val density = LocalDensity.current
+    val haptics = LocalCpHaptics.current
+    val coroutineScope = rememberCoroutineScope()
+    val offsetX = remember { Animatable(0f) }
+    var isDragging by remember { mutableStateOf(false) }
+    // 锁定单次滑动方向，防止回弹 spring 微微过冲过 0 时背景颜色/图标闪切到另一侧。
+    var activeDirection by remember { mutableIntStateOf(0) }
+
+    val currentOnPlayNext by rememberUpdatedState(onPlayNext)
+    val currentOnAddToQueue by rememberUpdatedState(onAddToQueue)
+    val currentHaptics by rememberUpdatedState(haptics)
+    val currentSpatialSpec by rememberUpdatedState(CpMotion.spatial<Float>())
+
+    LaunchedEffect(trackId) {
+        if (offsetX.value != 0f || isDragging) {
+            offsetX.snapTo(0f)
+            isDragging = false
+            activeDirection = 0
+        }
+    }
+
+    val thresholdPx = with(density) { SongSwipeThresholdDp.toPx() }
+    val extraPx = with(density) { SongSwipeOvershootDp.toPx() }
+    val currentOffset = offsetX.value
+    val isVisualActive = isDragging || abs(currentOffset) > 0.5f
+    val slotShape = remember(index, total) {
+        legacySegmentShape(index.coerceAtLeast(0), total.coerceAtLeast(1))
+    }
+
+    val gestureModifier = Modifier.pointerInput(thresholdPx, extraPx) {
+        val touchSlop = viewConfiguration.touchSlop
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            val pointerId = down.id
+            var horizontalLocked = false
+            var abortedForScroll = false
+            var lastDamped = 0f
+            var wasArmed = false
+            var pointerUp = false
+
+            try {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Main)
+                    val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+
+                    if (!change.pressed) {
+                        if (horizontalLocked) {
+                            change.consume()
+                        }
+                        pointerUp = true
+                        break
+                    }
+
+                    if (!horizontalLocked) {
+                        if (change.isConsumed) {
+                            abortedForScroll = true
+                            break
+                        }
+                        val dx = change.position.x - down.position.x
+                        val dy = change.position.y - down.position.y
+                        val absDx = abs(dx)
+                        val absDy = abs(dy)
+
+                        if (absDy > touchSlop && absDy >= absDx) {
+                            abortedForScroll = true
+                            break
+                        }
+                        if (absDx > touchSlop && absDx > absDy * 1.2f) {
+                            horizontalLocked = true
+                            isDragging = true
+                            activeDirection = if (dx >= 0f) 1 else -1
+                            change.consume()
+                            val damped = applySwipeResistance(dx, thresholdPx, extraPx)
+                            lastDamped = damped
+                            val armedNow = abs(damped) >= thresholdPx
+                            if (armedNow && !wasArmed) {
+                                currentHaptics.perform(CpHaptic.Tick)
+                            }
+                            wasArmed = armedNow
+                            coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                                offsetX.snapTo(damped)
+                            }
+                        }
+                    } else {
+                        change.consume()
+                        val dx = change.position.x - down.position.x
+                        if (dx != 0f) {
+                            activeDirection = if (dx >= 0f) 1 else -1
+                        }
+                        val damped = applySwipeResistance(dx, thresholdPx, extraPx)
+                        lastDamped = damped
+                        val armedNow = abs(damped) >= thresholdPx
+                        if (armedNow != wasArmed) {
+                            if (armedNow) {
+                                currentHaptics.perform(CpHaptic.Tick)
+                            }
+                            wasArmed = armedNow
+                        }
+                        coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                            offsetX.snapTo(damped)
+                        }
+                    }
+                }
+            } finally {
+                if (horizontalLocked) {
+                    isDragging = false
+                    val completedNormally = pointerUp && !abortedForScroll
+                    if (completedNormally && lastDamped >= thresholdPx) {
+                        currentHaptics.perform(CpHaptic.Confirm)
+                        currentOnPlayNext()
+                    } else if (completedNormally && lastDamped <= -thresholdPx) {
+                        currentHaptics.perform(CpHaptic.Confirm)
+                        currentOnAddToQueue()
+                    }
+                    coroutineScope.launch {
+                        offsetX.animateTo(
+                            targetValue = 0f,
+                            animationSpec = currentSpatialSpec,
+                        )
+                        if (!isDragging) activeDirection = 0
+                    }
+                }
+            }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (isVisualActive) Modifier.clip(slotShape) else Modifier)
+            .then(gestureModifier),
+    ) {
+        if (isVisualActive) {
+            val isRight = if (isDragging) currentOffset >= 0f else activeDirection >= 0
+            val directedOffsetPx = if (isDragging) {
+                abs(currentOffset)
+            } else {
+                val dir = if (activeDirection != 0) activeDirection else if (currentOffset >= 0f) 1 else -1
+                (currentOffset * dir).coerceAtLeast(0f)
+            }
+            val progress = (directedOffsetPx / thresholdPx).coerceIn(0f, 1f)
+            val armed = isDragging && directedOffsetPx >= thresholdPx
+            val revealedDp = with(density) { directedOffsetPx.toDp() }
+
+            val backdropColor by animateColorAsState(
+                targetValue = when {
+                    !armed -> cpNestedSurface()
+                    isRight -> MaterialTheme.colorScheme.primaryContainer
+                    else -> MaterialTheme.colorScheme.tertiaryContainer
+                },
+                animationSpec = CpMotion.effectsFast(),
+                label = "songSwipeBackdrop",
+            )
+            val pillColor by animateColorAsState(
+                targetValue = when {
+                    !armed -> cpCardSurface()
+                    isRight -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.tertiary
+                },
+                animationSpec = CpMotion.effectsFast(),
+                label = "songSwipePillColor",
+            )
+            val iconTint by animateColorAsState(
+                targetValue = when {
+                    !armed -> MaterialTheme.colorScheme.onSurfaceVariant
+                    isRight -> MaterialTheme.colorScheme.onPrimary
+                    else -> MaterialTheme.colorScheme.onTertiary
+                },
+                animationSpec = CpMotion.effectsFast(),
+                label = "songSwipeIconTint",
+            )
+            val labelColor by animateColorAsState(
+                targetValue = when {
+                    !armed -> MaterialTheme.colorScheme.onSurfaceVariant
+                    isRight -> MaterialTheme.colorScheme.onPrimaryContainer
+                    else -> MaterialTheme.colorScheme.onTertiaryContainer
+                },
+                animationSpec = CpMotion.effectsFast(),
+                label = "songSwipeLabelColor",
+            )
+            val pillScale by animateFloatAsState(
+                targetValue = if (armed) 1.08f else 0.78f + 0.22f * progress,
+                animationSpec = CpMotion.spatialFast(),
+                label = "songSwipePillScale",
+            )
+            val labelAlpha by animateFloatAsState(
+                targetValue = if (progress >= 0.4f) ((progress - 0.4f) / 0.45f).coerceIn(0f, 1f) else 0f,
+                animationSpec = CpMotion.effectsFast(),
+                label = "songSwipeLabelAlpha",
+            )
+
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(backdropColor),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .align(if (isRight) Alignment.CenterStart else Alignment.CenterEnd)
+                        .width(revealedDp)
+                        .fillMaxHeight()
+                        .padding(horizontal = 4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Surface(
+                            shape = CpShapes.full,
+                            color = pillColor,
+                            modifier = Modifier
+                                .size(width = 40.dp, height = 28.dp)
+                                .graphicsLayer {
+                                    scaleX = pillScale
+                                    scaleY = pillScale
+                                    alpha = (0.35f + 0.65f * progress).coerceIn(0f, 1f)
+                                },
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (isRight) Icons.Filled.SkipNext else Icons.AutoMirrored.Filled.QueueMusic,
+                                    contentDescription = null,
+                                    tint = iconTint,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(3.dp))
+                        CpText(
+                            text = if (isRight) playNextLabel else addToQueueLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = labelColor,
+                            fontWeight = if (armed) FontWeight.SemiBold else FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.graphicsLayer { alpha = labelAlpha },
+                        )
+                    }
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier.graphicsLayer { translationX = currentOffset },
+        ) {
+            content(isVisualActive)
+        }
+    }
+}
+
+private fun applySwipeResistance(rawDelta: Float, thresholdPx: Float, extraPx: Float): Float {
+    val absRaw = abs(rawDelta)
+    if (absRaw <= thresholdPx) return rawDelta
+    val overshoot = absRaw - thresholdPx
+    val damped = thresholdPx + extraPx * (1f - exp(-overshoot / extraPx))
+    return if (rawDelta >= 0f) damped else -damped
 }

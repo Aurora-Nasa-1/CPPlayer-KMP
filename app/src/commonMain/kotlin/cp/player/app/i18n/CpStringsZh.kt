@@ -216,6 +216,9 @@ object CpStringsZh : CpStrings {
         override val showSongAlbum = "显示歌曲专辑名"
         override val showSongAlbumNote = "在歌曲列表显示所属专辑"
 
+        override val songSwipeActions = "歌曲滑动快捷操作"
+        override val songSwipeActionsNote = "右滑添加到下一首播放，左滑添加到播放队列"
+
         override val fontRoundness = "字体圆滑度"
         override val fontRoundnessRounded = "圆滑"
         override val fontRoundnessSquare = "方正"

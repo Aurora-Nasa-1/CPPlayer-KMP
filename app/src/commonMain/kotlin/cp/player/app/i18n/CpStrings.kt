@@ -381,6 +381,9 @@ interface AppearanceStrings {
     val showSongAlbum: String
     val showSongAlbumNote: String
 
+    val songSwipeActions: String
+    val songSwipeActionsNote: String
+
     val fontRoundness: String
     val fontRoundnessRounded: String
     val fontRoundnessSquare: String

@@ -57,6 +57,7 @@ fun LegacyListItem(
     containerColor: Color = cpCardSurface(),
     shape: Shape? = null,
     emphasized: Boolean = false,
+    swiping: Boolean = false,
     leadingContent: (@Composable () -> Unit)? = null,
     headlineContent: @Composable () -> Unit,
     supportingContent: (@Composable () -> Unit)? = null,
@@ -65,7 +66,13 @@ fun LegacyListItem(
     val press = rememberPressedScale()
     val pressed by press.first.collectIsPressedAsState()
     // 只在真的可点或焦点态时才做形状变形
-    val segmentShape = rememberSegmentShape(index, total, pressed = pressed && onClick != null, emphasized = emphasized)
+    val segmentShape = rememberSegmentShape(
+        index = index,
+        total = total,
+        pressed = pressed && onClick != null,
+        emphasized = emphasized,
+        swiping = swiping,
+    )
     val resolvedShape = shape ?: segmentShape
 
     // Surface 自带 onClick 不支持长按，需要长按时改用 combinedClickable
@@ -164,9 +171,10 @@ fun rememberSegmentShape(
     total: Int,
     pressed: Boolean,
     emphasized: Boolean = false,
+    swiping: Boolean = false,
 ): Shape {
     val morph by animateFloatAsState(
-        targetValue = if (pressed || emphasized) 1f else 0f,
+        targetValue = if (pressed || emphasized || swiping) 1f else 0f,
         animationSpec = CpMotion.spatial(),
         label = "segmentShapeMorph",
     )

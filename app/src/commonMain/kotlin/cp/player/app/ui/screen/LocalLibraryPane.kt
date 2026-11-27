@@ -1710,6 +1710,7 @@ internal fun LocalSongRow(
         contextMenu = menuItems,
         onOptionsClick = onOptionsClick?.let { fn -> { fn(song) } },
         supportingText = subtitle,
+        swipeEnabled = !isVideo,
     )
 }
 

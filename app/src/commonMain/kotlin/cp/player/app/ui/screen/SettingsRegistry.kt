@@ -181,6 +181,7 @@ private fun generalEntries(): List<SettingsEntry> = listOfNotNull(
             "主题", "深色", "浅色", "暗黑", "取色", "配色", "纯黑", "oled", "amoled", "省电", "theme", "dark", "light",
             "动态取色", "莫奈", "monet", "material you", "动效", "转场", "流体", "流光", "背景", "封面飞行",
             "圆角", "字体", "font", "roundness", "专辑", "专辑名", "歌曲列表", "album",
+            "滑动", "左滑", "右滑", "下一首", "队列", "手势", "swipe", "gesture", "queue",
             "语言", "中文", "英文", "简体", "繁体", "汉化", "翻译", "界面语言", "language", "locale", "chinese", "english", "i18n",
         ),
         subItems = listOf(
@@ -261,6 +262,14 @@ private fun generalEntries(): List<SettingsEntry> = listOfNotNull(
                 subtitleOf = { it.appearance.showSongAlbumNote },
                 keywords = listOf("专辑", "专辑名", "歌曲列表", "单曲信息", "副标题", "album"),
                 sectionOf = { "内容与列表呈现" },
+            ),
+            SettingsSubItem(
+                id = "appearance_song_swipe_actions",
+                titleOf = { it.appearance.songSwipeActions },
+                subtitleOf = { it.appearance.songSwipeActionsNote },
+                keywords = listOf("滑动", "左滑", "右滑", "下一首", "队列", "添加到队列", "手势", "歌曲列表", "swipe", "gesture", "play next", "queue"),
+                sectionOf = { it.appearance.sectionContent },
+                androidOnly = true,
             ),
             SettingsSubItem(
                 id = "appearance_modern_mobile_player",

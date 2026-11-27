@@ -115,6 +115,7 @@ fun LazyListScope.recentPlaysRows(
                     supportingBadge = if (playable) null else cpStrings().insights.recentOtherSourceBadge,
                     supportingBadgeAlert = !playable,
                     modifier = Modifier.weight(1f).alpha(if (playable) 1f else 0.62f),
+                    swipeEnabled = playable,
                 )
             }
             // 末尾一行是奇数时补等宽空位，否则最后一条会被单独拉满整行。
