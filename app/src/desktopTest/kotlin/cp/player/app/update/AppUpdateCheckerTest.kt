@@ -41,4 +41,46 @@ class AppUpdateCheckerTest {
         assertFalse(AppUpdateChecker.matchesDestructivePolicy(policy, "1.8.5", "1.8.7"))
     }
 
+    @Test
+    fun `extractUpdateNotes keeps only changelog body from actual release format`() {
+        val body = """
+            ## 更新内容 (What's Changed)
+
+            - 新增了社交动态发布入口
+            - 修复了更新日志包含非更新内容段落的问题
+
+            ---
+            **完整变更记录**: https://github.com/Aurora-Nasa-1/CPPlayer-KMP/compare/v1.12.5...v1.13.0
+
+            ---
+
+            ## 下载
+
+            在本页面下方的 **Assets** 中按平台下载：
+
+            | 平台 | 文件 | 说明 |
+            |---|---|---|
+            | Windows | `CPPlayer-*Setup.exe` | 安装版（推荐） |
+        """.trimIndent()
+
+        val extracted = AppUpdateChecker.extractUpdateNotes(body)
+        assertEquals(
+            "- 新增了社交动态发布入口\n- 修复了更新日志包含非更新内容段落的问题",
+            extracted,
+        )
+    }
+
+    @Test
+    fun `extractUpdateNotes returns blank for empty release notes`() {
+        val emptyBody = """
+            ## 更新内容 (What's Changed)
+
+
+            ---
+            **完整变更记录**: https://github.com/Aurora-Nasa-1/CPPlayer-KMP/compare/v1.12.3...v1.12.2
+        """.trimIndent()
+
+        assertEquals("", AppUpdateChecker.extractUpdateNotes(emptyBody))
+    }
+
 }

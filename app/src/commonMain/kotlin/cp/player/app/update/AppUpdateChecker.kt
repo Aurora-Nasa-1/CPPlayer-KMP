@@ -276,13 +276,17 @@ object AppUpdateChecker {
     }
 
     private val releaseHeading = Regex("""^(#{1,6})\s+(.+?)\s*#*\s*$""")
-    private val updateNotesHeading = Regex("""^(?:更新内容(?:\s*[（(]What's Changed[）)])?|What's Changed)$""", RegexOption.IGNORE_CASE)
+    private val updateNotesHeading = Regex(
+        """^(?:更新内容(?:\s*[（(]What's Changed[）)])?|What's Changed|更新日志|Changelog|Release Notes)$""",
+        RegexOption.IGNORE_CASE,
+    )
     private val releaseFooter = Regex(
         """^(?:\*\*)?(?:完整变更记录|Full Changelog)(?:\*\*)?\s*[:：]""",
         RegexOption.IGNORE_CASE,
     )
+    private val horizontalRule = Regex("""^(?:-{3,}|\*{3,}|_{3,})$""")
 
-    private fun extractUpdateNotes(body: String): String {
+    internal fun extractUpdateNotes(body: String): String {
         val lines = body.lines()
         val headings = lines.map { releaseHeading.matchEntire(it.trim()) }
         val start = headings.indexOfFirst { heading ->
@@ -291,21 +295,33 @@ object AppUpdateChecker {
         val sectionDepth = headings.getOrNull(start)?.groupValues?.get(1)?.length
 
         // 旧版可能没有「更新内容」标题，仍保留比较链接和下载说明之前的正文。
-        return lines.indices.asSequence()
+        val rawNotes = lines.indices.asSequence()
             .drop(start + 1)
             .takeWhile { index ->
                 val heading = headings[index]
-                val title = heading?.groupValues?.get(2)
+                val title = heading?.groupValues?.get(2)?.trim()
                 !releaseFooter.containsMatchIn(lines[index].trimStart()) &&
-                    title != "下载" && !title.equals("Downloads", ignoreCase = true) &&
+                    title != "下载" &&
+                    title != "安装" &&
+                    !title.equals("Download", ignoreCase = true) &&
+                    !title.equals("Downloads", ignoreCase = true) &&
                     !title.equals("New Contributors", ignoreCase = true) &&
                     (sectionDepth == null || heading == null || heading.groupValues[1].length > sectionDepth)
             }
-            .map { lines[it] }
+            .map { lines[it].trimEnd() }
             .toList()
-            .dropLastWhile { it.isBlank() || it.trim() == "---" }
-            .joinToString("\n")
-            .trim()
+            .dropWhile { it.isBlank() || horizontalRule.matches(it.trim()) }
+            .dropLastWhile { it.isBlank() || horizontalRule.matches(it.trim()) }
+
+        // 裁剪多余分隔线与连续空行，保持段落紧凑。
+        val compact = mutableListOf<String>()
+        for (line in rawNotes) {
+            val trimmed = line.trim()
+            if (horizontalRule.matches(trimmed)) continue
+            if (trimmed.isEmpty() && compact.lastOrNull()?.isEmpty() == true) continue
+            compact += line
+        }
+        return compact.joinToString("\n").trim()
     }
 
     fun compareVersions(v1: String, v2: String): Int {

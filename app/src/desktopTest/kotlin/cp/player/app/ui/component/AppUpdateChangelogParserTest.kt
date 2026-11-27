@@ -117,4 +117,104 @@ class AppUpdateChangelogParserTest {
         assertEquals(ChangelogCategory.OTHER, classifyCategory("其他改进"))
         assertEquals(ChangelogCategory.GENERAL, classifyCategory("常规说明"))
     }
+
+    @Test
+    fun testParseCurrentFlatAiReleaseFormat() {
+        val body = """
+            ## 更新内容 (What's Changed)
+
+            - 新增了社交动态发布入口，并简化动态流展示
+            - 新增了私人 FM 的实时队列更新展示
+            - 优化了 `OPENAI_BASE_URL` 配置与更新弹窗样式
+            - 修复了安卓设置页挂载后可能自动弹出软键盘的问题
+            - 调整了桌面迷你模式按钮，将其并入窗口控制区
+
+            ---
+            **完整变更记录**: https://github.com/Aurora-Nasa-1/CPPlayer-KMP/compare/v1.12.5...v1.13.0
+
+            ---
+
+            ## 下载
+
+            | 平台 | 文件 | 说明 |
+            |---|---|---|
+            | Windows | `CPPlayer-*Setup.exe` | 安装版（推荐） |
+        """.trimIndent()
+
+        val parsed = parseReleaseChangelog(body)
+        assertEquals(1, parsed.blocks.size)
+        val block = parsed.blocks.single()
+        assertEquals(null, block.version)
+        assertEquals(4, block.sections.size)
+        assertEquals(ChangelogCategory.FEATURE, block.sections[0].category)
+        assertEquals(2, block.sections[0].items.size)
+        assertEquals(ChangelogCategory.IMPROVEMENT, block.sections[1].category)
+        assertEquals(1, block.sections[1].items.size)
+        assertEquals(ChangelogCategory.BUGFIX, block.sections[2].category)
+        assertEquals(1, block.sections[2].items.size)
+        assertEquals(ChangelogCategory.OTHER, block.sections[3].category)
+        assertEquals("调整与变更", block.sections[3].title)
+        assertEquals(1, block.sections[3].items.size)
+        assertEquals("https://github.com/Aurora-Nasa-1/CPPlayer-KMP/compare/v1.12.5...v1.13.0", parsed.compareUrl)
+    }
+
+    @Test
+    fun testParseMultiVersionAggregatedChangelog() {
+        val aggregated = """
+            ### v1.13.0
+
+            - 新增了深色模式下按设置压暗流体背景的效果
+            - 优化了更新弹窗样式
+
+            ### v1.12.5
+
+            - 修复了 Linux 版本从 deb 安装包资源目录加载 FlickEngine 失败的问题
+        """.trimIndent()
+
+        val parsed = parseReleaseChangelog(aggregated)
+        assertEquals(2, parsed.blocks.size)
+        assertEquals("v1.13.0", parsed.blocks[0].version)
+        assertEquals(2, parsed.blocks[0].sections.size)
+        assertEquals("v1.12.5", parsed.blocks[1].version)
+        assertEquals(1, parsed.blocks[1].sections.size)
+        assertEquals(ChangelogCategory.BUGFIX, parsed.blocks[1].sections[0].category)
+    }
+
+    @Test
+    fun testParseFallbackGitLogAndTrimNoise() {
+        val fallback = """
+            ### docs: update architecture and contribution guidance (a103658b)
+
+            内部文档调整。
+
+            ### feat(update): multi-asset update dialog with auto-update opt-out (a0c5d894)
+
+            发布资产列表进入 UpdateResult，弹窗按平台列出可安装文件。
+
+            ### Connect fluid background to modern player (20ec60e)
+        """.trimIndent()
+
+        val parsed = parseReleaseChangelog(fallback)
+        assertEquals(1, parsed.blocks.size)
+        val sections = parsed.blocks[0].sections
+        // docs 内部提交被过滤，仅保留 feat 与常规提交
+        assertEquals(2, sections.size)
+        assertEquals(ChangelogCategory.FEATURE, sections[0].category)
+        assertEquals("multi-asset update dialog with auto-update opt-out", sections[0].items[0].text)
+        assertTrue(sections[0].items[1].isSubItem)
+        assertEquals(ChangelogCategory.OTHER, sections[1].category)
+        assertEquals("Connect fluid background to modern player", sections[1].items[0].text)
+    }
+
+    @Test
+    fun testCleanChangelogLineTrimsMarkdownLinksAndHashes() {
+        assertEquals(
+            "修复播放状态不同步 (#42)",
+            cleanChangelogLine("✨ 修复播放状态不同步 by @author in https://github.com/org/repo/pull/42"),
+        )
+        assertEquals(
+            "支持 查看文档 说明",
+            cleanChangelogLine("支持 [查看文档](https://example.com/docs) 说明 (a1b2c3d4)"),
+        )
+    }
 }
