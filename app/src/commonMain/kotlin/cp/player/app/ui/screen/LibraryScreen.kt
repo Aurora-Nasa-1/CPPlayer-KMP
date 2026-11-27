@@ -203,7 +203,11 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
                 onRefresh = { model.refresh() },
                 onPlay = { model.play(playlist) },
                 onAddToQueue = { model.play(playlist, addOnly = true) },
-                onDownload = { model.download(playlist) },
+                onDownload = {
+                    confirm.requestDownloadAll(s, playlist.name, playlist.trackCount) {
+                        model.download(playlist)
+                    }
+                },
                 onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
                 onToggleFavorite = if (!owner) {
                     { askDeleteOrUnsubscribe(playlist, model, confirm, s) }
@@ -268,7 +272,11 @@ private fun LibraryScreenContent(model: LibraryScreenModel) {
             onPlay = { model.play(playlist) },
             onAddToQueue = { model.play(playlist, addOnly = true) },
             onRefresh = { model.refresh() },
-            onDownload = { model.download(playlist) },
+            onDownload = {
+                confirm.requestDownloadAll(s, playlist.name, playlist.trackCount) {
+                    model.download(playlist)
+                }
+            },
             onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
             onDelete = { askDeleteOrUnsubscribe(playlist, model, confirm, s) },
             onRename = if (model.isOwner(playlist)) {

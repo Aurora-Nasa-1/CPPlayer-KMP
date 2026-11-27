@@ -355,7 +355,11 @@ private fun UserProfileContent(
                                 isFavorite = true,
                                 onPlay = { playlistActions.playPlaylist(playlist, s) },
                                 onAddToQueue = { playlistActions.queuePlaylist(playlist, s) },
-                                onDownload = { playlistActions.downloadPlaylist(playlist, s) },
+                                onDownload = {
+                                    confirm.requestDownloadAll(s, playlist.name, playlist.trackCount) {
+                                        playlistActions.downloadPlaylist(playlist, s)
+                                    }
+                                },
                                 onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
                                 onToggleFavorite = if (!owner) askDelete else null,
                                 onDelete = if (owner) askDelete else null,
@@ -433,7 +437,9 @@ private fun UserProfileContent(
                 playlistOptionsTarget = null
             },
             onDownload = {
-                playlistActions.downloadPlaylist(playlist, s)
+                confirm.requestDownloadAll(s, playlist.name, playlist.trackCount) {
+                    playlistActions.downloadPlaylist(playlist, s)
+                }
                 playlistOptionsTarget = null
             },
             onDelete = if (owner) askDelete else null,

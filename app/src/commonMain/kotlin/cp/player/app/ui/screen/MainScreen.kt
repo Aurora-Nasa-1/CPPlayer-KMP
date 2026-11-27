@@ -1611,7 +1611,11 @@ private fun DesktopSidebar(
             add(
                 CpContextMenuItem(
                     s.library.downloadAll, Icons.Filled.Download,
-                    onClick = { homeModel.downloadPlaylist(playlist, s) },
+                    onClick = {
+                        confirm.requestDownloadAll(s, playlist.name, playlist.trackCount) {
+                            homeModel.downloadPlaylist(playlist, s)
+                        }
+                    },
                 )
             )
             add(CpContextMenuSeparator)

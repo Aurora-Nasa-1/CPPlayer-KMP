@@ -241,7 +241,11 @@ private fun LibrarySearchContent(
                                         isFavorite = true,
                                         onPlay = { library.play(playlist) },
                                         onAddToQueue = { library.play(playlist, addOnly = true) },
-                                        onDownload = { library.download(playlist) },
+                                        onDownload = {
+                                            confirm.requestDownloadAll(s, playlist.name, playlist.trackCount) {
+                                                library.download(playlist)
+                                            }
+                                        },
                                         onShare = {
                                             shareText(playlistShareText(playlist.resourceId, playlist.name))
                                         },
@@ -382,7 +386,11 @@ private fun LibrarySearchContent(
             onPlay = { library.play(playlist) },
             onAddToQueue = { library.play(playlist, addOnly = true) },
             onRefresh = { library.refresh() },
-            onDownload = { library.download(playlist) },
+            onDownload = {
+                confirm.requestDownloadAll(s, playlist.name, playlist.trackCount) {
+                    library.download(playlist)
+                }
+            },
             onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },
             onDelete = if (owner) {
                 { selectedPlaylist = null; requestDelete() }

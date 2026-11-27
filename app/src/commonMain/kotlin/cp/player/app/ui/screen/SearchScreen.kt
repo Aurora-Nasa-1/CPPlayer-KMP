@@ -503,7 +503,9 @@ class SearchScreen(private val initialQuery: String = "") : RoutePage {
                                                     playlistOptionsTarget = null
                                                 },
                                                 onDownload = {
-                                                    playlistActions.downloadPlaylist(playlist, s)
+                                                    confirm.requestDownloadAll(s, playlist.name, playlist.trackCount) {
+                                                        playlistActions.downloadPlaylist(playlist, s)
+                                                    }
                                                     playlistOptionsTarget = null
                                                 },
                                                 onShare = {
@@ -625,7 +627,9 @@ class SearchScreen(private val initialQuery: String = "") : RoutePage {
                     playlistOptionsTarget = null
                 },
                 onDownload = {
-                    playlistActions.downloadPlaylist(playlist, s)
+                    confirm.requestDownloadAll(s, playlist.name, playlist.trackCount) {
+                        playlistActions.downloadPlaylist(playlist, s)
+                    }
                     playlistOptionsTarget = null
                 },
                 onShare = { shareText(playlistShareText(playlist.resourceId, playlist.name)) },

@@ -335,6 +335,13 @@ fun PlaylistDetailContent(
         )
     }
 
+    // 「全部下载」的统一确认入口（菜单 / 选项弹层 / 工具条 / 左栏动作轨共用）。
+    val confirmDownloadAll: () -> Unit = {
+        confirm.requestDownloadAll(s, summary.name, displayTracks.size) {
+            AppModel.downloadTracks(displayTracks)
+        }
+    }
+
     // 「删除歌单 / 取消收藏」的统一确认入口
     val confirmDeletePlaylist: () -> Unit = {
         confirm.request(
@@ -442,7 +449,7 @@ fun PlaylistDetailContent(
             add(CpContextMenuItem(s.common.refresh, Icons.Filled.Refresh, onClick = { model.refresh(s) }))
             add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, onClick = { model.playAll() }))
             add(CpContextMenuItem(s.library.addToQueue, Icons.AutoMirrored.Filled.QueueMusic, onClick = { model.queueAll(s) }))
-            add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, onClick = { AppModel.downloadTracks(displayTracks) }))
+            add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, onClick = confirmDownloadAll))
         }
         isDailyRecommend -> buildList {
             add(
@@ -456,7 +463,7 @@ fun PlaylistDetailContent(
             add(CpContextMenuItem(s.common.refresh, Icons.Filled.Refresh, onClick = { loadDailyFeed(dailyByStyle) }, enabled = !dailyFeedLoading))
             add(CpContextMenuItem(s.library.playAll, Icons.Filled.PlayArrow, onClick = { model.playAll() }))
             add(CpContextMenuItem(s.library.addToQueue, Icons.AutoMirrored.Filled.QueueMusic, onClick = { model.queueAll(s) }))
-            add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, onClick = { AppModel.downloadTracks(displayTracks) }))
+            add(CpContextMenuItem(s.library.downloadAll, Icons.Filled.Download, onClick = confirmDownloadAll))
         }
         else -> playlistContextMenuItems(
             PlaylistMenuActions(
@@ -465,7 +472,7 @@ fun PlaylistDetailContent(
                 onRefresh = { model.refresh(s) },
                 onPlay = { model.playAll() },
                 onAddToQueue = { model.queueAll(s) },
-                onDownload = { AppModel.downloadTracks(displayTracks) },
+                onDownload = confirmDownloadAll,
                 onShare = {
                     shareText(playlistShareText(playlist.resourceId, summary.name))
                 },
@@ -535,6 +542,7 @@ fun PlaylistDetailContent(
                 onOpenPlaylistSheet = { showPlaylistSheet = true },
                 onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
                 onAddTracks = openAddSongs,
+                onDownloadAll = confirmDownloadAll,
                 onRemoveSelected = confirmRemoveTracks,
                 buildSongMenu = buildSongMenu,
                 maxWidth = maxWidth,
@@ -574,6 +582,7 @@ fun PlaylistDetailContent(
             onOpenPlaylistSheet = { showPlaylistSheet = true },
             onAddSelectedToPlaylist = { addToPlaylistIds = state.selectedIds.toList() },
             onAddTracks = openAddSongs,
+            onDownloadAll = confirmDownloadAll,
             onRemoveSelected = confirmRemoveTracks,
             playlistMenu = playlistMenu,
             buildSongMenu = buildSongMenu,
@@ -591,7 +600,7 @@ fun PlaylistDetailContent(
             onDismiss = { showPlaylistSheet = false },
             onPlay = { model.playAll() },
             onAddToQueue = { model.queueAll(s) },
-            onDownload = { AppModel.downloadTracks(displayTracks) },
+            onDownload = confirmDownloadAll,
             onRefresh = when {
                 isDailyRecommend && !dailyFeedLoading -> { { loadDailyFeed(dailyByStyle) } }
                 isLocalPlaylist -> null
@@ -898,6 +907,7 @@ private fun NarrowLayout(
     onOpenPlaylistSheet: () -> Unit,
     onAddSelectedToPlaylist: () -> Unit,
     onAddTracks: (() -> Unit)?,
+    onDownloadAll: () -> Unit,
     onRemoveSelected: (List<String>) -> Unit,
     buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem>,
     isDailyRecommend: Boolean = false,
@@ -996,7 +1006,7 @@ private fun NarrowLayout(
                 onSongOptions = onSongOptions,
                 onSortClick = onOpenPlaylistSheet,
                 onAddTracks = onAddTracks,
-                onDownloadAll = { AppModel.downloadTracks(displayTracks) },
+                onDownloadAll = onDownloadAll,
                 onEnterSelection = { },
                 onMore = onOpenPlaylistSheet,
                 buildSongMenu = buildSongMenu,
@@ -1218,7 +1228,7 @@ private fun NarrowLayout(
                 onSongOptions = onSongOptions,
                 onSortClick = onOpenPlaylistSheet,
                 onAddTracks = onAddTracks,
-                onDownloadAll = { AppModel.downloadTracks(displayTracks) },
+                onDownloadAll = onDownloadAll,
                 onEnterSelection = onToggleEnterSelection,
                 onMore = onOpenPlaylistSheet,
                 buildSongMenu = buildSongMenu,
@@ -1260,6 +1270,7 @@ private fun WideLayout(
     onOpenPlaylistSheet: () -> Unit,
     onAddSelectedToPlaylist: () -> Unit,
     onAddTracks: (() -> Unit)?,
+    onDownloadAll: () -> Unit,
     onRemoveSelected: (List<String>) -> Unit,
     playlistMenu: List<CpContextMenuItem>?,
     buildSongMenu: @Composable (TrackSummary, Int) -> List<CpContextMenuItem>,
@@ -1453,7 +1464,7 @@ private fun WideLayout(
                                     if (windowChromeActive) sortMenuExpanded = true
                                     else onOpenPlaylistSheet()
                                 },
-                                onDownloadAll = { AppModel.downloadTracks(displayTracks) },
+                                onDownloadAll = onDownloadAll,
                                 selectionMode = state.selectionMode,
                                 onEnterSelection = {
                                     if (state.selectionMode) {
@@ -1574,7 +1585,7 @@ private fun WideLayout(
                     onSongOptions = onSongOptions,
                     onSortClick = onOpenPlaylistSheet,
                     onAddTracks = onAddTracks,
-                    onDownloadAll = { AppModel.downloadTracks(displayTracks) },
+                    onDownloadAll = onDownloadAll,
                     onEnterSelection = { },
                     onMore = onOpenPlaylistSheet,
                     buildSongMenu = buildSongMenu,

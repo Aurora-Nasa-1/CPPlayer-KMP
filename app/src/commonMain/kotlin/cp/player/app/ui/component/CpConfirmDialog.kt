@@ -74,6 +74,32 @@ class CpConfirmState internal constructor() {
         request = null
         action?.invoke()
     }
+
+    /**
+     * 发起「歌单全部下载」的二次确认。
+     *
+     * 批量把整张歌单入队下载会消耗较多流量与磁盘，但任务可取消、文件可删除，
+     * 因此确认按钮不走危险色（`destructive = false`）。
+     * 若已知曲目数为 0（空歌单），直接走 [onConfirm] 由下载管线提示无曲目，避免空转确认框。
+     */
+    fun requestDownloadAll(
+        strings: cp.player.app.i18n.CpStrings,
+        playlistName: String,
+        trackCount: Int,
+        onConfirm: () -> Unit,
+    ) {
+        if (trackCount <= 0) {
+            onConfirm()
+            return
+        }
+        request(
+            title = strings.library.downloadAll,
+            message = strings.library.downloadAllMessage(playlistName, trackCount),
+            confirmLabel = strings.library.downloadAll,
+            destructive = false,
+            onConfirm = onConfirm,
+        )
+    }
 }
 
 @Composable
